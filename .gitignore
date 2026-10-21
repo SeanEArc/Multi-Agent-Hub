@@ -1,0 +1,43 @@
+# Local environment settings; keep safe, documented examples.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python environments, caches, packaging and coverage.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# JavaScript dependencies and generated output.
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local session history, prompts, raw events and SQLite sidecars.
+/backend/data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Machine-local editor and OS files.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini

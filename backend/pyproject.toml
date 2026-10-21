@@ -1,0 +1,31 @@
+[project]
+name = "multi-agent-hub-backend"
+version = "0.1.0"
+description = "FastAPI backend for Multi-Agent Hub: agent sessions, events and history."
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.156",
+    "uvicorn[standard]>=0.54",
+    "sqlmodel>=0.0.48",
+    "pydantic-settings>=2.16",
+    "alembic>=1.16",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "httpx2",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["migrations/script.py.mako", "migrations/versions/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
