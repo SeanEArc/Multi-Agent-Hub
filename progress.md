@@ -74,17 +74,32 @@ npm run dev
 
 Stop either one with Ctrl+C. Backend tests: `uv run pytest` in `backend/`.
 
+---
+
+2026-10-20 21:40 (UTC-05:00)
+
+# Session 3: Prepared the project for GitHub and published it as the first commit.
+
+Repository: https://github.com/SeanEArc/Multi-Agent-Hub (branch `main`).
+
+## What was done
+
+1. **Added a root `.gitignore`** covering local environment files (`.env`, `.env.*`, with `*.example` files kept), Python and Node build output and caches, SQLite databases and their sidecar files (including `backend/data/`, which holds session history and prompts), logs, and editor or OS files.
+2. **Added `backend/.env.example`** with safe defaults for every backend setting, including `HUB_CLAUDE_PERMISSION_MODE`. It notes that the app needs no API keys or login tokens, and that the live-test switch `HUB_LIVE_CLAUDE` belongs in the shell, not in `.env`.
+3. **Updated the READMEs.** `frontend/README.md` now explains that `HUB_API_URL` is a shell variable read by the Vite dev proxy, not a frontend `.env` setting.
+4. **Checked before publishing.** The ignore rules exclude environment files, the database, dependencies and build output, while `.env.example`, `uv.lock` and `package-lock.json` stay included. No credentials were found in the source.
+5. **First commit** (`b896866`, 53 files) pushed to `origin/main`. No `.env` or database files are tracked.
+
 ## Current state
 
-- Done: all of Phase 1 except the desktop-shell decision (Electron vs. Tauri), which was deferred to Phase 4 on purpose.
-- Not done: Codex (Phase 2), handoff (Phase 3), the multi-session dashboard and worktrees (Phase 4), and Ollama (Phase 5).
-- The project is not a git repository yet.
+- Done: all of Phase 1 except the desktop-shell decision (Electron vs. Tauri), which was deferred to Phase 4 on purpose. The project is in git and on GitHub.
+- Not done: Codex (Phase 2), handoff (Phase 3), the multi-session dashboard and worktrees (Phase 4), Ollama (Phase 5) and iPhone access (Phase 6).
+- `CLAUDE.md` is out of date: it still says only `backend/` exists and that the adapter isn't connected to the API.
 
 ## Next steps
 
 **For the user**
-- [ ] Run `git init` in the project root and make a first commit (`uv.lock` and `package-lock.json` included).
-- [ ] Try the UI using the steps above.
+- [ ] Try the UI using the steps in Session 2.
 - [ ] Decide how Claude may run shell commands (tests, git). Today they are denied, because headless mode has no way to approve them. The options are allowing specific commands or allowing everything inside a session's folder.
 - [ ] Decide whether to record the `claude -p` findings in `plan.md` (sections 4 and 7 still list them as unverified).
 - [ ] Check Anthropic's own pages on subscription use through the CLI (still unverified in the plan).
@@ -92,20 +107,6 @@ Stop either one with Ctrl+C. Backend tests: `uv run pytest` in `backend/`.
 - [ ] Optional: remove the leftover Python 3.13 install if nothing else uses it.
 
 **For the agent**
+- [ ] Update `CLAUDE.md` to cover the frontend, the orchestrator and the streaming endpoints.
 - [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), once the Codex CLI is ready.
 - [ ] If wanted, record the `claude -p` findings in `plan.md` and mark Phase 1 done there.
-
----
-
-# Session 3: Reviewed GitHub publication hygiene (2026-10-20)
-
-- Added a root `.gitignore` for local environment files, Python/Node generated
-  files, SQLite databases and sidecars, logs, and machine-local editor files.
-- Added `backend/.env.example` with safe defaults and documented all backend
-  settings, including Claude permissions and the separate live-test opt-in.
-- Clarified that frontend `HUB_API_URL` is a shell variable for the Vite dev proxy;
-  the current config does not load it from frontend `.env` files.
-- Verified ignore rules for environment variants, database history, dependencies,
-  build output and caches; the environment example and both lockfiles remain
-  eligible for commit. No apparent credentials found in reviewed source.
-- Git is initialized, but no files are tracked yet. No commit or push performed.
