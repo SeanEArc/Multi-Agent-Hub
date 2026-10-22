@@ -106,7 +106,8 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 **Phase 1: Core and Claude**
 - Goal: one Claude session working end to end.
-- In scope: FastAPI core, adapter interface, Claude adapter (approach A), SQLite history, basic UI shell, verification of the streaming-event and interactive-input behavior of `claude -p`, and the final Electron-versus-Tauri decision.
+- In scope: FastAPI core, adapter interface, Claude adapter (approach A), SQLite history, basic UI shell, verification of the streaming-event and interactive-input behavior of `claude -p`, the final Electron-versus-Tauri decision, and minimal local authentication (see below).
+- Minimal local authentication: a random per-install token generated on first run and stored locally with user-only access; one FastAPI dependency requiring `Authorization: Bearer <token>` on every REST route and on the event stream (constant-time comparison, 401 otherwise); the Electron main process starts the sidecar, passes it the token through an environment variable or stdin (not a command-line argument) and injects it into UI requests; the backend binds to `127.0.0.1` only and validates `Host` and `Origin` headers; the token is never logged or written to SQLite. Reason: the API can launch agents that edit files and run commands, and retrofitting auth later would change every endpoint and the event stream.
 - Exclusions: Codex, handoff, multi-session dashboard.
 - Dependencies: Claude Code CLI installed and logged in.
 - Acceptance: the user starts a session, sees status and events, replies to a question, and sees the completed session in history.
@@ -146,7 +147,8 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 **Phase 6 (later): iPhone access**
 - Goal: monitor and control sessions from the phone.
-- In scope: network exposure of the API, login, mobile web client, private remote access.
+- In scope: network exposure of the API, full login (password or passkey, session cookie with `Secure`, `HttpOnly` and `SameSite` flags), device pairing (for example a QR code from the desktop app), rate limiting and token revocation, mobile web client as an installable web app, private remote access (Tailscale with `tailscale serve` for HTTPS is the leading option; FastAPI serves the built React app same-origin; a Vercel-hosted frontend is not needed for a single user), and push notifications for waiting-for-input, handoff and completion.
+- Availability caveat: the PC must stay on, awake and online, with the backend and the remote-access client starting at boot or login.
 - Exclusions: running agents on the phone.
 - Dependencies: phases 1 to 4.
 - Acceptance: from the phone, the user can see session status and send replies.
