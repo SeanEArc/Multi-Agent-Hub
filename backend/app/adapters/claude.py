@@ -35,6 +35,9 @@ HEADLESS_PROMPT = (
 STREAM_LIMIT = 16 * 1024 * 1024
 # Wording of subscription-limit errors is not verified; rate_limit_event "rejected" is the primary signal.
 LIMIT_TEXT = re.compile(r"usage limit|limit reached|out of (extra )?usage", re.IGNORECASE)
+# Nobody can answer a git login prompt or credential window in a headless turn, so a
+# missing credential must fail the command instead of hanging it.
+HEADLESS_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 
 class ClaudeCliNotFound(RuntimeError):
@@ -112,6 +115,7 @@ class ClaudeAdapter(AgentAdapter):
         proc = await asyncio.create_subprocess_exec(
             *args,
             cwd=self.cwd,
+            env={**os.environ, **HEADLESS_GIT_ENV},
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
