@@ -13,13 +13,12 @@
       "Bash(git commit:*)",
       "Bash(git switch:*)",
       "Bash(git push:*)",
-      "Bash(uv sync:*)",
-      "Bash(uv run pytest:*)",
-      "Bash(npm run dev:*)",
-      "Bash(npm run build:*)",
-      "Bash(npm run typecheck:*)",
       "Bash(git merge --ff-only:*)",
-      "Bash(git pull --ff-only:*)"
+      "Bash(git pull --ff-only:*)",
+      "Bash(uv sync --directory backend:*)",
+      "Bash(uv run --directory backend pytest:*)",
+      "Bash(npm --prefix frontend run build:*)",
+      "Bash(npm --prefix frontend run typecheck:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

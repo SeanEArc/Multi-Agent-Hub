@@ -152,20 +152,48 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ---
 
-2026-10-22 (UTC-05:00)
+2026-10-23 00:05 (UTC-05:00)
 
-# Session 5: Added a folder picker to the New session dialog.
+# Session 5: Added a folder picker to the New session dialog, so a project folder can be browsed to instead of pasted.
+
+This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## What was done
 
-1. **Backend: `GET /api/folders?path=&show_hidden=`** (`backend/app/api/folders.py`). It lists subfolders only (never files), sorted, and hides dot, `$` and Windows hidden/system folders unless `show_hidden` is set. With no `path`, it returns the home folder and the drives. A drive root has `parent: null`, so going Up returns to that top level. A missing path gives 404, and an unreadable folder gives 403. Tests are in `backend/tests/test_folders.py`.
-   - The backend lists the folders, not a native OS dialog, so the picker also works in the browser now, in the Tauri window and over Tailscale. A native dialog would open on the host machine, not on the phone.
-   - This route will need the same bearer-token protection as every other route when auth lands.
-2. **Frontend: `FolderPicker`** (`frontend/src/components/FolderPicker.tsx`) replaces the plain path input. The path stays typeable and pasteable. **Browse…** opens an inline folder list at the typed path, or at the top level if that path doesn't exist. Clicking a folder opens it and makes it the selected path, with **Up** and a **Hidden** toggle. Up to 5 recent project folders from existing sessions appear as chips.
-3. `npm run typecheck` and `npm run build` pass. **The backend tests were not run**: `uv` isn't on the Bash tool's PATH, and PowerShell `uv` calls needed an approval the headless session couldn't give.
+1. **Backend: `GET /api/folders?path=&show_hidden=`** (`backend/app/api/folders.py`, registered in `app/main.py`).
+   - Lists subfolders only, never files, sorted by name. Dot folders, `$` folders and Windows hidden or system folders are left out unless `show_hidden` is set.
+   - With no `path`, it returns the home folder and the drives as starting points. A drive root has no parent, so going Up from it returns to that top level.
+   - A missing path or a file gives 404, and an unreadable folder gives 403.
+   - Added 5 tests in `backend/tests/test_folders.py`.
+2. **Why the backend lists folders instead of opening a native dialog.** A browser's folder picker only gives the page a folder's name, not its full path. A Windows dialog opened by the backend would appear on the host PC, so it wouldn't work from the phone over Tailscale (Phase 6). Listing through the API works in the browser now, in the Tauri window and remotely.
+3. **Frontend: `FolderPicker`** (`frontend/src/components/FolderPicker.tsx`) replaces the plain path input in `NewSessionDialog.tsx`.
+   - The path can still be typed or pasted.
+   - **Browse…** opens a folder list inside the dialog at the typed path, or at the top level if that path doesn't exist. Clicking a folder opens it and makes it the selected path. **Up** goes back a level, **Hidden** shows hidden folders, and **Done** closes the list.
+   - Up to 5 recent project folders from existing sessions appear as one-click chips (`App.tsx` passes them in).
+   - Added `api.listFolders` in `frontend/src/api.ts` and the picker styles in `styles.css`.
+4. **Checks:** `npm run typecheck` and `npm run build` pass. **The backend tests were not run.** `uv` isn't on the Bash tool's PATH, and the PowerShell `uv` calls needed an approval the headless session couldn't give.
+5. **The user committed and pushed the work** as `74833c4` on `feature/authentication`. That commit also added `git merge --ff-only` and `git pull --ff-only` to the allowlist in `.claude/settings.json`.
+
+## Current state
+
+- The folder picker is on `feature/authentication` (`74833c4`), **not on `main`**. This recap was written on `main`.
+- `/api/folders` is unauthenticated like every other route. It shows folder names on the machine to anything that can reach the API, so it needs the same token check when auth lands.
+- The picker hasn't been tried in the browser yet.
+- Everything else is unchanged from Session 4: Phase 1 is done apart from minimal local auth.
 
 ## Next steps
 
+**For the user**
+- [ ] Decide whether the folder picker should reach `main` now (fast-forward `main` to `feature/authentication`) or together with the auth work.
+- [ ] Fix the `uv`/`npm` allow entries in `.claude/settings.json` (see Session 4) so headless sessions can run the backend tests. Then restart the backend.
+- [ ] Decide on the auth approach (recommended: a static bearer token now, Tailscale identity and passkeys in Phase 6).
+- [ ] Decide whether the stream should use a fetch-based reader (recommended) or a cookie.
+
 **For the agent**
-- [ ] Run `uv run pytest` in `backend/`, including `tests/test_folders.py`.
-- [ ] Check the picker in the browser (Browse, Up, Hidden, recent chips, and a typed path).
+- [ ] Run `uv run pytest` in `backend/`, including `tests/test_folders.py` and the `claude.py` change from Session 4.
+- [ ] Check the picker in the browser: Browse, Up, Hidden, the recent chips, and a typed path.
+- [ ] Build minimal local auth on `feature/authentication`, covering `/api/folders` too: a per-install token file readable only by the user, a bearer dependency with constant-time comparison on every route and the stream, `Host` and `Origin` checks, loopback-only binding, token injection in the Vite proxy, a fetch-based stream reader in the UI, and tests.
+- [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
+- [ ] Update `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
+- [ ] Mark Phase 1 done in `plan.md` once auth is merged.
+- [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), once the Codex CLI is ready.
