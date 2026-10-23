@@ -74,6 +74,8 @@ export function App() {
       {creating && (
         <NewSessionDialog
           onClose={() => setCreating(false)}
+          // Sessions come newest first, so the Set keeps that order.
+          recentProjects={[...new Set(sessions.map((s) => s.project_path))]}
           onCreate={async (body, firstMessage) => {
             const session = await api.createSession(body);
             if (firstMessage) await api.sendMessage(session.id, firstMessage);

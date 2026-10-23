@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { AgentKind, NewSession } from "../api";
+import { FolderPicker } from "./FolderPicker";
 
 interface Props {
   onCreate: (session: NewSession, firstMessage: string) => Promise<void>;
   onClose: () => void;
+  // Project folders of existing sessions, newest first, offered as shortcuts.
+  recentProjects: string[];
 }
 
 // Aliases the claude CLI accepts for --model; empty means the CLI's default.
 const CLAUDE_MODELS = ["", "fable", "opus", "sonnet", "haiku"];
 
-export function NewSessionDialog({ onCreate, onClose }: Props) {
+export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState("");
   const [projectPath, setProjectPath] = useState("");
@@ -48,17 +51,11 @@ export function NewSessionDialog({ onCreate, onClose }: Props) {
           <input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus placeholder="Fix login bug" />
         </label>
 
-        <label>
-          Project folder
-          <input
-            value={projectPath}
-            onChange={(e) => setProjectPath(e.target.value)}
-            required
-            placeholder="C:\Users\you\projects\my-app"
-            spellCheck={false}
-          />
-          <span className="hint">Full path to an existing folder. The agent can edit files in it.</span>
-        </label>
+        <div className="field">
+          <label htmlFor="project-path">Project folder</label>
+          <FolderPicker value={projectPath} onChange={setProjectPath} recent={recentProjects} />
+          <span className="hint">Type or paste a path, or browse to the folder. The agent can edit files in it.</span>
+        </div>
 
         <div className="field-row">
           <label>

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import Engine
 
-from app.api import health, sessions
+from app.api import folders, health, sessions
 from app.config import get_settings
 from app.db import init_db, make_engine
 from app.orchestrator import AdapterFactory, Orchestrator, default_adapter_factory
@@ -38,6 +38,7 @@ def create_app(engine: Engine | None = None, adapter_factory: AdapterFactory = d
 
     app.include_router(health.router, prefix="/api")
     app.include_router(sessions.router, prefix="/api")
+    app.include_router(folders.router, prefix="/api")
     return app
 
 

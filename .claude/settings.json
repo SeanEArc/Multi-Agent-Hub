@@ -17,7 +17,9 @@
       "Bash(uv run pytest:*)",
       "Bash(npm run dev:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run typecheck:*)"
+      "Bash(npm run typecheck:*)",
+      "Bash(git merge --ff-only:*)",
+      "Bash(git pull --ff-only:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

@@ -149,3 +149,23 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Update `CLAUDE.md`: frontend, orchestrator, streaming endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
 - [ ] Mark Phase 1 done in `plan.md` once auth is merged.
 - [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), once the Codex CLI is ready.
+
+---
+
+2026-10-22 (UTC-05:00)
+
+# Session 5: Added a folder picker to the New session dialog.
+
+## What was done
+
+1. **Backend: `GET /api/folders?path=&show_hidden=`** (`backend/app/api/folders.py`). It lists subfolders only (never files), sorted, and hides dot, `$` and Windows hidden/system folders unless `show_hidden` is set. With no `path`, it returns the home folder and the drives. A drive root has `parent: null`, so going Up returns to that top level. A missing path gives 404, and an unreadable folder gives 403. Tests are in `backend/tests/test_folders.py`.
+   - The backend lists the folders, not a native OS dialog, so the picker also works in the browser now, in the Tauri window and over Tailscale. A native dialog would open on the host machine, not on the phone.
+   - This route will need the same bearer-token protection as every other route when auth lands.
+2. **Frontend: `FolderPicker`** (`frontend/src/components/FolderPicker.tsx`) replaces the plain path input. The path stays typeable and pasteable. **Browse…** opens an inline folder list at the typed path, or at the top level if that path doesn't exist. Clicking a folder opens it and makes it the selected path, with **Up** and a **Hidden** toggle. Up to 5 recent project folders from existing sessions appear as chips.
+3. `npm run typecheck` and `npm run build` pass. **The backend tests were not run**: `uv` isn't on the Bash tool's PATH, and PowerShell `uv` calls needed an approval the headless session couldn't give.
+
+## Next steps
+
+**For the agent**
+- [ ] Run `uv run pytest` in `backend/`, including `tests/test_folders.py`.
+- [ ] Check the picker in the browser (Browse, Up, Hidden, recent chips, and a typed path).

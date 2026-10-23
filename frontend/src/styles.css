@@ -687,6 +687,126 @@ textarea:focus,
   font-weight: 600;
 }
 
+.dialog .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* --- Folder picker ------------------------------------------------------------------------ */
+
+.folder-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.folder-input-row input {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.folder-input-row .button {
+  flex: none;
+}
+
+.folder-browser {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  overflow: hidden;
+}
+
+.folder-browser-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.folder-browser-header .path {
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog label.folder-hidden-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.folder-hidden-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.folder-list[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.folder-list > .muted,
+.folder-list > .composer-error {
+  padding: 6px 8px;
+  margin: 0;
+}
+
+.folder-item {
+  display: flex;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-item:hover {
+  background: var(--panel);
+}
+
+.folder-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.recent-folders {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.recent-folder {
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.recent-folder:hover {
+  border-color: var(--muted);
+}
+
 .hint {
   font-weight: 400;
   font-size: 12px;

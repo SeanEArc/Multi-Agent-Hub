@@ -38,6 +38,18 @@ export interface NewSession {
   model: string | null;
 }
 
+export interface FolderEntry {
+  name: string;
+  path: string;
+}
+
+export interface FolderListing {
+  // null at the top level (home folder and drives).
+  path: string | null;
+  parent: string | null;
+  folders: FolderEntry[];
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -84,4 +96,10 @@ export const api = {
     }),
   stop: (id: string) => request<AgentSession>(`/sessions/${id}/stop`, { method: "POST" }),
   streamUrl: (id: string) => `/api/sessions/${id}/stream`,
+  listFolders: (path: string | null, showHidden = false) => {
+    const params = new URLSearchParams();
+    if (path) params.set("path", path);
+    if (showHidden) params.set("show_hidden", "true");
+    return request<FolderListing>(`/folders?${params}`);
+  },
 };
