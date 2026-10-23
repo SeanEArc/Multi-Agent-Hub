@@ -5,7 +5,7 @@ import { SessionView } from "./components/SessionView";
 import { Sidebar } from "./components/Sidebar";
 
 const SELECTED_KEY = "hub.selectedSession";
-const POLL_MS = 3000;
+const POLL_MS = 60000;
 
 export function App() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
