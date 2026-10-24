@@ -252,3 +252,37 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Update the rest of `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
 - [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
 - [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), once the Codex CLI is ready.
+
+---
+
+2026-10-24 00:27 (UTC-05:00)
+
+# Session 8: Committed the auth work, marked Phase 1 done, and merged `feature/authentication` into `main`.
+
+## What was done
+
+1. **Pre-commit check.** No secrets, API keys or real tokens in the code (`TEST_TOKEN` is a fake test value). Hosts and ports are overridable `HUB_*` defaults. `backend/data/token` and the database are ignored, and git history shows no `.env` or `backend/data/` file was ever committed.
+2. **`.gitignore`:** added `.claude/settings.local.json` and `.claude/worktrees/`. The shared `.claude/settings.json` stays tracked.
+3. **Removed the Windows username from `progress.md`.** The Session 2 "How to run" commands now use `cd backend` and `cd frontend` from the repo folder. (Older commits still contain the full path.)
+4. **Committed and pushed `49276b4`** on `feature/authentication`: auth, the folder picker row fix, the ignore rules and the docs.
+5. **The user checked the folder picker in the browser:** rows no longer overlap.
+6. **Marked Phase 1 done in `plan.md`** (2026-10-24), noting that passing the token from Tauri to the sidecar belongs to Phase 4.
+7. **Fast-forwarded `main` to `feature/authentication` and pushed both.**
+
+## Current state
+
+- **Phase 1 is complete.** `main` and `feature/authentication` point at the same commit.
+- Any script or tool that calls the API directly needs `Authorization: Bearer <token>` (see `backend/README.md`).
+- The Tauri origin (`http://tauri.localhost`, unverified) will need adding to the allowed origins in Phase 4. A fetch-based stream reader is only needed once the UI calls the backend directly (Phase 4 or 6).
+
+## Next steps
+
+**For the user**
+- [ ] Install and log in to the Codex CLI before Phase 2.
+- [ ] Restart Claude Code and the backend from a new terminal so `uv` is on `Path` (from Session 6), if not done yet.
+- [ ] Decide whether to record the `claude -p` findings in `plan.md` (sections 4 and 7 still list them as unverified).
+
+**For the agent**
+- [ ] Update the rest of `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
+- [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
+- [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), on a new `feature/` branch, once the Codex CLI is ready.

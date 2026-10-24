@@ -106,7 +106,8 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 ## 6. Build phases
 
-**Phase 1: Core and Claude**
+**Phase 1: Core and Claude** (done 2026-10-24)
+- Status: complete. The acceptance test passed in the browser (2026-10-20), and minimal local authentication is in place: per-install token file, bearer check on every route and the stream, `Host`/`Origin` checks, loopback-only binding, token added by the Vite dev proxy. Passing the token from the Tauri main process to the sidecar is part of phase 4.
 - Goal: one Claude session working end to end.
 - In scope: FastAPI core, adapter interface, Claude adapter (approach A), SQLite history, basic UI shell, verification of the streaming-event and interactive-input behavior of `claude -p`, the desktop-shell decision (decided 2026-10-22: Tauri), and minimal local authentication (see below).
 - Desktop shell: building the Tauri shell and packaging the backend as its sidecar is deferred to phase 4; until then the UI runs in a browser against the local API, and the Vite dev proxy reads the token file and adds the `Authorization` header to `/api` requests in place of the shell.
