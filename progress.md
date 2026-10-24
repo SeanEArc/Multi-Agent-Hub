@@ -138,7 +138,8 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Make sure Git Credential Manager has your GitHub login saved (one manual `git push` does it).
 - [ ] Decide whether to record the `claude -p` findings in `plan.md` (sections 4 and 7 still list them as unverified).
 - [ ] Check Anthropic's own pages on subscription use through the CLI (still unverified in the plan).
-- [ ] Install and log in to the Codex CLI before Phase 2.
+- [x] Install and log in to the Codex CLI before Phase 2. Done 2026-10-24: `codex-cli 0.164.0` via `npm install -g @openai/codex` (in `%APPDATA%
+pm`), and `codex login status` shows "Logged in using ChatGPT". In PowerShell, `codex` needs `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (or run `codex.cmd`); in Git Bash the interactive UI exits silently because mintty isn't a Windows console.
 - [ ] Optional: remove the leftover Python 3.13 install if nothing else uses it.
 
 **For the agent**
@@ -285,4 +286,4 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the agent**
 - [ ] Update the rest of `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
 - [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
-- [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), on a new `feature/` branch, once the Codex CLI is ready.
+- [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume) on `feature/codex-adapter` (created from `main` at `51d3b4b`, no changes yet). First probe `codex exec` in a scratch folder (uses some Codex allowance, which the user approved): event format, resume, questions and approvals, limit reporting, the native `codex.exe` inside the npm package (the adapter must not run the `.cmd`/`.ps1` launchers), and the sandbox mode (likely workspace-write plus optional extra folders). Then the adapter, a fake `codex` for tests, an opt-in live test, wiring it into the orchestrator, and the billing check.
