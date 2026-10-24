@@ -60,15 +60,15 @@ Frontend: [frontend/](frontend/) (see [frontend/README.md](frontend/README.md)).
 
 ## How to run
 
-Two terminals, backend first:
+Two terminals, backend first, each starting in the repo folder:
 
 ```powershell
 # Terminal 1: backend (ready at "Uvicorn running on http://127.0.0.1:8765")
-cd C:\Users\seana\Desktop\Personal-Coding\MultiAgentHub\backend
+cd backend
 uv run python -m app.main
 
 # Terminal 2: frontend, then open http://localhost:5173
-cd C:\Users\seana\Desktop\Personal-Coding\MultiAgentHub\frontend
+cd frontend
 npm run dev
 ```
 
@@ -174,26 +174,81 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 4. **Checks:** `npm run typecheck` and `npm run build` pass. **The backend tests were not run.** `uv` isn't on the Bash tool's PATH, and the PowerShell `uv` calls needed an approval the headless session couldn't give.
 5. **The user committed and pushed the work** as `74833c4` on `feature/authentication`. That commit also added `git merge --ff-only` and `git pull --ff-only` to the allowlist in `.claude/settings.json`.
 
+---
+
+2026-10-23 13:32 (UTC-05:00)
+
+# Session 6: Resolved the merge conflict between `main` and `feature/authentication`, merged the folder picker into `main`, and ran the backend tests.
+
+## What was done
+
+1. **Merge conflict.** `main` (`7be4759`, the allowlist update) and `feature/authentication` (`74833c4`, the folder picker) both changed `.claude/settings.json` and `progress.md`.
+   - Merged `main` into `feature/authentication` as `5414c63`, without a rebase.
+   - Both files took `main`'s version, since it already held everything the branch added: the `--ff-only` git entries, the `uv --directory backend` and `npm --prefix frontend` entries, and the fuller Session 5 recap. `settings.json` still parses as JSON.
+2. **Pushed `feature/authentication`, then fast-forwarded `main` to `5414c63` and pushed it.** The folder picker is now on `main`, and both branches point at the same commit.
+3. **Backend tests: 34 passed, 1 skipped** (the opt-in live Claude test), including the 5 tests in `tests/test_folders.py` and the `claude.py` change from Session 4.
+   - Plain `uv` wasn't found in the agent's PowerShell. Its WinGet folder (`%LOCALAPPDATA%\Microsoft\WinGet\Packages\astral-sh.uv_…`) is on the user `Path`, but the shell was started before that entry existed. The tests ran with `uv.exe`'s full path. A process started after the install (a new terminal, Claude Code, or the backend) will find `uv`.
+
 ## Current state
 
-- The folder picker is on `feature/authentication` (`74833c4`), **not on `main`**. This recap was written on `main`.
+- `main` and `feature/authentication` are both at `5414c63` and pushed. Auth work can continue on `feature/authentication`.
 - `/api/folders` is unauthenticated like every other route. It shows folder names on the machine to anything that can reach the API, so it needs the same token check when auth lands.
 - The picker hasn't been tried in the browser yet.
-- Everything else is unchanged from Session 4: Phase 1 is done apart from minimal local auth.
+- Phase 1 is done apart from minimal local auth.
 
 ## Next steps
 
 **For the user**
-- [ ] Decide whether the folder picker should reach `main` now (fast-forward `main` to `feature/authentication`) or together with the auth work.
-- [ ] Fix the `uv`/`npm` allow entries in `.claude/settings.json` (see Session 4) so headless sessions can run the backend tests. Then restart the backend.
+- [ ] Restart Claude Code and the backend from a new terminal, so they and the headless sessions they spawn get a `Path` that includes `uv`.
 - [ ] Decide on the auth approach (recommended: a static bearer token now, Tailscale identity and passkeys in Phase 6).
 - [ ] Decide whether the stream should use a fetch-based reader (recommended) or a cookie.
 
 **For the agent**
-- [ ] Run `uv run pytest` in `backend/`, including `tests/test_folders.py` and the `claude.py` change from Session 4.
 - [ ] Check the picker in the browser: Browse, Up, Hidden, the recent chips, and a typed path.
 - [ ] Build minimal local auth on `feature/authentication`, covering `/api/folders` too: a per-install token file readable only by the user, a bearer dependency with constant-time comparison on every route and the stream, `Host` and `Origin` checks, loopback-only binding, token injection in the Vite proxy, a fetch-based stream reader in the UI, and tests.
 - [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
 - [ ] Update `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
 - [ ] Mark Phase 1 done in `plan.md` once auth is merged.
+- [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), once the Codex CLI is ready.
+
+---
+
+2026-10-23 21:08 (UTC-05:00)
+
+# Session 7: Built minimal local authentication (static bearer token plus Host/Origin checks) on `feature/authentication`.
+
+## What was done
+
+1. **Switched to `feature/authentication`** (same commit as `main`, `5414c63`). The uncommitted Session 6 recap in this file came along.
+2. **The user chose the static bearer token.**
+3. **Backend: `backend/app/auth.py`.**
+   - `load_or_create_token`: on first start, writes a random 32-byte token to `backend/data/token` (setting `HUB_TOKEN_FILE`). On Windows, `icacls` removes inherited access and grants only the current user. Later starts reuse the file. It is created in the lifespan, so importing `app.main` (tests) never touches it.
+   - `require_caller`: a FastAPI dependency on every `/api` router (health, sessions including the stream, folders). It checks `Authorization: Bearer` with `secrets.compare_digest`, returns `Caller(method="token")`, and answers 401 with `WWW-Authenticate: Bearer` otherwise. `/docs` has an **Authorize** button.
+   - `HostOriginMiddleware`, the outermost middleware, returns 403 when `Host` isn't a loopback name (stops DNS rebinding), when a browser `Origin` isn't the API itself or in `HUB_CORS_ORIGINS`, or when `Sec-Fetch-Site: cross-site` arrives without an Origin (no-cors GETs).
+   - `HUB_HOST` must be a loopback address, or settings validation fails at startup.
+4. **Frontend: `vite.config.ts`.** The `/api` proxy reads the token file on every request and sets the `Authorization` header, with `changeOrigin` so the backend sees its own Host.
+5. **No fetch-based stream reader.** Because the proxy adds the header, the browser never holds the token, so `EventSource` keeps working unchanged. A fetch reader is only needed once the UI calls the backend directly (the Tauri window in Phase 4, or the phone in Phase 6). Revisit then.
+6. **Tests: 65 passed, 1 skipped** (new `tests/test_auth.py`, and `conftest.make_client` gives every test a loopback `base_url` and the token). `npm run build` passes.
+7. **End-to-end check** with a temporary backend (port 8799, scratch database and token) behind Vite (port 5174): direct without token 401; via proxy 200; evil Origin 403; cross-site 403; UI Origin 200. The token file's ACL lists only the current user, and the token doesn't appear in the backend log.
+8. **Fixed overlapping folder rows in the picker** (reported by the user after restarting). The list is a column flexbox capped at 220px, and rows with `overflow: hidden` were allowed to shrink to fit it instead of scrolling. `.folder-item` is now `flex: none`, and the name sits in `.folder-item-name` so long names end in an ellipsis.
+9. **Docs:** `backend/README.md` (Authentication section, PowerShell example), `frontend/README.md`, `backend/.env.example`, and an Auth bullet in `CLAUDE.md`.
+
+## Current state
+
+- Auth is built but **not committed**. Phase 1 is complete once it is committed and merged.
+- Any script or tool that calls the API directly now needs the token header (see `backend/README.md`).
+- The user checked it after restarting: a request without the token got 401, and the UI (session list, sending a message, the live stream) works through the proxy.
+- The Tauri origin (`http://tauri.localhost`, unverified) will need adding to the allowed origins in Phase 4.
+
+## Next steps
+
+**For the user**
+- [ ] Review and commit the auth work on `feature/authentication`, then merge to `main`.
+- [ ] Restart Claude Code and the backend from a new terminal so `uv` is on `Path` (from Session 6).
+
+**For the agent**
+- [ ] Check the folder picker in the browser after the row fix: Browse, Up, Hidden, recent chips, typed path.
+- [ ] Mark Phase 1 done in `plan.md` once auth is merged.
+- [ ] Update the rest of `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
+- [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
 - [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume), once the Codex CLI is ready.

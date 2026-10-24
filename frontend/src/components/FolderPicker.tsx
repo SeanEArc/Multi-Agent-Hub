@@ -107,7 +107,8 @@ export function FolderPicker({ value, onChange, recent }: Props) {
                 onClick={() => void open(folder.path)}
                 title={folder.path}
               >
-                <span aria-hidden>📁</span> {folder.name}
+                <span aria-hidden>📁</span>
+                <span className="folder-item-name">{folder.name}</span>
               </button>
             ))}
           </div>

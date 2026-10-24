@@ -2,23 +2,30 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import Engine
 
 from app.api import folders, health, sessions
+from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
 from app.db import init_db, make_engine
 from app.orchestrator import AdapterFactory, Orchestrator, default_adapter_factory
 
 
-def create_app(engine: Engine | None = None, adapter_factory: AdapterFactory = default_adapter_factory) -> FastAPI:
+def create_app(
+    engine: Engine | None = None,
+    adapter_factory: AdapterFactory = default_adapter_factory,
+    token: str | None = None,
+) -> FastAPI:
+    """Tests pass `token`; otherwise it is read from (or created in) the token file at startup."""
     settings = get_settings()
     engine = engine or make_engine(settings.database_url)
     orchestrator = Orchestrator(engine, adapter_factory)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.token = token or load_or_create_token(settings.token_file)
         init_db(engine)
         orchestrator.recover_interrupted()
         yield
@@ -35,10 +42,13 @@ def create_app(engine: Engine | None = None, adapter_factory: AdapterFactory = d
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Added last, so it runs first: bad Host/Origin is rejected before anything else.
+    app.add_middleware(HostOriginMiddleware, allowed_origins=settings.cors_origins)
 
-    app.include_router(health.router, prefix="/api")
-    app.include_router(sessions.router, prefix="/api")
-    app.include_router(folders.router, prefix="/api")
+    authenticated = [Depends(require_caller)]
+    app.include_router(health.router, prefix="/api", dependencies=authenticated)
+    app.include_router(sessions.router, prefix="/api", dependencies=authenticated)
+    app.include_router(folders.router, prefix="/api", dependencies=authenticated)
     return app
 
 

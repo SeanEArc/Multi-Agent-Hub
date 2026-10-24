@@ -24,6 +24,10 @@ The current Vite config reads this from the process environment, not from a
 frontend `.env` file. It controls the development proxy only. The browser uses
 relative `/api` URLs, including for event streaming. No frontend secrets are needed.
 
+The proxy also adds the backend's API token to every request. It reads the token from
+`../backend/data/token` (or `HUB_TOKEN_FILE`) on each request, so start the backend at
+least once first. Requests get 401 until that file exists.
+
 ## Check and build
 
 ```powershell

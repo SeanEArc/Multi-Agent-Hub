@@ -763,7 +763,10 @@ textarea:focus,
 }
 
 .folder-item {
+  /* Don't shrink to fit the capped list height (overflow: hidden would allow it); scroll instead. */
+  flex: none;
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 5px 8px;
   border: 0;
@@ -774,6 +777,10 @@ textarea:focus,
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+.folder-item-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -35,6 +35,10 @@ coverage/
 *.sqlite3-*
 *.log
 
+# Personal Claude Code settings and agent worktrees; the shared .claude/settings.json stays tracked.
+.claude/settings.local.json
+.claude/worktrees/
+
 # Machine-local editor and OS files.
 .idea/
 .vscode/

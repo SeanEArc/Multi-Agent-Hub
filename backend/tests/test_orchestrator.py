@@ -12,7 +12,7 @@ from app.main import create_app
 from app.models import AgentKind, AgentSession, SessionStatus
 from app.orchestrator import Orchestrator
 
-from conftest import fake_adapter_factory
+from conftest import TEST_TOKEN, fake_adapter_factory, make_client
 
 
 def create(client: TestClient, path: Path, mode: str, agent: str = "claude") -> str:
@@ -89,7 +89,7 @@ def test_delete_stops_running_turn(client: TestClient, tmp_path: Path) -> None:
 
 
 def test_unsupported_agent(engine: Engine, tmp_path: Path) -> None:
-    with TestClient(create_app(engine)) as client:  # real factory
+    with make_client(create_app(engine, token=TEST_TOKEN)) as client:  # real factory
         session_id = create(client, tmp_path, "ok", agent="codex")
         response = client.post(f"/api/sessions/{session_id}/messages", json={"text": "hi"})
         assert response.status_code == 400
@@ -102,7 +102,7 @@ def test_interrupted_turns_fail_on_startup(engine: Engine, tmp_path: Path) -> No
         db.add(AgentSession(id="s1", title="x", project_path=str(tmp_path), status=SessionStatus.WORKING))
         db.commit()
 
-    with TestClient(create_app(engine, fake_adapter_factory)) as client:
+    with make_client(create_app(engine, fake_adapter_factory, token=TEST_TOKEN)) as client:
         assert client.get("/api/sessions/s1").json()["status"] == "failed"
         assert event_types(client, "s1") == ["error"]
 
