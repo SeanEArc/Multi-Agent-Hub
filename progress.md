@@ -359,10 +359,45 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Next steps
 
+- Superseded by Session 12.
+
+---
+
+2026-10-25 16:16 (UTC-05:00)
+
+# Session 12: Pushed the token-count fix, opened `feature/hand-off`, and replanned Phase 3 with delegation and parallel-split phases (no code).
+
+## What was done
+
+1. **Pushed `main`** (`4a29e57`, the token-count fix). `fix/codex-token-count` was not pushed; it exists only locally.
+2. **Created `feature/hand-off`** from `main` at `4a29e57` for Phase 3.
+3. **Phase 3 replanned (user's direction: configurable handoff, a hand-off button, a default chain Claude → Codex → local model, and orchestrator-style handing of work to another agent that then returns).** Agreed approach: build handoff now as the base, and add delegation and the parallel split as later phases on the same data model. Recorded in `plan.md`:
+   - **Phase 3: Automatic and manual handoff.**
+     - Agent stints: a session becomes a sequence of stints, each with a reason (`new`, `limit`, `manual`, later `delegation`) and an optional parent stint. Running state is tracked per stint, with one at a time enforced for now.
+     - A hub-built handoff brief: task, messages, the previous agent's final messages, files and commands, and `git status` plus the diff. It costs no agent turns.
+     - Chain config: a global default, a per-session override, and auto-or-ask on a limit.
+     - Automatic handoff on `LIMIT_REACHED`.
+     - A manual hand-off button, which is also how handoff gets tested without exhausting a real limit.
+     - A handoff divider in the transcript.
+   - **Phase 7: Delegation** (new). A delegate button or `/delegate <agent> <task>` starts a child stint; when it finishes, the parent agent resumes with a return report (sub-task, final message, files changed, commands) and gives an overview. Agent-initiated delegation via a `[[DELEGATE ...]]` marker comes later in the phase. It is numbered 7 because "phase 6" (iPhone) is already referenced elsewhere, including a code comment in `config.py`.
+   - **Phase 8: Parallel split (minimal)** (new). A `/split claude: ... | codex: ...` style trigger runs child stints at the same time, each in its own git worktree. Their branches are merged back when all finish: a clean merge continues, a conflict stops and is shown to the user. The original agent then summarizes. Agent-planned splits, conflict resolution, dependent sub-tasks and a live side-by-side view are later development. It depends on phases 4 and 7.
+   - **Phase 4** notes that its worktree handling must work per stint, not only per session, because phase 8 reuses it. Several sessions at once stays in phase 4.
+   - **Section 1** (requirements) and **section 7** (decisions and open questions) are updated to match.
+4. **Build order:** phase 3, then 4 and 5, then 7, then 8, with phase 6 (iPhone) whenever wanted. Open: whether phase 7 comes before phase 5.
+
+## Current state
+
+- On `feature/hand-off`: only the `plan.md` and `progress.md` updates. No Phase 3 code yet.
+- Merged branches still present: `feature/codex-adapter` (local and GitHub) and `fix/codex-token-count` (local).
+
+## Next steps
+
 **For the user**
 - [ ] Decide whether to remove the probe repo's trusted-project entry from `~/.codex/config.toml`.
+- [ ] Decide whether to delete the merged branches `feature/codex-adapter` and `fix/codex-token-count`.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model).
 
 **For the agent**
-- [ ] Start Phase 3 (automatic handoff) on a new `feature/` branch from `main`.
-- [ ] Phase 3: handoff keys off `LIMIT_REACHED`. Claude warns early through `RATE_LIMIT` events. For Codex, `RATE_LIMIT` arrives only after a turn ends, and its `status` is `rejected` when `rate_limit_reached_type` is set, so the next turn could be handed off before it starts.
+- [ ] Phase 3 design details before code: the stint table and migration (and how existing sessions become one stint each), the exact brief contents and size limit, where the chain config lives (settings table or file), and the hand-off button's UI. Confirm with the user, then build on `feature/hand-off`.
+- [ ] Phase 3 detection: handoff keys off `LIMIT_REACHED`. Claude warns early through `RATE_LIMIT` events. For Codex, `RATE_LIMIT` arrives only after a turn ends, and its `status` is `rejected` when `rate_limit_reached_type` is set, so the next turn could be handed off before it starts.
 - [ ] Carried over: the rest of the `CLAUDE.md` update (frontend, streaming, folder endpoints), and `remark-gfm` for tables.

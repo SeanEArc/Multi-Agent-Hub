@@ -20,6 +20,9 @@ Working name: `multi-agent-hub`. Status: confirmed by the user in the planning i
 - Progress view per session. The way subagent progress is displayed is undecided and will be settled during the build.
 - Clicking a session shows its history and a per-task summary.
 - Automatic handoff when an agent hits a limit error (default chain Claude → Codex → local model). The chain is configurable per session, with a default config when the user sets nothing.
+- Manual handoff: the user can move a session to another agent at any time with a hand-off button (added 2026-10-25).
+- Delegation (later phase, added 2026-10-25): the user hands a sub-task to another agent, which works on it and then returns to the original agent with a short report of what it did and changed, like an orchestrator.
+- Parallel split (later phase, added 2026-10-25): several agents work on parts of one task at the same time and their work is combined. It starts with a simple user-triggered split and is developed further later. Several sessions at once on different projects is a separate requirement, covered by phase 4.
 - A "waiting for user input" state, so skills that ask the user questions can run.
 - UI style: a blend of the Claude Code and Codex interfaces.
 
@@ -126,13 +129,20 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance: a Codex session runs and appears in the UI like a Claude session, with no API charges.
 - Tradeoffs: doing this before handoff proves the adapter interface works for two different agents.
 
-**Phase 3: Automatic handoff**
-- Goal: work continues on the next agent when a limit error occurs.
-- In scope: limit-error detection per adapter, handoff summary generation (task, done, remaining, git diff), configurable chain per session with a default config, UI indication of handoff.
-- Exclusions: local model in the chain until phase 5.
+**Phase 3: Automatic and manual handoff**
+- Status: scope revised 2026-10-25; work starts on `feature/hand-off`.
+- Goal: work continues on the next agent when a limit error occurs, and the user can move a session to another agent at any time.
+- In scope:
+  - **Agent stints.** A session becomes a sequence of stints. Each stint records its agent, model, native session id, status, why it started (`new`, `limit`, `manual`, later `delegation`) and an optional parent stint it returns to. Phase 3 never sets the parent; it exists so delegation (phase 7) and the parallel split (phase 8) need no schema redesign. Running state is tracked per stint, not per session; phase 3 still allows only one running stint per session, so lifting that limit later is a rule change, not a rewrite. One transcript per session, with a divider at each handoff; events already record their agent.
+  - **Handoff brief.** Built by the hub from saved events, not written by an agent, so it costs no agent turns and works when the outgoing agent is out of usage: the original task and the user's later messages, the previous agent's final messages, files and commands it touched, what remains if known, and `git status` plus the diff.
+  - **Chain config.** A global default (Claude → Codex → local model) on a settings screen, a per-session override in the New session dialog, and a policy for limits: hand off automatically, or ask first.
+  - **Automatic handoff** on `LIMIT_REACHED`: the next available agent in the chain starts a new stint with the brief. If no agent is left, the session fails as today.
+  - **Manual hand-off button** in the session view: pick an agent and the same handoff runs, with the reason `manual`. It is also how handoff is tested without exhausting a real usage limit.
+  - **UI:** the handoff divider with its reason, the current agent in the header, and the brief viewable from the divider.
+- Exclusions: local model in the chain until phase 5 (shown but disabled); delegation and returning to the original agent (phase 7); running more than one stint at a time.
 - Dependencies: phases 1 and 2.
-- Acceptance: a simulated or real limit error moves a session from Claude to Codex and the task continues from the summary.
-- Tradeoffs: early-warning detection is best effort; the context lost in a summary may require the user to correct course.
+- Acceptance: a simulated limit and a manual hand-off each move a session from Claude to Codex (and back), and the task continues from the brief without the user repeating it.
+- Tradeoffs: early-warning detection is best effort (Claude reports usage windows during a turn, Codex only after it); the context lost in a brief may require the user to correct course; a hub-built brief is cheaper and always available, but less tailored than one written by an agent.
 
 **Phase 4: Multi-session dashboard and isolation**
 - Goal: several sessions on different projects, reviewable in one place.
@@ -140,6 +150,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Exclusions: remote access.
 - Dependencies: phases 1 to 3.
 - Acceptance: two or more sessions run in parallel without file conflicts, and each session's history and summary are viewable.
+- Note: the worktree handling built here is reused per stint by phase 8, so it should create, track and remove a worktree for any stint, not only for a whole session.
 - Tradeoffs: worktrees are not a sandbox; the subagent display decision may need a design iteration.
 
 **Phase 5: Local model**
@@ -149,6 +160,28 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Dependencies: phases 1 to 3, Ollama installed with a chosen model.
 - Acceptance: a handoff from Codex to a local model completes a simple task, with the quality limits clearly shown.
 - Tradeoffs: local models are weaker at coding, and hardware determines usefulness; the model choice is open.
+
+**Phase 7: Delegation** (added 2026-10-25; can be built before phase 6, which is marked later. Numbered 7 so existing references to phase 6 stay valid.)
+- Goal: an orchestrator-style session. The current agent hands a sub-task to another agent, which completes it and returns control to the original agent with a report.
+- In scope: a delegate action (button or slash command such as `/delegate claude write tests for the parser`) that starts a child stint with the handoff brief plus the sub-task; the child works through as many turns as needed, and its questions reach the user as usual; on completion the hub resumes the parent stint with a return report (the sub-task, the child's final message, files changed from git, commands run); the parent agent then gives the user a brief overview and continues. Later in the phase: agent-initiated delegation, where an agent ends its turn with a marker such as `[[DELEGATE claude: ...]]` (the same mechanism as `[[NEEDS_INPUT]]`), rather than an MCP tool that would block for minutes.
+- Exclusions: running several delegates at the same time (phase 8).
+- Dependencies: phase 3; phase 5 only if the local model is a delegate.
+- Acceptance: in a Codex session the user delegates a task to Claude, Claude completes it, and the session returns to Codex, which summarizes what Claude did and changed and continues.
+- Open: what happens when the delegate hits its limit (return a partial report, or move along the chain); exactly what the return report lists.
+- Tradeoffs: each agent sees a brief, not the other's full reasoning; delegating costs extra turns on both agents.
+
+**Phase 8: Parallel split (minimal)** (added 2026-10-25; a first version, developed further later)
+- Goal: several agents work on parts of one task at the same time, then their work is combined and the original agent continues.
+- In scope:
+  - **Trigger:** a Split action (button or slash command) where the user lists the sub-tasks and assigns an agent to each, for example `/split claude: build the settings page | codex: add the settings API`.
+  - **Running:** each sub-task becomes a child stint of the current stint and runs at the same time as the others, in its own git worktree and branch created from the session's current state. Each child gets the handoff brief plus its sub-task. Questions from a child reach the user as usual, labelled with that child.
+  - **Progress:** the session view lists the children with their agent, sub-task and status, and each child's transcript can be opened.
+  - **Combining:** when all children have finished, the hub merges their branches back into the session one at a time. A clean merge continues automatically; a conflict stops and is shown to the user, and nothing is resolved automatically.
+  - **Return:** the parent stint resumes with a combined report (per child: sub-task, final message, files changed, merge result), and the original agent gives the user an overview and continues.
+- Exclusions (later development): the agent proposing or planning the split itself; automatic conflict resolution; sub-tasks that depend on each other; children splitting again; a live side-by-side view; limits on how many agents run at once.
+- Dependencies: phase 4 (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
+- Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
+- Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
 
 **Phase 6 (later): iPhone access**
 - Goal: monitor and control sessions from the phone.
@@ -166,6 +199,9 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Python + FastAPI backend.
 - Approach A for Claude with a swappable adapter interface.
 - Automatic handoff on limit error, configurable per session with a default config.
+- Phase 3 also includes a manual hand-off button, and its data model (agent stints with a reason and an optional parent) is designed for delegation and parallel work later (decided 2026-10-25).
+- Delegation with return to the original agent is its own phase (phase 7), built after handoff so it reuses stints, the brief and the chain config (decided 2026-10-25).
+- Parallel split of one task across several agents is wanted, starting with a minimal user-triggered version in phase 8 and developed further later; several sessions at once stays in phase 4 (decided 2026-10-25).
 - Mobile postponed; Gmail and non-coding agents deferred.
 - Phase order as in section 6.
 - UI blends Claude Code and Codex.
@@ -186,3 +222,5 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Current Anthropic policy on subscription CLI use (recheck against Anthropic's own pages).
 - Windows Codex sign-in billing report: checked 2026-10-25 with ChatGPT login and no API key set; no API charges appeared.
 - Whether limit nearing can be detected before the error.
+- How the parallel split develops after its minimal version (phase 8): agent-proposed splits, conflict handling, dependent sub-tasks, and the live view.
+- Placement of phase 7 relative to phase 5 (both depend only on phase 3). Phase 8 comes after phases 4 and 7.
