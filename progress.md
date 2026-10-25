@@ -628,16 +628,17 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
    - **Leftover folders:** they left four empty-looking folders, `backend/.pytest-handoff-utf8-20261025`, `.pytest-sim-check-20261025`, `.pytest-sim-check-cleared-20261025` and `.pytest-sim-focused-20261025`. Git reports "Permission denied" on them, probably because the Codex sandbox user owns them (as with the Session 10 `tmp_path` case). They are not committed.
    - **Build:** the frontend type-checks.
 5. **An intermittent test failure** appeared once before committing ("1 failed, 115 passed"). It did not come back in 38 later full runs (8, then a background loop of 30). The failing test's name was lost: the run printed only the count, and the next passing run cleared pytest's `lastfailed` cache. It is likely another timing race in a test (like the `handing_off` one fixed in Session 17), not an app bug.
-6. **Committed** Sessions 13 to 18 on `feature/hand-off` and pushed it to GitHub.
+6. **Committed** Sessions 13 to 18 on `feature/hand-off` (`d394f4d`) and pushed it to GitHub.
+7. **Ignore check before merging (user asked):** only `backend/.env.example` (defaults only) is tracked. `.env`, `backend/data/` (database and token), build output, caches and `*.tsbuildinfo` are ignored. The branch diff has no keys, tokens, Windows username or email. One gap fixed: added `.pytest-*/` to `.gitignore` for the agents' pytest temp folders.
+8. **Fast-forwarded `main` to `feature/hand-off` and pushed both.**
 
 ## Current state
 
-- **Phase 3 is complete** on `feature/hand-off` (pushed). It is not merged into `main` yet.
+- **Phase 3 is complete** and merged: `main` and `feature/hand-off` point at the same commit, both pushed.
 
 ## Next steps
 
 **For the user**
-- [ ] Say whether to merge `feature/hand-off` into `main`.
 - [ ] Delete the four `backend/.pytest-*-20261025` folders if they're unwanted. They may need to be deleted from an elevated prompt, since the user's account can't open them.
 - [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model), and so which phase is next. (Carried over.)
 

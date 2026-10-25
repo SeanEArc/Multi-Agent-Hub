@@ -11,6 +11,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+# Temp folders from agents running pytest with --basetemp (they can be unreadable, owned by a sandbox user).
+.pytest-*/
 .mypy_cache/
 .ruff_cache/
 .coverage
