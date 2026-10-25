@@ -388,13 +388,12 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 ## Current state
 
 - On `feature/hand-off`: only the `plan.md` and `progress.md` updates. No Phase 3 code yet.
-- Merged branches still present: `feature/codex-adapter` (local and GitHub) and `fix/codex-token-count` (local).
+- Merged branches `feature/codex-adapter` (local and GitHub) and `fix/codex-token-count` (local) are kept, by the user's choice.
+- The probe repo's trusted-project entry in `~/.codex/config.toml` stays, by the user's choice. It is harmless and goes stale once the temp folder is removed. Every project used in a hub Codex session gets such an entry, which is expected.
 
 ## Next steps
 
 **For the user**
-- [ ] Decide whether to remove the probe repo's trusted-project entry from `~/.codex/config.toml`.
-- [ ] Decide whether to delete the merged branches `feature/codex-adapter` and `fix/codex-token-count`.
 - [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model).
 
 **For the agent**
