@@ -396,7 +396,253 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the user**
 - [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model).
 
-**For the agent**
-- [ ] Phase 3 design details before code: the stint table and migration (and how existing sessions become one stint each), the exact brief contents and size limit, where the chain config lives (settings table or file), and the hand-off button's UI. Confirm with the user, then build on `feature/hand-off`.
-- [ ] Phase 3 detection: handoff keys off `LIMIT_REACHED`. Claude warns early through `RATE_LIMIT` events. For Codex, `RATE_LIMIT` arrives only after a turn ends, and its `status` is `rejected` when `rate_limit_reached_type` is set, so the next turn could be handed off before it starts.
+- Superseded by Session 13.
+
+**For the agent (as written in Session 12)**
+- [x] Phase 3 design details before code: the stint table and migration (and how existing sessions become one stint each), the exact brief contents and size limit, where the chain config lives (settings table or file), and the hand-off button's UI. Confirm with the user, then build on `feature/hand-off`.
+- [x] Phase 3 detection: handoff keys off `LIMIT_REACHED`. Claude warns early through `RATE_LIMIT` events. For Codex, `RATE_LIMIT` arrives only after a turn ends, and its `status` is `rejected` when `rate_limit_reached_type` is set, so the next turn could be handed off before it starts.
 - [ ] Carried over: the rest of the `CLAUDE.md` update (frontend, streaming, folder endpoints), and `remark-gfm` for tables.
+
+---
+
+2026-10-25 16:38 (UTC-05:00)
+
+# Session 13: Built Phase 3 (automatic and manual handoff) on `feature/hand-off`, tested against the fake CLIs; not yet committed or tried in the UI.
+
+## What was done
+
+1. **Design confirmed by the user** (all four recommended options): an agent handed back to starts a **fresh session from the brief** (no resuming its old session); the **Hand off button starts the new agent at once**, with an optional note; the default chain and policy live in a **SQLite settings table**; the default limit policy is **hand off automatically**.
+2. **Data model and migration `a3c5d1f0b7e2`:** new `stints` table (agent, model, native session id, reason `new`/`limit`/`manual`/`delegation`, `parent_stint_id` reserved for phase 7, the brief, start and end times), `events.stint_id`, `sessions.chain` and `sessions.limit_policy`, and a `settings` table. `agent`, `model` and `native_session_id` moved from `sessions` to the stint; the API still returns them for the current stint. Each existing session becomes one `new` stint. The migration is hand-written with in-place `ALTER TABLE`, because a batch rebuild of `sessions` with foreign keys on would cascade and delete every event. **Checked on a copy of the real `hub.db`:** 5 sessions and 596 events kept, 5 stints, no event without a stint. The real database migrates the next time the backend starts. The downgrade works too (tested).
+3. **Handoff brief (`app/handoff.py`)**, built by the hub with no agent turns: the task, later user messages (last 10), the previous agent's last 3 messages, a turn cut off by the limit, files edited, the last 20 commands, `git status --short`, `git diff --stat HEAD` and `git diff HEAD`, then the user's note or "continue the task". Capped at 40k characters, with the diff at 20k and a "cut off" line saying how big it was. If the folder isn't a git repository, the brief says so.
+4. **Orchestrator:**
+   - **Limit handling.** A turn that ends in `LIMIT_REACHED` hands off to the next agent in the chain that can actually run (the local model is skipped until phase 5). With `ask`, it saves a `handoff_offer` event and waits for input. If no agent is left, the session fails with an error saying so.
+   - **Codex's after-turn report.** A message sent to a stint whose last usage report says `rejected` (and hasn't reset) goes straight to the next agent without spending a Codex turn.
+   - **Manual handoff** through `POST /sessions/{id}/handoff`. It returns 409 while a turn is running and 400 for an agent that can't run.
+5. **API:** `POST /sessions/{id}/handoff`, `GET /sessions/{id}/stints/{stint_id}` (with the brief), `GET/PUT /settings`; session responses now include `stints`, `chain` and `limit_policy`.
+6. **UI:**
+   - **Session header:** a **Hand off** button (pick agent and model, optional instructions); the header and the composer use the current agent's name.
+   - **Transcript:** a blue handoff divider ("Claude Code → Codex · usage limit") with **View brief**, and a "Hand off to Codex" button on an offer.
+   - **Usage meter and model chip** follow the current stint only.
+   - **Settings** (bottom of the sidebar) edits the default chain and policy.
+   - **New session dialog:** an optional custom chain and policy.
+   - **Token counts:** Codex's running total is reset at each handoff, so per-turn counts stay right.
+7. **Tests:** new `test_handoff.py` covers:
+   - automatic handoff in both directions;
+   - the ask policy and accepting its offer;
+   - global settings;
+   - the Codex pre-turn limit check, including an expired report;
+   - a manual handoff with a note, then a reply that resumes the new agent;
+   - handing back to an agent, which gets a fresh session;
+   - 409/400/404 responses;
+   - brief contents and the diff cap;
+   - `git_state` on a real repository;
+   - `next_in_chain`.
+
+   `test_db.py` adds model-versus-migration and upgrade/downgrade checks. **107 passed, 2 skipped** (the live tests). The frontend type-checks and builds.
+
+## Current state
+
+- All Phase 3 code is uncommitted on `feature/hand-off`.
+- Not run against the real CLIs yet: every handoff test uses the fakes.
+
+## Next steps
+
+- Superseded by Session 14.
+
+**As written in Session 13**
+
+**For the user**
+- [x] Phase 3 acceptance test in the UI (uses real Claude and Codex turns): start a Claude session in a git project, use **Hand off** to move it to Codex and back to Claude, open **View brief**, and check the task continues without repeating it. A real limit can't be triggered on demand; the automatic path is covered by the fake-CLI tests, and setting the policy to "Ask me first" in Settings shows the offer flow if a limit does happen.
+- [ ] Say whether to commit (and push) the Phase 3 work on `feature/hand-off`.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model). (Carried over.)
+
+**For the agent**
+- [ ] Fix whatever the acceptance test turns up, then mark Phase 3 done in `plan.md`.
+- [ ] Possible follow-ups, if wanted: change a session's chain or policy after it is created (only set at creation now); show the stint list in the session view.
+- [ ] Carried over: `remark-gfm` for tables in the transcript (briefs contain none, but agent replies do).
+
+---
+
+2026-10-25 17:39 (UTC-05:00)
+
+# Session 14: The sidebar now shows each session's current agent and model, as "Claude (model)" or "Codex (model)", and updates after a handoff.
+
+## What was done
+
+1. **The user tested Phase 3 in the UI:** it works, but the sidebar showed only the lowercase agent name, with no model when the default model was used.
+2. **Model the agent actually uses.**
+   - **Claude** reports it in its init event (the `started` event).
+   - **Codex's** JSON stream doesn't include it, but its session file records it in each turn's `turn_context`. Checked on the real file: `gpt-6.1-sol`.
+   - **Codex adapter:** `read_model` reads that value after each turn and emits a new `model` event. It looks in the file's last 512 KB first, then the whole file, because a turn with large outputs can push the `turn_context` out of that tail.
+   - **API:** `SessionRead.reported_model` is the latest `started`/`model` model of the **current** stint, so after a handoff the previous agent's model no longer shows.
+3. **UI.** The sidebar shows `agentLabel(session)`, for example "Claude (claude-opus-5-5) · folder", "Codex (gpt-6.1-sol)", or "(default)" before the agent has reported a model. The open session refreshes the list when its agent reports a different model, and on each handoff. The header's model chip uses the same value.
+4. **Tests:** reading the model (latest turn, past the tail), a Codex turn ending with a `model` event, and `reported_model` before a turn, after it, and after a handoff. **111 passed, 2 skipped**; the frontend type-checks.
+
+## Current state
+
+- All Phase 3 work (Sessions 13 and 14) is uncommitted on `feature/hand-off`.
+- Sessions that aren't open still refresh only on the sidebar's 60-second poll, so a handoff in a background session shows there within a minute.
+
+## Next steps
+
+- Superseded by Session 15.
+
+**As written in Session 14**
+
+**For the user**
+- [ ] Check the sidebar label in the UI (after a backend restart), including after a handoff.
+- [ ] Send any other UI items from the Phase 3 test.
+- [ ] Say whether to commit (and push) the Phase 3 work on `feature/hand-off`.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model). (Carried over.)
+
+**For the agent**
+- [ ] Fix the remaining UI items, then mark Phase 3 done in `plan.md`.
+- [ ] Possible follow-ups: change a session's chain or policy after it is created; a faster sidebar refresh for background sessions.
+- [ ] Carried over: `remark-gfm` for tables in the transcript.
+
+---
+
+2026-10-25 18:01 (UTC-05:00)
+
+# Session 15: The usage meter in the session header now names whose plan it shows (Claude Code or Codex).
+
+## What was done
+
+1. **UI item from the user:** the plan usage meter at the top of a session didn't say whether it was Claude's or Codex's limits.
+2. **Fix (`SessionView.tsx`, `styles.css`):** the meter starts with the agent's name, for example "Codex Plus · 5h ▬ 1% · 7d ▬ 0%" or "Claude Code · 5h ▬ 8% · 7d ▬ 11%". The name comes from the agent saved on the `rate_limit` event itself, and the plan from Codex's `plan_type`; Claude reports no plan. The meter already followed only the current stint (Session 13), so after a handoff it shows the new agent's plan once that agent reports one.
+3. **Tooltip:** "Share of your Codex (plus) plan's usage limits used", followed by each window's reset time. Claude names the reset `resetsAt` and the Codex adapter `resets_at`; both are epoch seconds, checked against saved events, and both are read.
+4. The frontend type-checks. UI only; no backend change.
+
+## Current state
+
+- All Phase 3 work (Sessions 13 to 15) is uncommitted on `feature/hand-off`.
+
+## Next steps
+
+- Superseded by Session 16.
+
+**As written in Session 15**
+
+**For the user**
+- [ ] Check the sidebar label and the usage meter in the UI, including after a handoff.
+- [ ] Send any other UI items from the Phase 3 test.
+- [ ] Say whether to commit (and push) the Phase 3 work on `feature/hand-off`.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model). (Carried over.)
+
+**For the agent**
+- [ ] Fix the remaining UI items, then mark Phase 3 done in `plan.md`.
+- [ ] Possible follow-ups: change a session's chain or policy after it is created; a faster sidebar refresh for background sessions.
+- [ ] Carried over: `remark-gfm` for tables in the transcript.
+
+---
+
+2026-10-25 18:04 (UTC-05:00)
+
+# Session 16: The session header now shows plan usage for both Claude and Codex at once, not just the current agent's.
+
+## What was done
+
+1. **User's request:** show the usage for both Claude and Codex instead of only the agent working in the open session.
+2. **Backend: `GET /api/usage`** (`app/api/usage.py`, registered in `main.py`). For each agent it returns the latest `rate_limit` or `limit_reached` event that has usage windows, from **any** session, because limits belong to the account, not the session. It skips a Codex limit found only from error text, which has no windows. It returns `status`, `windows`, `plan_type` and `reported_at`. Test: `test_usage.py`. Checked on the copy of the real database.
+3. **UI: `UsageMeters.tsx`** replaces Session 15's single meter.
+   - **Layout:** the agents sit side by side at the top right, split by a thin divider, with the open session's agent first (for example "Codex plus · 5h 1% · 7d 0% | Claude Code · 5h 8% · 7d 11%"). They were stacked at first; the user asked for side by side, which only changed `styles.css`.
+   - **When it updates:** whenever the open session saves a new usage report, and every 60 seconds.
+   - **Limit and reset states:** a reached limit shows in red. A window whose reset time has passed shows "reset", dimmed, since the saved figure is out of date.
+   - **Tooltip:** the plan, when it was reported, and each reset time.
+4. **Limitation:** figures come only from turns run in the hub. Usage from the Claude or Codex apps outside the hub shows up after the agent's next hub turn.
+5. **Tests:** 112 passed, 2 skipped. The frontend type-checks and builds.
+
+## Current state
+
+- All Phase 3 work (Sessions 13 to 16) is uncommitted on `feature/hand-off`.
+
+## Next steps
+
+- Superseded by Session 17.
+
+**As written in Session 16**
+
+**For the user**
+- [x] Check the sidebar label and the two usage meters in the UI (after a backend restart, which `/api/usage` needs).
+- [ ] Send any other UI items from the Phase 3 test.
+- [ ] Say whether to commit (and push) the Phase 3 work on `feature/hand-off`.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model). (Carried over.)
+
+**For the agent**
+- [ ] Fix the remaining UI items, then mark Phase 3 done in `plan.md`.
+- [ ] Possible follow-ups: read Codex usage straight from its newest session file, so it is current even without a hub turn; change a session's chain or policy after creation; a faster sidebar refresh for background sessions.
+- [ ] Carried over: `remark-gfm` for tables in the transcript.
+
+---
+
+2026-10-25 18:19 (UTC-05:00)
+
+# Session 17: Added `HUB_SIMULATE_LIMIT` so automatic handoff and the "Ask me first" flow can be tried with the real agents, plus a guard against handoff loops.
+
+## What was done
+
+1. **Status check (user asked what Phase 3 is missing):** everything in scope is built. The acceptance test still needed a limit in the real app, because a real one can't be triggered on demand. The "What remains" item of the brief is covered only by the agent's last messages. The user checked the sidebar and the side-by-side usage meters (Session 16); both look good.
+2. **`HUB_SIMULATE_LIMIT`** (`config.py`, comma-separated, for example `claude` or `claude,codex`, off by default). Each turn by a listed agent **runs for real** and is then ended as a usage limit: `_simulated_limit` replaces the turn's `completed` or `question` event with `limit_reached` (`simulated: true`). It therefore costs real usage, and the brief contains real work. The backend logs a warning at startup when it is on, and the transcript says "Simulated usage limit for Claude Code (`HUB_SIMULATE_LIMIT` is set)". Documented in `.env.example` and `CLAUDE.md`.
+3. **Loop guard (`_limited_agents`).** An automatic handoff skips agents that already hit their limit in the current run: walking back from the current stint through `limit` stints that never finished a turn. Without it, a chain such as Claude, Codex, Claude with both agents limited (simulated or real) would hand off back and forth forever, spending real turns. An agent that finished a turn ends the run, so an earlier agent whose limit may have reset can be tried again.
+4. **Flaky test fixed:** the `wait_until_idle` helper treated `handing_off` as idle, so a poll during the brief's git snapshot returned early (1 failure in about 17 runs). It now waits through `handing_off`. 5 runs in a row passed after the fix.
+5. **Tests:** a simulated limit hands off after a real turn; a simulated limit with the ask policy offers the handoff; two limited agents don't loop; an agent that made progress lets an earlier one take over again. **116 passed, 2 skipped**; the frontend type-checks.
+
+## Current state
+
+- All Phase 3 work (Sessions 13 to 17) is uncommitted on `feature/hand-off`.
+
+## Next steps
+
+- Superseded by Session 18.
+
+**As written in Session 17**
+
+**For the user**
+- [x] Acceptance test with the real agents (each step spends real usage). Restart the backend from `backend/`:
+  1. **Claude → Codex, automatic:** `$env:HUB_SIMULATE_LIMIT="claude"; uv run python -m app.main`. Start a Claude session in a git project with a small task. Claude's turn runs, the transcript shows the simulated limit, and Codex takes over from the brief.
+  2. **Codex → Claude, automatic:** restart with `$env:HUB_SIMULATE_LIMIT="codex"`. Start a Codex session whose custom chain in the New session dialog is Codex, then Claude.
+  3. **Ask me first:** with either setting, set the session's (or Settings') policy to "Ask me first". The offer and its "Hand off to ..." button appear.
+  4. Afterwards: `Remove-Item Env:HUB_SIMULATE_LIMIT` and restart, so normal sessions aren't affected.
+- [ ] Say whether to commit (and push) the Phase 3 work on `feature/hand-off`.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model). (Carried over.)
+
+**For the agent**
+- [ ] After the acceptance test, mark Phase 3 done in `plan.md`.
+- [ ] Offered, not started: a "What remains" section in the brief from the agent's latest to-do list.
+- [ ] Possible follow-ups: read Codex usage straight from its newest session file; change a session's chain or policy after creation; a faster sidebar refresh for background sessions.
+- [ ] Carried over: `remark-gfm` for tables in the transcript.
+
+---
+
+2026-10-25 18:52 (UTC-05:00)
+
+# Session 18: The Phase 3 acceptance test passed with the real agents; Phase 3 is marked done and committed on `feature/hand-off`.
+
+## What was done
+
+1. **Acceptance test passed (user, 2026-10-25):** the automatic handoff, with the limit simulated by `HUB_SIMULATE_LIMIT`, worked with the real agents. Together with the manual handoff tested earlier, this meets Phase 3's acceptance criteria.
+2. **Shell note:** the user's terminal is Git Bash, where the PowerShell form `$env:HUB_SIMULATE_LIMIT="claude"` fails. The Bash form is `HUB_SIMULATE_LIMIT=claude uv run python -m app.main`; stopping the backend clears it.
+3. **Marked Phase 3 done in `plan.md`** (2026-10-25), noting that the automatic path was tested with a simulated limit.
+4. **Pre-commit checks:**
+   - **Agents during the test:** they changed no files in this repo; every source file was last changed by Sessions 13 to 17.
+   - **Leftover folders:** they left four empty-looking folders, `backend/.pytest-handoff-utf8-20261025`, `.pytest-sim-check-20261025`, `.pytest-sim-check-cleared-20261025` and `.pytest-sim-focused-20261025`. Git reports "Permission denied" on them, probably because the Codex sandbox user owns them (as with the Session 10 `tmp_path` case). They are not committed.
+   - **Build:** the frontend type-checks.
+5. **An intermittent test failure** appeared once before committing ("1 failed, 115 passed"). It did not come back in 38 later full runs (8, then a background loop of 30). The failing test's name was lost: the run printed only the count, and the next passing run cleared pytest's `lastfailed` cache. It is likely another timing race in a test (like the `handing_off` one fixed in Session 17), not an app bug.
+6. **Committed** Sessions 13 to 18 on `feature/hand-off` and pushed it to GitHub.
+
+## Current state
+
+- **Phase 3 is complete** on `feature/hand-off` (pushed). It is not merged into `main` yet.
+
+## Next steps
+
+**For the user**
+- [ ] Say whether to merge `feature/hand-off` into `main`.
+- [ ] Delete the four `backend/.pytest-*-20261025` folders if they're unwanted. They may need to be deleted from an elevated prompt, since the user's account can't open them.
+- [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model), and so which phase is next. (Carried over.)
+
+**For the agent**
+- [ ] If the intermittent failure shows up again, capture its name (`uv run pytest -rf`) and fix the race.
+- [ ] Offered, not started: a "What remains" section in the brief from the agent's latest to-do list.
+- [ ] Possible follow-ups: Bash versions of the commands in `CLAUDE.md`; read Codex usage straight from its newest session file; change a session's chain or policy after creation; a faster sidebar refresh for background sessions.
+- [ ] Carried over: `remark-gfm` for tables in the transcript.

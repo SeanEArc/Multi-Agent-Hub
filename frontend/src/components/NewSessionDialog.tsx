@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { AgentKind, NewSession } from "../api";
+import { MODELS, type AgentKind, type ChainEntry, type LimitPolicy, type NewSession } from "../api";
+import { ChainEditor, POLICY_LABELS } from "./ChainEditor";
 import { FolderPicker } from "./FolderPicker";
 
 interface Props {
@@ -9,12 +10,7 @@ interface Props {
   recentProjects: string[];
 }
 
-// Values each CLI accepts for --model; empty means the CLI's default.
-// Codex slugs come from its model cache (codex-cli 0.164.0).
-const MODELS: Partial<Record<AgentKind, string[]>> = {
-  claude: ["", "fable", "opus", "sonnet", "haiku"],
-  codex: ["", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"],
-};
+const ALL_AGENTS: AgentKind[] = ["claude", "codex", "ollama"];
 
 export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -23,6 +19,9 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   const [agent, setAgent] = useState<AgentKind>("claude");
   const [model, setModel] = useState("");
   const [firstMessage, setFirstMessage] = useState("");
+  // null: use the defaults from Settings.
+  const [chain, setChain] = useState<ChainEntry[] | null>(null);
+  const [policy, setPolicy] = useState<LimitPolicy | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +35,14 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
     setError(null);
     try {
       await onCreate(
-        { title: title.trim(), project_path: projectPath.trim(), agent, model: model || null },
+        {
+          title: title.trim(),
+          project_path: projectPath.trim(),
+          agent,
+          model: model || null,
+          chain,
+          limit_policy: policy || null,
+        },
         firstMessage.trim(),
       );
     } catch (err) {
@@ -88,6 +94,40 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="field">
+          <span>Handoff</span>
+          <div className="field-row">
+            <label>
+              Chain
+              <select
+                value={chain ? "custom" : "default"}
+                onChange={(e) =>
+                  setChain(
+                    e.target.value === "custom"
+                      ? [{ agent, model: model || null }, ...ALL_AGENTS.filter((a) => a !== agent).map((a) => ({ agent: a, model: null }))]
+                      : null,
+                  )
+                }
+              >
+                <option value="default">Default (from Settings)</option>
+                <option value="custom">Custom for this session</option>
+              </select>
+            </label>
+            <label>
+              On a usage limit
+              <select value={policy} onChange={(e) => setPolicy(e.target.value as LimitPolicy | "")}>
+                <option value="">Default (from Settings)</option>
+                {Object.entries(POLICY_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {chain && <ChainEditor chain={chain} onChange={setChain} />}
         </div>
 
         <label>

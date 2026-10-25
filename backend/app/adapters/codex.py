@@ -140,31 +140,66 @@ class CodexAdapter(CliAdapter):
     async def _after_turn(self) -> list[AgentEvent]:
         if self._session_id is None:
             return []
+        events = []
+        model = await asyncio.to_thread(read_model, self.codex_home, self._session_id)
+        if model:
+            events.append(AgentEvent(EventType.MODEL, {"model": model}))
         limits = await asyncio.to_thread(read_rate_limits, self.codex_home, self._session_id)
-        return [rate_limit_event(limits)] if limits else []
+        if limits:
+            events.append(rate_limit_event(limits))
+        return events
 
 
 def read_rate_limits(codex_home: Path, thread_id: str) -> dict[str, Any] | None:
     """The usage windows from the thread's latest token_count, or None if they can't be found."""
+    payload = _last_payload(codex_home, thread_id, "token_count", whole_file=False)
+    limits = (payload or {}).get("rate_limits")
+    return limits if isinstance(limits, dict) else None
+
+
+def read_model(codex_home: Path, thread_id: str) -> str | None:
+    """The model of the thread's latest turn (its turn_context), so a default model can be named."""
+    model = (_last_payload(codex_home, thread_id, "turn_context", whole_file=True) or {}).get("model")
+    return model if isinstance(model, str) and model else None
+
+
+def _last_payload(codex_home: Path, thread_id: str, kind: str, whole_file: bool) -> dict[str, Any] | None:
+    """The payload of the last `kind` line in the thread's session file, looking in its tail first.
+
+    A turn_context starts each turn, so a turn with large outputs can push it out of the
+    tail; `whole_file` then reads the rest of the file.
+    """
     files = sorted((codex_home / "sessions").glob(f"*/*/*/rollout-*-{thread_id}.jsonl"))
     if not files:
         return None
     try:
         with files[-1].open("rb") as f:
-            f.seek(max(0, f.seek(0, os.SEEK_END) - ROLLOUT_TAIL))
-            tail = f.read()
+            size = f.seek(0, os.SEEK_END)
+            f.seek(max(0, size - ROLLOUT_TAIL))
+            found = _find_last(f.read(), kind)
+            if found is None and whole_file and size > ROLLOUT_TAIL:
+                f.seek(0)
+                found = _find_last(f.read(), kind)
     except OSError:
         return None
-    for line in reversed(tail.splitlines()):
-        if b'"token_count"' not in line:
+    return found
+
+
+def _find_last(data: bytes, kind: str) -> dict[str, Any] | None:
+    marker = f'"{kind}"'.encode()
+    for line in reversed(data.splitlines()):
+        if marker not in line:
             continue
         try:
-            payload = json.loads(line).get("payload") or {}
-        except (json.JSONDecodeError, AttributeError):
+            record = json.loads(line)
+        except json.JSONDecodeError:
             continue  # the first line of the tail can be cut off
-        if payload.get("type") == "token_count":
-            limits = payload.get("rate_limits")
-            return limits if isinstance(limits, dict) else None
+        if not isinstance(record, dict):
+            continue
+        payload = record.get("payload")
+        # token_count is an event_msg payload type; turn_context is a record type of its own.
+        if isinstance(payload, dict) and kind in (record.get("type"), payload.get("type")):
+            return payload
     return None
 
 

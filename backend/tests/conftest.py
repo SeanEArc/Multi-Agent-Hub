@@ -13,7 +13,8 @@ from app.adapters.claude import ClaudeAdapter
 from app.adapters.codex import CodexAdapter
 from app.db import make_engine
 from app.main import create_app
-from app.models import AgentKind, AgentSession
+from app.models import AgentKind, AgentSession, Stint
+from app.orchestrator import AgentUnavailable
 
 FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
 FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
@@ -27,20 +28,29 @@ def make_client(app: FastAPI, token: str | None = TEST_TOKEN) -> TestClient:
     return TestClient(app, base_url=BASE_URL, headers=headers)
 
 
-def fake_adapter_factory(session: AgentSession) -> AgentAdapter:
+def fake_mode(title: str, agent: AgentKind) -> str:
+    """The fake CLI mode from a session title: "ok", or per agent as in "claude:limit codex:question"."""
+    modes = dict(part.split(":", 1) for part in title.split() if ":" in part)
+    return modes.get(agent.value, "ok") if modes else title
+
+
+def fake_adapter_factory(session: AgentSession, stint: Stint) -> AgentAdapter:
     """Adapter driving tests/fake_claude.py or fake_codex.py; the session title picks its mode (ok, question, hang...)."""
-    if session.agent is AgentKind.CODEX:
+    mode = fake_mode(session.title, stint.agent)
+    if stint.agent is AgentKind.CODEX:
         return CodexAdapter(
             Path(session.project_path),
-            native_session_id=session.native_session_id,
-            command=[sys.executable, str(FAKE_CODEX), session.title],
+            native_session_id=stint.native_session_id,
+            command=[sys.executable, str(FAKE_CODEX), mode],
             codex_home=Path(session.project_path) / "codex-home",  # never the real ~/.codex
         )
-    return ClaudeAdapter(
-        Path(session.project_path),
-        native_session_id=session.native_session_id,
-        command=[sys.executable, str(FAKE_CLAUDE), session.title],
-    )
+    if stint.agent is AgentKind.CLAUDE:
+        return ClaudeAdapter(
+            Path(session.project_path),
+            native_session_id=stint.native_session_id,
+            command=[sys.executable, str(FAKE_CLAUDE), mode],
+        )
+    raise AgentUnavailable(f"The {stint.agent} agent is not supported yet")
 
 
 @pytest.fixture

@@ -9,14 +9,15 @@ from sqlmodel import Session
 
 from app.db import init_db
 from app.main import create_app
-from app.models import AgentKind, AgentSession, SessionStatus
+from app.models import AgentKind, AgentSession, SessionStatus, Stint, StintReason
 from app.orchestrator import Orchestrator
 
 from conftest import TEST_TOKEN, fake_adapter_factory, make_client
 
 
-def create(client: TestClient, path: Path, mode: str, agent: str = "claude") -> str:
-    response = client.post("/api/sessions", json={"title": mode, "project_path": str(path), "agent": agent})
+def create(client: TestClient, path: Path, mode: str, agent: str = "claude", **extra) -> str:
+    body = {"title": mode, "project_path": str(path), "agent": agent, **extra}
+    response = client.post("/api/sessions", json=body)
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
@@ -25,7 +26,8 @@ def wait_until_idle(client: TestClient, session_id: str, timeout: float = 15) ->
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         body = client.get(f"/api/sessions/{session_id}").json()
-        if body["status"] != "working":
+        # handing_off is busy too: an automatic handoff passes through it between two turns.
+        if body["status"] not in ("working", "handing_off"):
             return body
         time.sleep(0.05)
     raise AssertionError("session still working")
@@ -77,11 +79,12 @@ def test_codex_session_saves_reported_thread_and_resumes_it(client: TestClient, 
     assert sent["args"][-2] == first["native_session_id"]
 
 
-def test_codex_limit_fails_session(client: TestClient, tmp_path: Path) -> None:
+def test_codex_limit_fails_when_chain_has_no_agent_left(client: TestClient, tmp_path: Path) -> None:
+    # The default chain is Claude, Codex, local model, and the local model isn't available yet.
     session_id = create(client, tmp_path, "limit", agent="codex")
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
-    assert wait_until_idle(client, session_id)["status"] == "failed"  # phase 3 hands off instead
-    assert event_types(client, session_id)[-1] == "limit_reached"
+    assert wait_until_idle(client, session_id)["status"] == "failed"
+    assert event_types(client, session_id)[-2:] == ["limit_reached", "error"]
 
 
 def test_busy_session_rejects_second_message_and_can_stop(client: TestClient, tmp_path: Path) -> None:
@@ -122,6 +125,7 @@ def test_interrupted_turns_fail_on_startup(engine: Engine, tmp_path: Path) -> No
     init_db(engine)
     with Session(engine) as db:
         db.add(AgentSession(id="s1", title="x", project_path=str(tmp_path), status=SessionStatus.WORKING))
+        db.add(Stint(session_id="s1", seq=1, agent=AgentKind.CLAUDE, reason=StintReason.NEW))
         db.commit()
 
     with make_client(create_app(engine, fake_adapter_factory, token=TEST_TOKEN)) as client:
@@ -132,7 +136,8 @@ def test_interrupted_turns_fail_on_startup(engine: Engine, tmp_path: Path) -> No
 def test_follow_sends_backlog_then_live_events(engine: Engine, tmp_path: Path) -> None:
     init_db(engine)
     with Session(engine) as db:
-        db.add(AgentSession(id="s1", title="ok", project_path=str(tmp_path), agent=AgentKind.CLAUDE))
+        db.add(AgentSession(id="s1", title="ok", project_path=str(tmp_path)))
+        db.add(Stint(session_id="s1", seq=1, agent=AgentKind.CLAUDE, reason=StintReason.NEW))
         db.commit()
 
     async def run() -> list[tuple[str, object]]:

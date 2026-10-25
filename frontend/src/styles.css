@@ -378,6 +378,37 @@ textarea:focus,
   color: var(--muted);
 }
 
+.usage-meters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* A divider between agents, so their windows don't run together. */
+.usage-meters .usage-meter + .usage-meter {
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+/* The agent's last report says its limit is reached. */
+.usage-meter.limit .usage-agent {
+  color: var(--danger);
+}
+
+.usage-meter.limit .usage-bar span {
+  background: var(--danger);
+}
+
+.usage-window.stale {
+  opacity: 0.6;
+}
+
+.usage-agent {
+  color: var(--text);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
 .usage-window {
   display: inline-flex;
   align-items: center;
@@ -833,6 +864,90 @@ textarea:focus,
   margin-top: 4px;
 }
 
+.dialog .field > span:first-child {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dialog p {
+  margin: -6px 0 0;
+}
+
+/* --- Handoff ------------------------------------------------------------------------------ */
+
+.chain-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.chain-step {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.chain-buttons {
+  display: flex;
+  gap: 2px;
+}
+
+.chain-buttons .button {
+  padding: 2px 7px;
+}
+
+.chain-note {
+  grid-column: 2 / -1;
+}
+
+.sidebar-settings {
+  margin: auto 4px 0;
+}
+
+.handoff {
+  border-top: 1px solid var(--info);
+  padding-top: 8px;
+}
+
+.handoff-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--info);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.handoff-brief {
+  margin-top: 8px;
+  padding: 4px 14px;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-size: 13px;
+}
+
+.handoff-offer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 /* --- Narrow windows ------------------------------------------------------------------------ */
 
 @media (max-width: 720px) {
@@ -852,7 +967,7 @@ textarea:focus,
     padding: 10px 16px;
   }
 
-  .usage-meter {
+  .usage-meters {
     display: none;
   }
 

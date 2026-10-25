@@ -129,8 +129,8 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance: a Codex session runs and appears in the UI like a Claude session, with no API charges.
 - Tradeoffs: doing this before handoff proves the adapter interface works for two different agents.
 
-**Phase 3: Automatic and manual handoff**
-- Status: scope revised 2026-10-25; work starts on `feature/hand-off`.
+**Phase 3: Automatic and manual handoff** (done 2026-10-25)
+- Status: complete. Built on `feature/hand-off` (2026-10-25). The acceptance test passed in the UI with the real agents (2026-10-25): manual hand-off, and automatic handoff on a limit simulated with the dev-only `HUB_SIMULATE_LIMIT` switch, since a real limit can't be triggered on demand. Design choices confirmed by the user: an agent handed back to starts a fresh session from the brief; the hand-off button starts the new agent at once; the chain config lives in a SQLite settings table; the default limit policy is automatic.
 - Goal: work continues on the next agent when a limit error occurs, and the user can move a session to another agent at any time.
 - In scope:
   - **Agent stints.** A session becomes a sequence of stints. Each stint records its agent, model, native session id, status, why it started (`new`, `limit`, `manual`, later `delegation`) and an optional parent stint it returns to. Phase 3 never sets the parent; it exists so delegation (phase 7) and the parallel split (phase 8) need no schema redesign. Running state is tracked per stint, not per session; phase 3 still allows only one running stint per session, so lifting that limit later is a rule change, not a rewrite. One transcript per session, with a divider at each handoff; events already record their agent.

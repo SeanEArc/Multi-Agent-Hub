@@ -1,10 +1,12 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.auth import is_loopback
+from app.models import AgentKind
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,6 +33,16 @@ class Settings(BaseSettings):
     codex_sandbox: str = "workspace-write"
     # Full path to the native codex.exe, if it isn't found on PATH or inside the npm install.
     codex_path: str | None = None
+    # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was
+    # reached, so handoff can be tried with the real CLIs. The turn still runs and uses real usage.
+    simulate_limit: Annotated[list[AgentKind], NoDecode] = []
+
+    @field_validator("simulate_limit", mode="before")
+    @classmethod
+    def _comma_separated(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip().lower() for part in value.split(",") if part.strip()]
+        return value
 
     @field_validator("host")
     @classmethod

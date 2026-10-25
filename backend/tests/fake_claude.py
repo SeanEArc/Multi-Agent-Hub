@@ -1,6 +1,6 @@
 """Stand-in for the `claude` CLI. Usage: python fake_claude.py <mode> [claude args...]
 
-Modes: ok, question, crash, hang. Echoes its args and stdin prompt back in the
+Modes: ok, question, limit, crash, hang. Echoes its args and stdin prompt back in the
 result so tests can check what the adapter sent.
 """
 
@@ -23,6 +23,10 @@ if mode == "crash":
     sys.exit(2)
 if mode == "hang":
     time.sleep(60)
+if mode == "limit":
+    emit({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "five_hour", "resetsAt": 4102444800}})
+    emit({"type": "result", "subtype": "success", "is_error": True, "result": "You've hit your limit", "num_turns": 1})
+    sys.exit(1)
 
 emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"echo: {prompt}"}]}, "parent_tool_use_id": None})
 text = json.dumps({"args": args, "prompt": prompt})

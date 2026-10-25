@@ -6,7 +6,8 @@ from typing import Any
 
 from pydantic import field_validator
 from sqlalchemy import Enum as SAEnum
-from sqlmodel import JSON, Column, Field, SQLModel
+from sqlalchemy import UniqueConstraint
+from sqlmodel import JSON, Column, Field, Session, SQLModel, col, select
 
 
 def utcnow() -> datetime:
@@ -43,31 +44,81 @@ class AgentKind(StrEnum):
     OLLAMA = "ollama"
 
 
-# --- Sessions ---------------------------------------------------------------
+class StintReason(StrEnum):
+    """Why an agent took over the session."""
+
+    NEW = "new"  # the session's first agent
+    LIMIT = "limit"  # the previous agent hit its usage limit
+    MANUAL = "manual"  # the user handed the session over
+    DELEGATION = "delegation"  # phase 7
 
 
-class SessionBase(SQLModel):
-    title: str
-    project_path: str
-    agent: AgentKind = AgentKind.CLAUDE
+class LimitPolicy(StrEnum):
+    AUTO = "auto"  # hand off to the next agent in the chain right away
+    ASK = "ask"  # wait until the user confirms the handoff
+
+
+class ChainEntry(SQLModel):
+    agent: AgentKind
     model: str | None = None
 
 
-class AgentSession(SessionBase, table=True):
+# --- Sessions ---------------------------------------------------------------
+
+
+class AgentSession(SQLModel, table=True):
+    """A task in a project folder. The agents working on it are its stints, one after another."""
+
     __tablename__ = "sessions"
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex, primary_key=True)
-    agent: AgentKind = Field(default=AgentKind.CLAUDE, sa_column=enum_column(AgentKind, nullable=False))
+    title: str
+    project_path: str
     status: SessionStatus = Field(
         default=SessionStatus.READY, sa_column=enum_column(SessionStatus, nullable=False)
     )
-    # The agent CLI's own session id, used to resume (e.g. `claude --resume`).
-    native_session_id: str | None = None
+    # Handoff order and policy for this session; None means the global default.
+    chain: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    limit_policy: LimitPolicy | None = Field(default=None, sa_column=enum_column(LimitPolicy, nullable=True))
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow, sa_column_kwargs={"onupdate": utcnow})
 
 
-class SessionCreate(SessionBase):
+class Stint(SQLModel, table=True):
+    """One agent's turn at a session, from when it took over until the next agent did."""
+
+    __tablename__ = "stints"
+    __table_args__ = (UniqueConstraint("session_id", "seq"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: str = Field(foreign_key="sessions.id", ondelete="CASCADE", index=True)
+    seq: int  # 1, 2, ... in the order agents took over
+    agent: AgentKind = Field(sa_column=enum_column(AgentKind, nullable=False))
+    model: str | None = None
+    # The agent CLI's own session id, used to resume (e.g. `claude --resume`).
+    native_session_id: str | None = None
+    reason: StintReason = Field(sa_column=enum_column(StintReason, nullable=False))
+    # The stint this one returns to when done (delegation, phase 7). Never set in phase 3.
+    parent_stint_id: int | None = Field(default=None, foreign_key="stints.id", ondelete="SET NULL")
+    # The prompt the agent started from: the handoff brief. None for the first stint.
+    brief: str | None = None
+    started_at: datetime = Field(default_factory=utcnow)
+    ended_at: datetime | None = None
+
+
+def current_stint(db: Session, session_id: str) -> Stint | None:
+    """The agent working on the session now. Phase 3 has one at a time: the latest."""
+    return db.exec(select(Stint).where(Stint.session_id == session_id).order_by(col(Stint.seq).desc())).first()
+
+
+class SessionCreate(SQLModel):
+    title: str
+    project_path: str
+    agent: AgentKind = AgentKind.CLAUDE
+    model: str | None = None
+    chain: list[ChainEntry] | None = None
+    limit_policy: LimitPolicy | None = None
+
     @field_validator("project_path")
     @classmethod
     def project_path_must_exist(cls, value: str) -> str:
@@ -81,12 +132,94 @@ class MessageCreate(SQLModel):
     text: str = Field(min_length=1)
 
 
-class SessionRead(SessionBase):
-    id: str
-    status: SessionStatus
+class HandoffCreate(SQLModel):
+    agent: AgentKind
+    model: str | None = None
+    # Sent to the new agent after the brief, and shown as a user message.
+    note: str | None = None
+
+
+class StintRead(SQLModel):
+    id: int
+    seq: int
+    agent: AgentKind
+    model: str | None
     native_session_id: str | None
+    reason: StintReason
+    parent_stint_id: int | None
+    started_at: datetime
+    ended_at: datetime | None
+
+
+class StintDetail(StintRead):
+    brief: str | None
+
+
+class SessionRead(SQLModel):
+    id: str
+    title: str
+    project_path: str
+    status: SessionStatus
+    # The current stint's agent, model and native session id.
+    agent: AgentKind
+    model: str | None
+    native_session_id: str | None
+    # The model the current agent said it used, which names a default model (`model` is None).
+    reported_model: str | None
+    chain: list[ChainEntry] | None
+    limit_policy: LimitPolicy | None
+    stints: list[StintRead]
     created_at: datetime
     updated_at: datetime
+
+
+def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
+    stints = db.exec(select(Stint).where(Stint.session_id == agent_session.id).order_by(col(Stint.seq))).all()
+    current = stints[-1]
+    reported = db.exec(
+        select(SessionEvent)
+        .where(SessionEvent.stint_id == current.id, col(SessionEvent.type).in_(["started", "model"]))
+        .order_by(col(SessionEvent.id).desc())
+    ).first()
+    return SessionRead(
+        **agent_session.model_dump(),
+        agent=current.agent,
+        model=current.model,
+        native_session_id=current.native_session_id,
+        reported_model=(reported.payload or {}).get("model") if reported else None,
+        stints=[StintRead.model_validate(s) for s in stints],
+    )
+
+
+# --- Settings ---------------------------------------------------------------
+
+
+class Setting(SQLModel, table=True):
+    """App-wide settings edited in the UI, one JSON value per key."""
+
+    __tablename__ = "settings"
+
+    key: str = Field(primary_key=True)
+    value: Any = Field(sa_column=Column(JSON))
+
+
+DEFAULT_CHAIN = [ChainEntry(agent=AgentKind.CLAUDE), ChainEntry(agent=AgentKind.CODEX), ChainEntry(agent=AgentKind.OLLAMA)]
+
+
+class HubSettings(SQLModel):
+    default_chain: list[ChainEntry] = Field(default_factory=lambda: list(DEFAULT_CHAIN), min_length=1)
+    limit_policy: LimitPolicy = LimitPolicy.AUTO
+
+
+def load_hub_settings(db: Session) -> HubSettings:
+    stored = {row.key: row.value for row in db.exec(select(Setting))}
+    return HubSettings.model_validate(stored)
+
+
+def save_hub_settings(db: Session, settings: HubSettings) -> None:
+    for key, value in settings.model_dump(mode="json").items():
+        db.merge(Setting(key=key, value=value))
+    db.commit()
 
 
 # --- Events -----------------------------------------------------------------
@@ -99,6 +232,7 @@ class SessionEvent(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(foreign_key="sessions.id", ondelete="CASCADE", index=True)
+    stint_id: int | None = Field(default=None, foreign_key="stints.id", ondelete="CASCADE", index=True)
     agent: AgentKind = Field(sa_column=enum_column(AgentKind, nullable=False))
     type: str
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
@@ -110,6 +244,7 @@ class SessionEvent(SQLModel, table=True):
 class EventRead(SQLModel):
     id: int
     session_id: str
+    stint_id: int | None
     agent: AgentKind
     type: str
     payload: dict[str, Any]

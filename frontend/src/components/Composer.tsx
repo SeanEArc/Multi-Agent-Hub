@@ -3,18 +3,19 @@ import type { SessionStatus } from "../api";
 
 interface Props {
   status: SessionStatus;
+  agentName: string;
   onSend: (text: string) => Promise<void>;
   onStop: () => Promise<void>;
 }
 
 const PLACEHOLDERS: Partial<Record<SessionStatus, string>> = {
   ready: "Describe the task…",
-  waiting_for_input: "Reply to Claude…",
+  waiting_for_input: "Reply to {agent}…",
   completed: "Continue the conversation…",
   failed: "Try again or continue…",
 };
 
-export function Composer({ status, onSend, onStop }: Props) {
+export function Composer({ status, agentName, onSend, onStop }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +59,13 @@ export function Composer({ status, onSend, onStop }: Props) {
         ref={input}
         value={text}
         rows={3}
-        placeholder={working ? "Claude is working…" : PLACEHOLDERS[status]}
+        placeholder={
+          status === "handing_off"
+            ? `Handing off to ${agentName}…`
+            : working
+              ? `${agentName} is working…`
+              : PLACEHOLDERS[status]?.replace("{agent}", agentName)
+        }
         disabled={working}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

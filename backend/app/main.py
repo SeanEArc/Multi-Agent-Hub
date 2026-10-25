@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import Engine
 
-from app.api import folders, health, sessions
+from app.api import folders, health, sessions, settings as hub_settings, usage
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
 from app.db import init_db, make_engine
@@ -21,7 +21,7 @@ def create_app(
     """Tests pass `token`; otherwise it is read from (or created in) the token file at startup."""
     settings = get_settings()
     engine = engine or make_engine(settings.database_url)
-    orchestrator = Orchestrator(engine, adapter_factory)
+    orchestrator = Orchestrator(engine, adapter_factory, simulate_limit=set(settings.simulate_limit))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -49,6 +49,8 @@ def create_app(
     app.include_router(health.router, prefix="/api", dependencies=authenticated)
     app.include_router(sessions.router, prefix="/api", dependencies=authenticated)
     app.include_router(folders.router, prefix="/api", dependencies=authenticated)
+    app.include_router(hub_settings.router, prefix="/api", dependencies=authenticated)
+    app.include_router(usage.router, prefix="/api", dependencies=authenticated)
     return app
 
 

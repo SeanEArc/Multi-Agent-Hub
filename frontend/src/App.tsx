@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type AgentSession } from "./api";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SessionView } from "./components/SessionView";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 
 const SELECTED_KEY = "hub.selectedSession";
@@ -11,6 +12,7 @@ export function App() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => readSelected());
   const [creating, setCreating] = useState(false);
+  const [editingSettings, setEditingSettings] = useState(false);
   const [backendDown, setBackendDown] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -42,7 +44,9 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar sessions={sessions} selectedId={selectedId} onSelect={setSelectedId} onNew={() => setCreating(true)} />
+      <Sidebar sessions={sessions} selectedId={selectedId} onSelect={setSelectedId} onNew={() => setCreating(true)}
+        onSettings={() => setEditingSettings(true)}
+      />
       <main className="main">
         {backendDown && (
           <div className="banner error">
@@ -70,6 +74,8 @@ export function App() {
           </div>
         )}
       </main>
+
+      {editingSettings && <SettingsDialog onClose={() => setEditingSettings(false)} />}
 
       {creating && (
         <NewSessionDialog

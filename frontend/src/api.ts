@@ -10,21 +10,94 @@ export type SessionStatus =
 
 export type AgentKind = "claude" | "codex" | "ollama";
 
+export const AGENT_NAMES: Record<AgentKind, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  ollama: "Local model",
+};
+
+const SHORT_NAMES: Record<AgentKind, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  ollama: "Local model",
+};
+
+/** "Claude (opus)" or "Codex (gpt-6.1-sol)": the current agent and the model it uses. */
+export function agentLabel(session: AgentSession): string {
+  return `${SHORT_NAMES[session.agent]} (${session.reported_model ?? session.model ?? "default"})`;
+}
+
+// Agents the backend can run; the local model arrives in phase 5.
+export const AVAILABLE_AGENTS: AgentKind[] = ["claude", "codex"];
+
+// Values each CLI accepts for --model; empty means the CLI's default.
+// Codex slugs come from its model cache (codex-cli 0.164.0).
+export const MODELS: Partial<Record<AgentKind, string[]>> = {
+  claude: ["", "fable", "opus", "sonnet", "haiku"],
+  codex: ["", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"],
+};
+
+export type StintReason = "new" | "limit" | "manual" | "delegation";
+export type LimitPolicy = "auto" | "ask";
+
+export interface ChainEntry {
+  agent: AgentKind;
+  model: string | null;
+}
+
+/** One agent's turn at a session, from when it took over until the next agent did. */
+export interface Stint {
+  id: number;
+  seq: number;
+  agent: AgentKind;
+  model: string | null;
+  native_session_id: string | null;
+  reason: StintReason;
+  parent_stint_id: number | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
+export interface StintDetail extends Stint {
+  brief: string | null;
+}
+
 export interface AgentSession {
   id: string;
   title: string;
   project_path: string;
+  // The current stint's agent, model and native session id.
   agent: AgentKind;
   model: string | null;
   status: SessionStatus;
   native_session_id: string | null;
+  // The model the current agent said it used; names a default model (model is null).
+  reported_model: string | null;
+  // null means the defaults in HubSettings.
+  chain: ChainEntry[] | null;
+  limit_policy: LimitPolicy | null;
+  stints: Stint[];
   created_at: string;
   updated_at: string;
+}
+
+/** An agent's latest plan usage windows, reported in any session. */
+export interface AgentUsage {
+  status: string | null;
+  windows: Record<string, Record<string, any>>;
+  plan_type: string | null;
+  reported_at: string;
+}
+
+export interface HubSettings {
+  default_chain: ChainEntry[];
+  limit_policy: LimitPolicy;
 }
 
 export interface SessionEvent {
   id: number;
   session_id: string;
+  stint_id: number | null;
   agent: AgentKind;
   type: string;
   payload: Record<string, any>;
@@ -36,6 +109,8 @@ export interface NewSession {
   project_path: string;
   agent: AgentKind;
   model: string | null;
+  chain: ChainEntry[] | null;
+  limit_policy: LimitPolicy | null;
 }
 
 export interface FolderEntry {
@@ -95,6 +170,13 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
   stop: (id: string) => request<AgentSession>(`/sessions/${id}/stop`, { method: "POST" }),
+  handoff: (id: string, body: { agent: AgentKind; model: string | null; note?: string | null }) =>
+    request<AgentSession>(`/sessions/${id}/handoff`, { method: "POST", body: JSON.stringify(body) }),
+  getStint: (id: string, stintId: number) => request<StintDetail>(`/sessions/${id}/stints/${stintId}`),
+  getUsage: () => request<Partial<Record<AgentKind, AgentUsage>>>("/usage"),
+  getSettings: () => request<HubSettings>("/settings"),
+  putSettings: (body: HubSettings) =>
+    request<HubSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   streamUrl: (id: string) => `/api/sessions/${id}/stream`,
   listFolders: (path: string | null, showHidden = false) => {
     const params = new URLSearchParams();

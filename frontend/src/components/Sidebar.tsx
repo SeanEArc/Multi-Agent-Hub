@@ -1,4 +1,4 @@
-import type { AgentSession } from "../api";
+import { agentLabel, type AgentSession } from "../api";
 import { StatusDot } from "./StatusBadge";
 
 interface Props {
@@ -6,9 +6,10 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onSettings: () => void;
 }
 
-export function Sidebar({ sessions, selectedId, onSelect, onNew }: Props) {
+export function Sidebar({ sessions, selectedId, onSelect, onNew, onSettings }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -29,13 +30,15 @@ export function Sidebar({ sessions, selectedId, onSelect, onNew }: Props) {
             <span className="session-item-text">
               <span className="session-item-title">{session.title}</span>
               <span className="session-item-meta">
-                {session.agent}
-                {session.model ? ` · ${session.model}` : ""} · {folderName(session.project_path)}
+                {agentLabel(session)} · {folderName(session.project_path)}
               </span>
             </span>
           </button>
         ))}
       </nav>
+      <button className="button subtle sidebar-settings" onClick={onSettings}>
+        Settings
+      </button>
     </aside>
   );
 }

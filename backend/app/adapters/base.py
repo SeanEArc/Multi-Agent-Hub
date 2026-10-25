@@ -17,6 +17,8 @@ from app.models import AgentKind
 
 class EventType(StrEnum):
     USER_MESSAGE = "user_message"  # recorded by the orchestrator, not emitted by adapters
+    HANDOFF = "handoff"  # orchestrator: a new agent took over (divider in the transcript)
+    HANDOFF_OFFER = "handoff_offer"  # orchestrator: a limit was hit and the user must confirm the handoff
     STARTED = "started"
     MESSAGE = "message"  # assistant text
     TOOL_USE = "tool_use"
@@ -25,6 +27,7 @@ class EventType(StrEnum):
     QUESTION = "question"  # turn ended waiting for user input
     RATE_LIMIT = "rate_limit"  # usage-window status; early warning before a limit
     USAGE = "usage"  # token / cost info for the turn
+    MODEL = "model"  # the model the agent used, when it is only known after the turn (Codex)
     LIMIT_REACHED = "limit_reached"  # usage limit hit; triggers handoff
     ERROR = "error"
     COMPLETED = "completed"

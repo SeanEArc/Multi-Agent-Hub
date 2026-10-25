@@ -1,15 +1,24 @@
 import { Fragment, useState } from "react";
 import Markdown from "react-markdown";
-import type { SessionEvent, SessionStatus } from "../api";
+import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
 
 interface Props {
+  sessionId: string;
   events: SessionEvent[];
   status: SessionStatus;
   projectPath: string;
+  // Confirms a handoff the hub offered after a usage limit (the "ask first" policy).
+  onAcceptHandoff: (agent: AgentKind, model: string | null) => Promise<void>;
 }
 
+const REASONS: Record<string, string> = {
+  limit: "usage limit",
+  manual: "handed off by you",
+  delegation: "delegated",
+};
+
 /** Renders a session's events as a conversation, pairing each tool call with its result. */
-export function Transcript({ events, status, projectPath }: Props) {
+export function Transcript({ sessionId, events, status, projectPath, onAcceptHandoff }: Props) {
   const results = new Map<string, SessionEvent>();
   const denied = new Set<string>();
   for (const event of events) {
@@ -21,9 +30,25 @@ export function Transcript({ events, status, projectPath }: Props) {
   let turnTokens = 0;
   // Codex reports the thread's running total; a turn's own tokens are the growth since the last report.
   let threadTokens = 0;
-  const rows = events.map((event) => {
+  const rows = events.map((event, index) => {
     const p = event.payload;
     switch (event.type) {
+      case "handoff":
+        // A new agent starts a new thread, so Codex's running total starts over.
+        threadTokens = 0;
+        lastUsage = null;
+        return <HandoffDivider key={event.id} sessionId={sessionId} event={event} />;
+      case "handoff_offer":
+        return (
+          <HandoffOffer
+            key={event.id}
+            agent={p.agent}
+            model={p.model}
+            // Only the latest offer can be taken, while the session still waits on it.
+            active={index === events.length - 1 && status === "waiting_for_input"}
+            onAccept={onAcceptHandoff}
+          />
+        );
       case "user_message":
         return (
           <div key={event.id} className="row user-message">
@@ -80,7 +105,16 @@ export function Transcript({ events, status, projectPath }: Props) {
       case "limit_reached":
         return (
           <div key={event.id} className="row notice warning">
-            Usage limit reached{p.resets_at ? `; resets ${new Date(p.resets_at * 1000).toLocaleString()}` : ""}.
+            {p.simulated ? (
+              <>
+                Simulated usage limit for {agentName(event.agent)} (<code>HUB_SIMULATE_LIMIT</code> is set). Its turn ran
+                normally; the hub treats it as out of usage.
+              </>
+            ) : (
+              <>
+                Usage limit reached{p.resets_at ? `; resets ${new Date(p.resets_at * 1000).toLocaleString()}` : ""}.
+              </>
+            )}
           </div>
         );
       case "error":
@@ -103,13 +137,98 @@ export function Transcript({ events, status, projectPath }: Props) {
   return (
     <div className="transcript">
       {rows}
-      {status === "working" && (
+      {(status === "working" || status === "handing_off") && (
         <div className="row working">
-          <span className="spinner" aria-hidden="true" /> Working…
+          <span className="spinner" aria-hidden="true" />{" "}
+          {status === "handing_off" ? "Writing the handoff brief…" : "Working…"}
         </div>
       )}
     </div>
   );
+}
+
+function HandoffDivider({ sessionId, event }: { sessionId: string; event: SessionEvent }) {
+  const [brief, setBrief] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const p = event.payload;
+
+  async function toggle() {
+    setOpen(!open);
+    if (brief === null && event.stint_id !== null) {
+      try {
+        setBrief((await api.getStint(sessionId, event.stint_id)).brief ?? "");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  return (
+    <div className="row handoff">
+      <div className="handoff-line">
+        <span>
+          {agentName(p.from_agent)} → {agentName(p.to_agent)}
+          {p.model ? ` (${p.model})` : ""} · {REASONS[p.reason] ?? p.reason}
+        </span>
+        <button className="button subtle" onClick={() => void toggle()} aria-expanded={open}>
+          {open ? "Hide brief" : "View brief"}
+        </button>
+      </div>
+      {open && (
+        <div className="handoff-brief">
+          {error ? (
+            <span className="muted">{error}</span>
+          ) : brief === null ? (
+            <span className="muted">Loading…</span>
+          ) : (
+            <Markdown>{brief}</Markdown>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface HandoffOfferProps {
+  agent: AgentKind;
+  model: string | null;
+  active: boolean;
+  onAccept: (agent: AgentKind, model: string | null) => Promise<void>;
+}
+
+function HandoffOffer({ agent, model, active, onAccept }: HandoffOfferProps) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const name = `${agentName(agent)}${model ? ` (${model})` : ""}`;
+  return (
+    <div className="row notice warning handoff-offer">
+      <span>Next in the handoff chain: {name}.</span>
+      {active && (
+        <button
+          className="button primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await onAccept(agent, model);
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+              setBusy(false);
+            }
+          }}
+        >
+          Hand off to {name}
+        </button>
+      )}
+      {error && <span className="muted">{error}</span>}
+    </div>
+  );
+}
+
+function agentName(agent: string): string {
+  return AGENT_NAMES[agent as AgentKind] ?? agent;
 }
 
 interface ToolRowProps {

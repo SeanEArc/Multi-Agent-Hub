@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.adapters.base import AgentEvent, EventType
-from app.adapters.codex import CodexAdapter, CodexCliNotFound, TurnParser, find_codex, read_rate_limits
+from app.adapters.codex import ROLLOUT_TAIL, CodexAdapter, CodexCliNotFound, TurnParser, find_codex, read_model, read_rate_limits
 
 FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
 THREAD = "01a17487-9cbe-79c3-97d4-1c2c350d55a1"
@@ -155,6 +155,41 @@ def test_reads_latest_rate_limits(tmp_path: Path) -> None:
                   {"type": "token_count", "info": None, "rate_limits": newer},
                   {"type": "agent_message", "message": "done"})
     assert read_rate_limits(tmp_path, THREAD)["primary"]["used_percent"] == 7.0
+
+
+def turn_context(model: str) -> str:
+    return json.dumps({"timestamp": "t", "type": "turn_context", "payload": {"turn_id": "x", "model": model}})
+
+
+def prepend(rollout: Path, *lines: str) -> None:
+    rollout.write_text("".join(f"{line}\n" for line in lines) + rollout.read_text())
+
+
+def test_reads_model_of_latest_turn(tmp_path: Path) -> None:
+    write_rollout(tmp_path, THREAD, {"type": "agent_message", "message": "hi"})
+    rollout = next((tmp_path / "sessions").rglob("*.jsonl"))
+    assert read_model(tmp_path, THREAD) is None
+    prepend(rollout, turn_context("gpt-6-sol"), turn_context("gpt-6.1-sol"))
+    assert read_model(tmp_path, THREAD) == "gpt-6.1-sol"
+
+
+def test_reads_model_beyond_the_tail(tmp_path: Path) -> None:
+    """A turn with large outputs pushes its turn_context out of the tail that holds the usage windows."""
+    write_rollout(tmp_path, THREAD, {"type": "agent_message", "message": "x" * (ROLLOUT_TAIL + 10)},
+                  {"type": "token_count", "rate_limits": RATE_LIMITS})
+    rollout = next((tmp_path / "sessions").rglob("*.jsonl"))
+    prepend(rollout, turn_context("gpt-6-luna"))
+    assert read_model(tmp_path, THREAD) == "gpt-6-luna"
+    assert read_rate_limits(tmp_path, THREAD) == RATE_LIMITS
+
+
+def test_turn_reports_model_from_session_file(tmp_path: Path) -> None:
+    write_rollout(tmp_path / "codex-home", FAKE_THREAD, {"type": "token_count", "rate_limits": RATE_LIMITS})
+    rollout = next((tmp_path / "codex-home" / "sessions").rglob("*.jsonl"))
+    prepend(rollout, turn_context("gpt-6.1-sol"))
+    events = collect(fake_adapter("ok", tmp_path).start_task("hi"))
+    assert [e.type for e in events[-3:]] == [EventType.COMPLETED, EventType.MODEL, EventType.RATE_LIMIT]
+    assert events[-2].data == {"model": "gpt-6.1-sol"}
 
 
 def test_missing_session_file_or_limits(tmp_path: Path) -> None:
