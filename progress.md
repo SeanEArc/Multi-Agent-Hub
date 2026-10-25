@@ -287,3 +287,60 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Update the rest of `CLAUDE.md`: frontend, orchestrator, streaming and folder endpoints, the permissions allowlist, and the Tauri/Tailscale decisions.
 - [ ] Add `remark-gfm` and table styles to the transcript, if the user wants it.
 - [ ] Phase 2: the Codex adapter (`codex exec --json` plus resume) on `feature/codex-adapter` (created from `main` at `51d3b4b`, no changes yet). First probe `codex exec` in a scratch folder (uses some of the user's Codex allowance; confirm with the user first): event format, resume, questions and approvals, limit reporting, the native `codex.exe` inside the npm package (the adapter must not run the `.cmd`/`.ps1` launchers), and the sandbox mode (likely workspace-write plus optional extra folders). Then the adapter, a fake `codex` for tests, an opt-in live test, wiring it into the orchestrator, and the billing check.
+
+---
+
+2026-10-25 14:32 (UTC-05:00)
+
+# Session 9: Probed the Codex CLI live and built the Codex adapter (Phase 2) on `feature/codex-adapter`.
+
+## What was done
+
+1. **Offline checks.** The native binary is at `%APPDATA%\npm\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe`. The npm launcher only adds update-hint env vars, so running the binary directly is safe. `exec` and `exec resume` read the prompt from stdin with `-`. `resume` has no `--sandbox` or `--cd`.
+2. **Live probes (user approved, 5 short turns, codex-cli 0.164.0, default model).** Event format: `thread.started` (thread id), `turn.started`, `item.started|completed` (`agent_message`, `command_execution`, `file_change`...), `turn.completed` with token usage. Resume keeps the context and the thread id, and `-c sandbox_mode=...` works on resume. Codex follows the `[[NEEDS_INPUT]]` instruction. A write outside the workspace is **denied** by the `elevated` Windows sandbox and shows up only as a failed command (exit 1, "Access denied"), with no approval prompt or denied event. Exception: `workspace-write` also allows writes under `%TEMP%`, so the first try at that probe "escaped" because the scratch folder is in `%TEMP%`. Codex prints no rate-limit status; the limit wording ("You've hit your usage limit...") was taken from the binary, not seen live.
+3. **`app/adapters/cli.py`:** moved the shared process loop (stdin prompt, streaming, crash detection, stop/kill tree) out of `claude.py` into `CliAdapter`. The Claude adapter now subclasses it, with no behavior change.
+4. **`app/adapters/codex.py`:** `CodexAdapter` + `TurnParser` + `find_codex`. Commands are shown without the PowerShell wrapper (`Shell`), file changes as `Edit`, MCP calls as `mcp__server__tool`. Tool ids get a per-turn prefix because Codex restarts `item_0` every turn. A limit reported as both `error` and `turn.failed` produces one `LIMIT_REACHED`.
+5. **Orchestrator:** builds the Codex adapter and saves the thread id from the `STARTED` event, so replies resume it, even after a backend restart. New settings `HUB_CODEX_SANDBOX` and `HUB_CODEX_PATH`.
+6. **Tests:** `fake_codex.py`, `test_codex_adapter.py` (parser cases copied from the live probes, binary discovery, process handling), two orchestrator tests and an opt-in `test_codex_live.py`. **84 passed, 2 skipped** (the live tests).
+7. **UI:** Codex is enabled in the New session dialog with its own model list (`gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`, or the default).
+8. **Billing check, local part:** `codex login status` shows "Logged in using ChatGPT", and neither `OPENAI_API_KEY` nor `CODEX_API_KEY` is set (process, user or machine), so Codex should not bill the API.
+
+## Current state
+
+- Phase 2 code is done and passes the tests, but nothing is committed yet on `feature/codex-adapter`.
+- Side effects of running Codex headless: each project folder gets added as `trust_level = "trusted"` in `~/.codex/config.toml` (the probe repo's entry is there now), and the `notify` hook in that config (`codex-computer-use.exe turn-ended`) fires after every hub turn.
+
+## Next steps
+
+- Superseded by Session 10.
+
+---
+
+2026-10-25 15:02 (UTC-05:00)
+
+# Session 10: Ran the live tests, confirmed no API charges, and added the usage meter and token count for Codex sessions.
+
+## What was done
+
+1. **Live tests (user asked):** `test_claude_live.py` passed. `test_codex_live.py` first failed after the question and reply had worked: reading `color.txt` gave "Permission denied". Cause: on Python 3.14 for Windows, pytest's `tmp_path` gets an owner-only ACL (`OWNER RIGHTS`, SYSTEM, Administrators), and the file was owned by the Codex sandbox user, so the user's account had no access. Files in normal project folders inherit the user's access, as the probe files did. The test now uses a plain `%TEMP%\hub-codex-live-*` folder and deletes it afterwards, and the rerun passed. This confirms `developer_instructions` as a `-c` override and resume through the adapter. These runs used 2 Claude turns and 4 Codex turns.
+2. **Billing check:** the user confirmed the OpenAI API usage page shows no charges after the probe and live-test turns. Recorded in `plan.md`; the Windows billing question is closed.
+3. **Codex usage meter:** Codex's JSON stream has no limit or price information. Its session file (`~/.codex/sessions/YYYY/MM/DD/rollout-*-<thread id>.jsonl`, appended on resume) records a `token_count` per turn with the plan's 5h (`primary`, 300 min) and weekly (`secondary`, 10080 min) windows. A new `_after_turn` hook in `CliAdapter` lets `CodexAdapter` read the latest one (last 512 KB of the file) after each turn and emit a `RATE_LIMIT` event in Claude's shape, so the existing meter works unchanged. The format is undocumented, so if a Codex update changes it, the meter disappears and nothing breaks. Checked against the real session file from the probe: 5h 1%, 7d 0%, plan `plus`. User's choice: session files over `codex app-server` (more stable, but a bigger change).
+4. **Turn summary:** the user chose a token count over a price estimated from hardcoded API prices. When a turn has no `cost_usd`, the summary shows e.g. "18.8k tokens · 6.2s". The meter tooltip no longer says "Claude".
+5. **Tests:** tests use a temporary `codex_home`, never the real `~/.codex`. New tests cover reading the latest window, a missing file or missing limits, a turn ending with usage windows, and a reached limit reported as `rejected`. **88 passed, 2 skipped** (the live tests). Frontend type-checks.
+6. **Acceptance test passed (user, 2026-10-25):** a Codex session in the UI asked a question, resumed on the reply, completed, showed the usage meter and token count, and kept its history. **Phase 2 is done.**
+
+## Current state
+
+- **Phase 2 is complete.** Sessions 9 and 10 are committed on `feature/codex-adapter` and merged into `main`.
+- Side effects of running Codex headless are unchanged: each project folder gets added as `trust_level = "trusted"` in `~/.codex/config.toml` (the probe repo's entry is there now), and the `notify` hook in that config (`codex-computer-use.exe turn-ended`) fires after every hub turn.
+- The failed live run left `%TEMP%\pytest-of-<user>\pytest-5\test_question_then_reply1\color.txt`, which the user's account can't read. It's harmless.
+
+## Next steps
+
+**For the user**
+- [ ] Decide whether to remove the probe repo's trusted-project entry from `~/.codex/config.toml`.
+
+**For the agent**
+- [ ] Start Phase 3 (automatic handoff) on a new `feature/` branch from `main`.
+- [ ] Phase 3: handoff keys off `LIMIT_REACHED`. Claude warns early through `RATE_LIMIT` events. For Codex, `RATE_LIMIT` arrives only after a turn ends, and its `status` is `rejected` when `rate_limit_reached_type` is set, so the next turn could be handed off before it starts.
+- [ ] Carried over: the rest of the `CLAUDE.md` update (frontend, streaming, folder endpoints), and `remark-gfm` for tables.

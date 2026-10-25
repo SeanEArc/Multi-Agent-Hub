@@ -19,6 +19,7 @@ from sqlmodel import Session, col, select
 
 from app.adapters.base import AgentAdapter, AgentEvent, EventType
 from app.adapters.claude import ClaudeAdapter, ClaudeCliNotFound
+from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
 from app.config import get_settings
 from app.models import AgentKind, AgentSession, EventRead, SessionEvent, SessionStatus
 
@@ -56,16 +57,26 @@ class StreamMessage:
 
 
 def default_adapter_factory(session: AgentSession) -> AgentAdapter:
-    if session.agent is AgentKind.CLAUDE:
-        try:
-            return ClaudeAdapter(
-                Path(session.project_path),
-                model=session.model,
-                native_session_id=session.native_session_id,
-                permission_mode=get_settings().claude_permission_mode,
-            )
-        except ClaudeCliNotFound as exc:
-            raise AgentUnavailable(str(exc)) from exc
+    settings = get_settings()
+    try:
+        match session.agent:
+            case AgentKind.CLAUDE:
+                return ClaudeAdapter(
+                    Path(session.project_path),
+                    model=session.model,
+                    native_session_id=session.native_session_id,
+                    permission_mode=settings.claude_permission_mode,
+                )
+            case AgentKind.CODEX:
+                return CodexAdapter(
+                    Path(session.project_path),
+                    model=session.model,
+                    native_session_id=session.native_session_id,
+                    sandbox=settings.codex_sandbox,
+                    command=[find_codex(settings.codex_path)],
+                )
+    except (ClaudeCliNotFound, CodexCliNotFound) as exc:
+        raise AgentUnavailable(str(exc)) from exc
     raise AgentUnavailable(f"The {session.agent} agent is not supported yet")
 
 
@@ -193,6 +204,9 @@ class Orchestrator:
                         status = SessionStatus.READY
                     else:
                         status = RESTING_STATUS.get(event.type, status)
+                    if event.type is EventType.STARTED:
+                        # Codex only reports its thread id once the turn starts; save it so replies resume it.
+                        self._save_native_session_id(session_id, event.data.get("session_id"))
                     self._save_event(session_id, agent, event)
         except Exception as exc:
             log.exception("Turn failed for session %s", session_id)
@@ -210,6 +224,17 @@ class Orchestrator:
             db.commit()
             db.refresh(row)
         self._publish(session_id, _event_message(row))
+
+    def _save_native_session_id(self, session_id: str, native_id: str | None) -> None:
+        if not native_id:
+            return
+        with Session(self._engine) as db:
+            agent_session = db.get(AgentSession, session_id)
+            if agent_session is None or agent_session.native_session_id == native_id:
+                return
+            agent_session.native_session_id = native_id
+            db.add(agent_session)
+            db.commit()
 
     def _set_status(self, session_id: str, status: SessionStatus) -> None:
         with Session(self._engine) as db:

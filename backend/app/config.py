@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     log_level: str = "info"
     # acceptEdits: file edits run without asking; anything else needing approval is denied.
     claude_permission_mode: str = "acceptEdits"
+    # workspace-write: Codex may edit the project folder (and %TEMP%); read-only or danger-full-access also work.
+    codex_sandbox: str = "workspace-write"
+    # Full path to the native codex.exe, if it isn't found on PATH or inside the npm install.
+    codex_path: str | None = None
 
     @field_validator("host")
     @classmethod

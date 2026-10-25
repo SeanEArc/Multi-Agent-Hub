@@ -9,8 +9,12 @@ interface Props {
   recentProjects: string[];
 }
 
-// Aliases the claude CLI accepts for --model; empty means the CLI's default.
-const CLAUDE_MODELS = ["", "fable", "opus", "sonnet", "haiku"];
+// Values each CLI accepts for --model; empty means the CLI's default.
+// Codex slugs come from its model cache (codex-cli 0.164.0).
+const MODELS: Partial<Record<AgentKind, string[]>> = {
+  claude: ["", "fable", "opus", "sonnet", "haiku"],
+  codex: ["", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"],
+};
 
 export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -60,11 +64,15 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
         <div className="field-row">
           <label>
             Agent
-            <select value={agent} onChange={(e) => setAgent(e.target.value as AgentKind)}>
+            <select
+              value={agent}
+              onChange={(e) => {
+                setAgent(e.target.value as AgentKind);
+                setModel("");
+              }}
+            >
               <option value="claude">Claude Code</option>
-              <option value="codex" disabled>
-                Codex (phase 2)
-              </option>
+              <option value="codex">Codex</option>
               <option value="ollama" disabled>
                 Local model (phase 5)
               </option>
@@ -73,7 +81,7 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
           <label>
             Model
             <select value={model} onChange={(e) => setModel(e.target.value)}>
-              {CLAUDE_MODELS.map((m) => (
+              {(MODELS[agent] ?? [""]).map((m) => (
                 <option key={m} value={m}>
                   {m || "Default"}
                 </option>

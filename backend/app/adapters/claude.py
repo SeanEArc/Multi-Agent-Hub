@@ -11,9 +11,7 @@ Behavior verified against Claude Code 2.1.305:
 - Every turn carries a `rate_limit_event` with usage-window status.
 """
 
-import asyncio
 import json
-import os
 import re
 import shutil
 import uuid
@@ -21,23 +19,12 @@ from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
 from typing import Any
 
-from app.adapters.base import AgentAdapter, AgentEvent, EventType
+from app.adapters.base import AgentEvent, EventType
+from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter
 from app.models import AgentKind
 
-NEEDS_INPUT_MARKER = "[[NEEDS_INPUT]]"
-HEADLESS_PROMPT = (
-    "You are running headless inside Multi-Agent Hub. The user cannot answer "
-    "tool-based questions. When you need an answer or decision from the user "
-    "before you can continue, ask in plain text and end your final message with "
-    f"a line containing exactly: {NEEDS_INPUT_MARKER}"
-)
-# One stream-json line can hold a whole file or diff, far past asyncio's 64 KB default.
-STREAM_LIMIT = 16 * 1024 * 1024
 # Wording of subscription-limit errors is not verified; rate_limit_event "rejected" is the primary signal.
 LIMIT_TEXT = re.compile(r"usage limit|limit reached|out of (extra )?usage", re.IGNORECASE)
-# Nobody can answer a git login prompt or credential window in a headless turn, so a
-# missing credential must fail the command instead of hanging it.
-HEADLESS_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 
 class ClaudeCliNotFound(RuntimeError):
@@ -55,8 +42,9 @@ def find_claude() -> str:
     return path
 
 
-class ClaudeAdapter(AgentAdapter):
+class ClaudeAdapter(CliAdapter):
     kind = AgentKind.CLAUDE
+    cli_name = "claude"
 
     def __init__(
         self,
@@ -66,13 +54,10 @@ class ClaudeAdapter(AgentAdapter):
         permission_mode: str = "acceptEdits",
         command: Sequence[str] | None = None,
     ) -> None:
-        self.cwd = Path(cwd)
+        super().__init__(cwd, command or [find_claude()])
         self.model = model
         self.permission_mode = permission_mode
         self._session_id = native_session_id
-        self._command = list(command) if command else [find_claude()]
-        self._proc: asyncio.subprocess.Process | None = None
-        self._stopping = False
 
     @property
     def native_session_id(self) -> str | None:
@@ -89,17 +74,8 @@ class ClaudeAdapter(AgentAdapter):
             raise RuntimeError("No task started; use start_task")
         return self._run(["--resume", self._session_id], reply)
 
-    async def stop(self) -> None:
-        if self._proc is not None:
-            self._stopping = True
-            await _kill_tree(self._proc)
-
-    async def _run(self, session_args: list[str], prompt: str) -> AsyncGenerator[AgentEvent]:
-        if self._proc is not None:
-            raise RuntimeError("A turn is already running")
-
+    def _run(self, session_args: list[str], prompt: str) -> AsyncGenerator[AgentEvent]:
         args = [
-            *self._command,
             "-p",
             "--output-format", "stream-json",
             "--verbose",
@@ -110,47 +86,7 @@ class ClaudeAdapter(AgentAdapter):
         ]
         if self.model:
             args += ["--model", self.model]
-
-        self._stopping = False
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            cwd=self.cwd,
-            env={**os.environ, **HEADLESS_GIT_ENV},
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            limit=STREAM_LIMIT,
-        )
-        self._proc = proc
-        stderr_task = asyncio.create_task(proc.stderr.read())
-        parser = TurnParser()
-        try:
-            # The prompt goes over stdin, so its length and characters never hit Windows quoting.
-            proc.stdin.write(prompt.encode("utf-8"))
-            await proc.stdin.drain()
-            proc.stdin.close()
-
-            async for line in proc.stdout:
-                for event in parser.feed(line):
-                    yield event
-            await proc.wait()
-            stderr = (await stderr_task).decode("utf-8", "replace").strip()
-
-            if self._stopping:
-                yield AgentEvent(EventType.ERROR, {"message": "Stopped by user", "stopped": True})
-            elif not parser.finished:
-                yield AgentEvent(
-                    EventType.ERROR,
-                    {
-                        "message": f"claude exited with code {proc.returncode} before finishing",
-                        "stderr": stderr[-2000:],
-                    },
-                )
-        finally:
-            if proc.returncode is None:
-                await _kill_tree(proc)
-            stderr_task.cancel()
-            self._proc = None
+        return self._stream(args, prompt, TurnParser())
 
 
 class TurnParser:
@@ -311,18 +247,3 @@ def _text_of(content: Any) -> str:
         return "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
     return ""
 
-
-async def _kill_tree(proc: asyncio.subprocess.Process) -> None:
-    """Kill the process and everything it started (Claude runs shells and subagents)."""
-    if proc.returncode is not None:
-        return
-    if os.name == "nt":
-        killer = await asyncio.create_subprocess_exec(
-            "taskkill", "/PID", str(proc.pid), "/T", "/F",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await killer.wait()
-    else:
-        proc.kill()
-    await proc.wait()

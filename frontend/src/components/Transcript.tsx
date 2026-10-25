@@ -142,13 +142,23 @@ function ToolRow({ name, input, projectPath, result, denied, pending, nested }: 
 
 function UsageSummary({ usage }: { usage: SessionEvent | null }) {
   if (!usage) return null;
-  const { cost_usd, num_turns, duration_ms } = usage.payload;
+  const { cost_usd, num_turns, duration_ms, usage: tokens } = usage.payload;
+  // Codex reports no price, only tokens (input already includes cached input).
+  const tokenCount = (tokens?.input_tokens ?? 0) + (tokens?.output_tokens ?? 0);
   const parts = [
-    typeof cost_usd === "number" ? `$${cost_usd.toFixed(4)}` : null,
+    typeof cost_usd === "number"
+      ? `$${cost_usd.toFixed(4)}`
+      : tokenCount
+        ? `${formatTokens(tokenCount)} tokens`
+        : null,
     num_turns ? `${num_turns} step${num_turns === 1 ? "" : "s"}` : null,
     duration_ms ? `${(duration_ms / 1000).toFixed(1)}s` : null,
   ].filter(Boolean);
   return <span className="muted">{parts.join(" · ")}</span>;
+}
+
+function formatTokens(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
 /** One short line describing a tool call, like Claude Code's `Write(color.txt)`. */

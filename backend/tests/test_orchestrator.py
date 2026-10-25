@@ -62,6 +62,28 @@ def test_question_then_reply_resumes_same_session(client: TestClient, tmp_path: 
     assert sent["args"][sent["args"].index("--resume") + 1] == first["native_session_id"]
 
 
+def test_codex_session_saves_reported_thread_and_resumes_it(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "question", agent="codex")
+    response = client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
+    assert response.json()["native_session_id"] is None  # Codex picks the id once the turn starts
+    first = wait_until_idle(client, session_id)
+    assert first["status"] == "waiting_for_input"
+    assert first["native_session_id"]
+
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "blue"})
+    wait_until_idle(client, session_id)
+    sent = json.loads(client.get(f"/api/sessions/{session_id}/events").json()[-1]["payload"]["text"])
+    assert sent["prompt"] == "blue"
+    assert sent["args"][-2] == first["native_session_id"]
+
+
+def test_codex_limit_fails_session(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "limit", agent="codex")
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
+    assert wait_until_idle(client, session_id)["status"] == "failed"  # phase 3 hands off instead
+    assert event_types(client, session_id)[-1] == "limit_reached"
+
+
 def test_busy_session_rejects_second_message_and_can_stop(client: TestClient, tmp_path: Path) -> None:
     session_id = create(client, tmp_path, "hang")
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
@@ -90,7 +112,7 @@ def test_delete_stops_running_turn(client: TestClient, tmp_path: Path) -> None:
 
 def test_unsupported_agent(engine: Engine, tmp_path: Path) -> None:
     with make_client(create_app(engine, token=TEST_TOKEN)) as client:  # real factory
-        session_id = create(client, tmp_path, "ok", agent="codex")
+        session_id = create(client, tmp_path, "ok", agent="ollama")
         response = client.post(f"/api/sessions/{session_id}/messages", json={"text": "hi"})
         assert response.status_code == 400
         assert "not supported" in response.json()["detail"]

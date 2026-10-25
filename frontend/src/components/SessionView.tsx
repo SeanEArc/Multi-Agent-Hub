@@ -98,7 +98,7 @@ function UsageMeter({ windows }: { windows?: Record<string, { utilization?: numb
   if (!windows) return null;
   const labels: Record<string, string> = { five_hour: "5h", seven_day: "7d" };
   return (
-    <span className="usage-meter" title="Share of your Claude plan's usage limits used">
+    <span className="usage-meter" title="Share of your plan's usage limits used">
       {Object.entries(windows).map(([key, w]) =>
         typeof w.utilization === "number" ? (
           <span key={key} className="usage-window">
