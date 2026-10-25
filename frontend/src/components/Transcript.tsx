@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Markdown from "react-markdown";
 import type { SessionEvent, SessionStatus } from "../api";
 
@@ -18,6 +18,9 @@ export function Transcript({ events, status, projectPath }: Props) {
   }
 
   let lastUsage: SessionEvent | null = null;
+  let turnTokens = 0;
+  // Codex reports the thread's running total; a turn's own tokens are the growth since the last report.
+  let threadTokens = 0;
   const rows = events.map((event) => {
     const p = event.payload;
     switch (event.type) {
@@ -47,21 +50,31 @@ export function Transcript({ events, status, projectPath }: Props) {
             nested={Boolean(p.parent_tool_use_id)}
           />
         );
-      case "usage":
+      case "usage": {
+        const total = tokenTotal(p.usage);
+        // Events saved before the `cumulative` flag existed are Codex totals too.
+        if (p.cumulative ?? event.agent === "codex") {
+          // A smaller total means a new thread started (e.g. the first turn failed before Codex saved it).
+          turnTokens = total >= threadTokens ? total - threadTokens : total;
+          threadTokens = total;
+        } else {
+          turnTokens = total;
+        }
         lastUsage = event;
         return null;
+      }
       case "question":
         return (
           <div key={event.id} className="row turn-end question-end">
             <span>Waiting for your answer</span>
-            <UsageSummary usage={lastUsage} />
+            <UsageSummary usage={lastUsage} tokens={turnTokens} />
           </div>
         );
       case "completed":
         return (
           <div key={event.id} className="row turn-end">
             <span>✓ Done{p.permission_denials ? ` · ${p.permission_denials} action(s) denied` : ""}</span>
-            <UsageSummary usage={lastUsage} />
+            <UsageSummary usage={lastUsage} tokens={turnTokens} />
           </div>
         );
       case "limit_reached":
@@ -140,21 +153,43 @@ function ToolRow({ name, input, projectPath, result, denied, pending, nested }: 
   );
 }
 
-function UsageSummary({ usage }: { usage: SessionEvent | null }) {
+/** `tokens` is this turn's own count, shown for every agent so they can be compared. */
+function UsageSummary({ usage, tokens }: { usage: SessionEvent | null; tokens: number }) {
   if (!usage) return null;
-  const { cost_usd, num_turns, duration_ms, usage: tokens } = usage.payload;
-  // Codex reports no price, only tokens (input already includes cached input).
-  const tokenCount = (tokens?.input_tokens ?? 0) + (tokens?.output_tokens ?? 0);
+  const { cost_usd, num_turns, duration_ms } = usage.payload;
   const parts = [
-    typeof cost_usd === "number"
-      ? `$${cost_usd.toFixed(4)}`
-      : tokenCount
-        ? `${formatTokens(tokenCount)} tokens`
-        : null,
+    typeof cost_usd === "number" ? (
+      <span title="What this turn would cost at API prices. Subscription use is not billed per turn.">
+        ${cost_usd.toFixed(4)}
+      </span>
+    ) : null,
+    tokens ? `${formatTokens(tokens)} tokens` : null,
     num_turns ? `${num_turns} step${num_turns === 1 ? "" : "s"}` : null,
     duration_ms ? `${(duration_ms / 1000).toFixed(1)}s` : null,
   ].filter(Boolean);
-  return <span className="muted">{parts.join(" · ")}</span>;
+  return (
+    <span className="muted">
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && " · "}
+          {part}
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Every token the model processed. Codex's input_tokens already includes cached input;
+ * Claude reports cache writes and reads separately from input_tokens, so they are added.
+ */
+function tokenTotal(usage: Record<string, number> | null | undefined): number {
+  return (
+    (usage?.input_tokens ?? 0) +
+    (usage?.cache_creation_input_tokens ?? 0) +
+    (usage?.cache_read_input_tokens ?? 0) +
+    (usage?.output_tokens ?? 0)
+  );
 }
 
 function formatTokens(count: number): string {

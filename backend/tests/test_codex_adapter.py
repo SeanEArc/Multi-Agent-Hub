@@ -80,6 +80,7 @@ def test_parses_a_command_turn() -> None:
     assert events[3].data["tool_use_id"] == events[2].data["tool_use_id"]
     assert events[3].data == {**events[3].data, "is_error": False, "content": "?? hello.txt\n"}
     assert events[5].data["usage"]["output_tokens"] == 117
+    assert events[5].data["cumulative"] is True
     assert events[-1].data["text"] == "Created `hello.txt`."
     assert events[0].raw is not None
 

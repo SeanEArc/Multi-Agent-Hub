@@ -337,6 +337,28 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Next steps
 
+- Superseded by Session 11.
+
+---
+
+2026-10-25 15:20 (UTC-05:00)
+
+# Session 11: Fixed the Codex turn summary, which showed the conversation's running token total instead of the turn's tokens.
+
+## What was done
+
+1. **Bug (reported by the user):** Codex turn summaries kept growing ("622.3k, 668.6k, 714.8k, 761.1k tokens") by about 46k per short turn.
+2. **Cause:** the `usage` on Codex's `turn.completed` is the thread's running total, not the turn's. Confirmed from the probe: turn 1 reported 34,472 input tokens, the resumed turn 2 reported 71,814, and the session file's `total_token_usage` was also 71,814, so turn 2 alone was 37,342.
+3. **Fix (on `fix/codex-token-count`, branched from `main`):** the Codex adapter marks its `usage` event `cumulative: true`. The transcript shows each turn's tokens as the growth since the previous Codex total; a smaller total means a new thread. Codex usage events saved before the flag existed are treated as totals too, so existing history displays correctly. Claude's summary is unchanged. 88 passed, 2 skipped; the frontend type-checks.
+4. **Note:** about 46k tokens for a one-line reply is real. Codex sends its instructions, tool and plugin definitions and the whole conversation on every model call, and most of it is cached input.
+5. **Token count for Claude too (user agreed):** every turn summary now shows tokens, so agents can be compared, and Claude keeps its dollar figure next to them. Claude reports cache writes and reads separately from `input_tokens` (one real turn: 6 input, 3,313 cache writes, 95,229 cache reads, 199 output), so the total adds `cache_creation_input_tokens` and `cache_read_input_tokens`. Codex's `input_tokens` already includes cached input. Claude's counts are per turn, so no subtraction is needed. The dollar figure has a tooltip: "What this turn would cost at API prices. Subscription use is not billed per turn." Example: `$0.1997 · 98.7k tokens · 2 steps · 12.3s`. UI only (`Transcript.tsx`); the frontend type-checks.
+
+## Current state
+
+- Phase 2 is merged into `main`. The token-count fix (Codex per-turn tokens, plus tokens for Claude) was checked in the UI by the user and merged into `main` from `fix/codex-token-count`.
+
+## Next steps
+
 **For the user**
 - [ ] Decide whether to remove the probe repo's trusted-project entry from `~/.codex/config.toml`.
 

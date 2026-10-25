@@ -4,7 +4,8 @@ Behavior verified against codex-cli 0.164.0 (ChatGPT login, Windows):
 - `codex exec --json -` reads the prompt from stdin and prints JSONL events:
   `thread.started`, `turn.started`, `item.started|updated|completed`, then
   `turn.completed` (with token usage) or `turn.failed`. A top-level `error`
-  event can appear on its own.
+  event can appear on its own. The usage on `turn.completed` is the thread's
+  running total across all turns so far, not the turn's own tokens.
 - Items are `agent_message`, `reasoning`, `command_execution`, `file_change`,
   `mcp_tool_call`, `web_search`, `todo_list` and `error`. Item ids restart at
   `item_0` every turn.
@@ -304,7 +305,12 @@ class TurnParser:
         events = [
             AgentEvent(
                 EventType.USAGE,
-                {"usage": raw.get("usage"), "duration_ms": round((time.monotonic() - self._began) * 1000)},
+                {
+                    "usage": raw.get("usage"),
+                    # Codex reports the thread's running total, not this turn's tokens.
+                    "cumulative": True,
+                    "duration_ms": round((time.monotonic() - self._began) * 1000),
+                },
             )
         ]
         text = self._last_message
