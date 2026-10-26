@@ -34,19 +34,19 @@ def fake_mode(title: str, agent: AgentKind) -> str:
     return modes.get(agent.value, "ok") if modes else title
 
 
-def fake_adapter_factory(session: AgentSession, stint: Stint) -> AgentAdapter:
+def fake_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> AgentAdapter:
     """Adapter driving tests/fake_claude.py or fake_codex.py; the session title picks its mode (ok, question, hang...)."""
     mode = fake_mode(session.title, stint.agent)
     if stint.agent is AgentKind.CODEX:
         return CodexAdapter(
-            Path(session.project_path),
+            cwd,
             native_session_id=stint.native_session_id,
             command=[sys.executable, str(FAKE_CODEX), mode],
             codex_home=Path(session.project_path) / "codex-home",  # never the real ~/.codex
         )
     if stint.agent is AgentKind.CLAUDE:
         return ClaudeAdapter(
-            Path(session.project_path),
+            cwd,
             native_session_id=stint.native_session_id,
             command=[sys.executable, str(FAKE_CLAUDE), mode],
         )
@@ -60,6 +60,8 @@ def engine() -> Engine:
 
 
 @pytest.fixture
-def client(engine: Engine) -> Iterator[TestClient]:
-    with make_client(create_app(engine, fake_adapter_factory, token=TEST_TOKEN)) as test_client:
+def client(engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
+    worktrees = tmp_path_factory.mktemp("worktrees")
+    app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=worktrees)
+    with make_client(app) as test_client:
         yield test_client

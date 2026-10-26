@@ -62,6 +62,21 @@ export interface StintDetail extends Stint {
   brief: string | null;
 }
 
+/** A git worktree the hub made for a session: its own folder on its own branch. */
+export interface Worktree {
+  id: number;
+  stint_id: number | null;
+  repo_path: string;
+  path: string;
+  // The project folder relative to the repository's top level ("" at the top level).
+  subdir: string;
+  branch: string;
+  base_commit: string;
+  status: "active" | "removed";
+  created_at: string;
+  removed_at: string | null;
+}
+
 export interface AgentSession {
   id: string;
   title: string;
@@ -77,8 +92,17 @@ export interface AgentSession {
   chain: ChainEntry[] | null;
   limit_policy: LimitPolicy | null;
   stints: Stint[];
+  // null when the session runs in the project folder itself.
+  worktree: Worktree | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Where the session's agents work: its worktree (plus the project's subfolder), or the project folder. */
+export function workdir(session: AgentSession): string {
+  const wt = session.worktree;
+  if (!wt) return session.project_path;
+  return wt.subdir ? `${wt.path}\\${wt.subdir.replaceAll("/", "\\")}` : wt.path;
 }
 
 /** An agent's latest plan usage windows, reported in any session. */
@@ -111,6 +135,16 @@ export interface NewSession {
   model: string | null;
   chain: ChainEntry[] | null;
   limit_policy: LimitPolicy | null;
+  use_worktree: boolean;
+}
+
+export interface GitInfo {
+  is_repo: boolean;
+  root: string | null;
+  branch: string | null;
+  has_commits: boolean;
+  // Uncommitted changes in the user's checkout (`git status --short`).
+  changes: string[];
 }
 
 export interface FolderEntry {
@@ -129,6 +163,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    // The response's `detail` when it is an object, such as {message, changes} from removing a worktree.
+    readonly detail: Record<string, any> | null = null,
   ) {
     super(message);
   }
@@ -140,21 +176,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
   });
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessage(response));
+    const body = await response.json().catch(() => null);
+    const detail = body?.detail && typeof body.detail === "object" && !Array.isArray(body.detail) ? body.detail : null;
+    throw new ApiError(response.status, errorMessage(response, body), detail);
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
-async function errorMessage(response: Response): Promise<string> {
-  try {
-    const body = await response.json();
-    if (typeof body.detail === "string") return body.detail;
-    // FastAPI validation errors: [{loc: [..., "field"], msg: "..."}]
-    if (Array.isArray(body.detail)) {
-      return body.detail.map((d: any) => `${d.loc?.at(-1) ?? "input"}: ${d.msg}`).join("; ");
-    }
-  } catch {
-    // not JSON
+function errorMessage(response: Response, body: any): string {
+  const detail = body?.detail;
+  if (typeof detail === "string") return detail;
+  if (typeof detail?.message === "string") return detail.message;
+  // FastAPI validation errors: [{loc: [..., "field"], msg: "..."}]
+  if (Array.isArray(detail)) {
+    return detail.map((d: any) => `${d.loc?.at(-1) ?? "input"}: ${d.msg}`).join("; ");
   }
   return `Request failed (${response.status})`;
 }
@@ -172,6 +207,8 @@ export const api = {
   stop: (id: string) => request<AgentSession>(`/sessions/${id}/stop`, { method: "POST" }),
   handoff: (id: string, body: { agent: AgentKind; model: string | null; note?: string | null }) =>
     request<AgentSession>(`/sessions/${id}/handoff`, { method: "POST", body: JSON.stringify(body) }),
+  removeWorktree: (id: string, body: { commit?: boolean; discard?: boolean } = {}) =>
+    request<AgentSession>(`/sessions/${id}/worktree/remove`, { method: "POST", body: JSON.stringify(body) }),
   getStint: (id: string, stintId: number) => request<StintDetail>(`/sessions/${id}/stints/${stintId}`),
   getUsage: () => request<Partial<Record<AgentKind, AgentUsage>>>("/usage"),
   getSettings: () => request<HubSettings>("/settings"),
@@ -184,4 +221,5 @@ export const api = {
     if (showHidden) params.set("show_hidden", "true");
     return request<FolderListing>(`/folders?${params}`);
   },
+  gitInfo: (path: string) => request<GitInfo>(`/folders/git?${new URLSearchParams({ path })}`),
 };

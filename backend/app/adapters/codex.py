@@ -38,6 +38,7 @@ from typing import Any
 
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter
+from app.adapters.runner import Runner
 from app.models import AgentKind
 
 LIMIT_TEXT = re.compile(
@@ -97,9 +98,10 @@ class CodexAdapter(CliAdapter):
         native_session_id: str | None = None,
         sandbox: str = "workspace-write",
         command: Sequence[str] | None = None,
+        runner: Runner | None = None,
         codex_home: Path | None = None,
     ) -> None:
-        super().__init__(cwd, command or [find_codex()])
+        super().__init__(cwd, command or [find_codex()], runner)
         self.model = model
         self.sandbox = sandbox
         self.codex_home = codex_home or Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")

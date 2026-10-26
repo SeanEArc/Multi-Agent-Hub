@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -9,6 +10,8 @@ from app.auth import is_loopback
 from app.models import AgentKind
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+# Per-user app data, outside any repository (the Tauri shell will keep its data here too).
+APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "MultiAgentHub"
 
 
 class Settings(BaseSettings):
@@ -31,6 +34,9 @@ class Settings(BaseSettings):
     claude_permission_mode: str = "acceptEdits"
     # workspace-write: Codex may edit the project folder (and %TEMP%); read-only or danger-full-access also work.
     codex_sandbox: str = "workspace-write"
+    # Sessions' git worktrees, one folder each. Keep it outside any repository: Claude Code reads the
+    # CLAUDE.md files in every folder above the one it runs in.
+    worktrees_dir: Path = APP_DATA_DIR / "worktrees"
     # Full path to the native codex.exe, if it isn't found on PATH or inside the npm install.
     codex_path: str | None = None
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was

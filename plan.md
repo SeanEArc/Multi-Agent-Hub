@@ -110,10 +110,10 @@ The user opens the desktop app and creates a session for a project, optionally c
 ## 6. Build phases
 
 **Phase 1: Core and Claude** (done 2026-10-24)
-- Status: complete. The acceptance test passed in the browser (2026-10-20), and minimal local authentication is in place: per-install token file, bearer check on every route and the stream, `Host`/`Origin` checks, loopback-only binding, token added by the Vite dev proxy. Passing the token from the Tauri main process to the sidecar is part of phase 4.
+- Status: complete. The acceptance test passed in the browser (2026-10-20), and minimal local authentication is in place: per-install token file, bearer check on every route and the stream, `Host`/`Origin` checks, loopback-only binding, token added by the Vite dev proxy. Passing the token from the Tauri main process to the sidecar is part of phase 4d.
 - Goal: one Claude session working end to end.
 - In scope: FastAPI core, adapter interface, Claude adapter (approach A), SQLite history, basic UI shell, verification of the streaming-event and interactive-input behavior of `claude -p`, the desktop-shell decision (decided 2026-10-22: Tauri), and minimal local authentication (see below).
-- Desktop shell: building the Tauri shell and packaging the backend as its sidecar is deferred to phase 4; until then the UI runs in a browser against the local API, and the Vite dev proxy reads the token file and adds the `Authorization` header to `/api` requests in place of the shell.
+- Desktop shell: building the Tauri shell and packaging the backend as its sidecar is deferred to phase 4d; until then the UI runs in a browser against the local API, and the Vite dev proxy reads the token file and adds the `Authorization` header to `/api` requests in place of the shell.
 - Minimal local authentication: a random per-install token generated on first run and stored locally with user-only access; one FastAPI dependency requiring `Authorization: Bearer <token>` on every REST route and on the event stream (constant-time comparison, 401 otherwise); the Tauri main process starts the sidecar, passes it the token through an environment variable or stdin (not a command-line argument) and injects it into UI requests; the backend binds to `127.0.0.1` only and validates `Host` and `Origin` headers; the token is never logged or written to SQLite. Reason: the API can launch agents that edit files and run commands, and retrofitting auth later would change every endpoint and the event stream.
 - Exclusions: Codex, handoff, multi-session dashboard.
 - Dependencies: Claude Code CLI installed and logged in.
@@ -144,14 +144,34 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance: a simulated limit and a manual hand-off each move a session from Claude to Codex (and back), and the task continues from the brief without the user repeating it.
 - Tradeoffs: early-warning detection is best effort (Claude reports usage windows during a turn, Codex only after it); the context lost in a brief may require the user to correct course; a hub-built brief is cheaper and always available, but less tailored than one written by an agent.
 
-**Phase 4: Multi-session dashboard and isolation**
+**Phase 4: Multi-session dashboard and isolation** (split into sub-phases 4a to 4d on 2026-10-26; each is built, tested and committed on its own)
 - Goal: several sessions on different projects, reviewable in one place.
-- In scope: dashboard, progress view (style decided here), per-session history and summaries, git worktrees per session, Claude Code and Codex style polish, the Tauri desktop shell (backend bundled as a sidecar, started, monitored and restarted by the shell, which passes it the auth token), and a **runner interface** (added 2026-10-25): every agent launch goes through one small interface that starts a CLI in a folder, sends the prompt, streams the output and kills it. Phase 4 ships only the host runner (today's behavior); phase 9 adds a Docker runner behind the same interface, so the orchestrator, handoff, worktrees and UI don't change.
 - Exclusions: remote access.
 - Dependencies: phases 1 to 3.
-- Acceptance: two or more sessions run in parallel without file conflicts, and each session's history and summary are viewable.
-- Note: the worktree handling built here is reused per stint by phase 8, so it should create, track and remove a worktree for any stint, not only for a whole session.
+- Acceptance (whole phase): two or more sessions run in parallel without file conflicts, and each session's history and summary are viewable.
 - Tradeoffs: worktrees are not a sandbox (containers come in phase 9); the subagent display decision may need a design iteration.
+
+**Phase 4a: Runner interface and git worktrees** (built 2026-10-26, Session 20; awaiting the user's test with a real project)
+- Runner interface: every agent launch goes through one small interface that starts a CLI in a folder, sends the prompt, streams the output and kills it. Only the host runner (today's behavior) ships here; phase 9 adds a Docker runner behind the same interface, so the orchestrator, handoff, worktrees and UI don't change.
+- Git worktrees per session: on by default for git repositories, with an opt-out per session; all in one hub folder (`%LOCALAPPDATA%\MultiAgentHub\worktrees`); each session works on its own `hub/...` branch. Removing a worktree deletes the folder and keeps the branch for the user to merge; uncommitted changes must first be committed to the branch or discarded. The handoff brief diffs against the branch's base commit.
+- The worktree handling can create, track and remove a worktree for any stint, not only for a whole session, because phase 8 reuses it per stint (the `stint_id` column exists; phase 8 sets it).
+- Acceptance: two sessions on the same repository work in separate folders and branches without touching each other or the user's checkout; removing a worktree keeps committed work on its branch.
+
+**Phase 4b: Dashboard, progress view, history and summaries**
+- Dashboard: every session at a glance (title, project, current agent, status, branch, last activity), so several sessions can be watched in one place.
+- Progress view: how a running turn and its subagents are shown (style decided at the start of 4b).
+- Per-session history: the session's stints, handoffs and turns, easy to review after the fact.
+- Summaries (decided 2026-10-26): a hub-built summary from events and git, kept current throughout the session at no usage cost, plus a "Re-summarize" button that asks an agent for a written summary on demand, so the user can return after a break and see what the session was about and which step it is on. To decide in 4b: which agent and model writes it, and how its usage cost is shown.
+- Acceptance: with two or more sessions running, the dashboard shows each one's state, and each session's summary and history can be opened.
+
+**Phase 4c: Claude Code and Codex style polish**
+- Bring the UI closer to the look and feel of Claude Code and Codex (transcript, tool rows, composer, colors), including smaller carried-over items such as tables in the transcript.
+- Acceptance: the user signs off on the look.
+
+**Phase 4d: Tauri desktop shell**
+- The Tauri shell, with the backend bundled as a sidecar that the shell starts, monitors and restarts, and to which it passes the auth token (replacing the Vite dev proxy's role). App data moves to `%LOCALAPPDATA%\MultiAgentHub`, next to the worktrees.
+- Dependencies: Rust (rustup with the MSVC toolchain) installed on the PC; not installed as of 2026-10-26.
+- Acceptance: the app starts from its desktop shortcut, the backend comes up with it, and it restarts if the backend crashes.
 
 **Phase 5: Local model**
 - Goal: Ollama as the last-resort tier.
@@ -179,21 +199,21 @@ The user opens the desktop app and creates a session for a project, optionally c
   - **Combining:** when all children have finished, the hub merges their branches back into the session one at a time. A clean merge continues automatically; a conflict stops and is shown to the user, and nothing is resolved automatically.
   - **Return:** the parent stint resumes with a combined report (per child: sub-task, final message, files changed, merge result), and the original agent gives the user an overview and continues.
 - Exclusions (later development): the agent proposing or planning the split itself; automatic conflict resolution; sub-tasks that depend on each other; children splitting again; a live side-by-side view; limits on how many agents run at once.
-- Dependencies: phase 4 (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
+- Dependencies: phase 4a (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
 - Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
 - Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
 
 **Phase 9: Container isolation (Docker)** (added 2026-10-25; numbered 9 so existing phase numbers stay valid; planned after phase 4 and before phase 6)
 - Goal: agents run inside Docker containers, so a misbehaving or prompt-injected agent can reach only its session's files, not the rest of the user's PC.
 - In scope:
-  - **Docker runner** behind the phase 4 runner interface: one container per session (or per stint, for phase 8 children), with the session's worktree mounted as the only project folder, started by the hub and stopped when the session ends; the agent's turn runs through `docker exec`, and stopping a turn kills the process inside the container.
+  - **Docker runner** behind the phase 4a runner interface: one container per session (or per stint, for phase 8 children), with the session's worktree mounted as the only project folder, started by the hub and stopped when the session ends; the agent's turn runs through `docker exec`, and stopping a turn kills the process inside the container.
   - **Agent logins in containers:** each CLI is signed in once inside the container, through its official login flow, with credentials kept in a named Docker volume reused by every container. The hub still never reads or stores tokens.
   - **Agent state paths:** the Codex usage reader and the session ids work against the container's volumes (for example Codex's session files), not the Windows home folder.
   - **Project images:** a default image with common toolchains (Python with uv, Node), and a per-project override (a Dockerfile or dev container config in the project).
   - **Per-session choice:** container or host runner, with a global default; the host runner stays for projects that don't fit a container.
   - **File-location decision:** whether projects move into the WSL file system for speed or stay on the Windows drive, measured on this PC first.
 - Exclusions: network egress filtering beyond Docker's defaults (later); running the hub backend itself in a container.
-- Dependencies: phase 4 (runner interface and worktrees). Docker Desktop installed with the WSL2 backend. Phase 8 benefits but does not depend on it.
+- Dependencies: phase 4a (runner interface and worktrees). Docker Desktop installed with the WSL2 backend. Phase 8 benefits but does not depend on it.
 - Acceptance: a Claude session and a Codex session each run in their own container, complete a task in the project, can't read a file planted outside the mounted folder, and hand off to each other as before.
 - Open: whether Codex's ChatGPT sign-in works inside a container (device-code or browser flow); Claude Code's official dev container setup as a starting point; image size and start-up time; how the Codex and Claude permission settings change inside a container (their own sandboxes may be redundant there).
 - Tradeoffs: real isolation, at the cost of Docker Desktop's memory and start-up time, a second login per agent, per-project images, and slower file access unless projects live in WSL.
@@ -219,10 +239,13 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Parallel split of one task across several agents is wanted, starting with a minimal user-triggered version in phase 8 and developed further later; several sessions at once stays in phase 4 (decided 2026-10-25).
 - Mobile postponed; Gmail and non-coding agents deferred.
 - Phase order as in section 6. Planned build order (2026-10-25): 3 (done), 4, then 5 and 7, then 9, then 8 and 6.
-- Docker container isolation is its own phase (phase 9), after phase 4 and before phase 6; phase 4 adds the runner interface it plugs into (decided 2026-10-25).
+- Docker container isolation is its own phase (phase 9), after phase 4 and before phase 6; phase 4 (4a) adds the runner interface it plugs into (decided 2026-10-25).
+- Phase 4 is split into sub-phases 4a (runner interface and worktrees), 4b (dashboard, progress view, history and summaries), 4c (style polish) and 4d (Tauri shell), built in that order (decided 2026-10-26).
+- Phase 4 worktrees (decided 2026-10-26): on by default for sessions in a git repository, with an opt-out per session; all worktrees live in one hub folder, `%LOCALAPPDATA%\MultiAgentHub\worktrees`, for easy cleanup (not `backend/data`, because Claude Code would load the hub's own `CLAUDE.md` from the parent folders); each session works on its own `hub/...` branch, and when done the user removes the worktree (folder deleted, branch kept) and merges the branch themselves.
+- Phase 4 summaries (decided 2026-10-26): both kinds. A hub-built summary from events and git, kept current throughout the session at no usage cost, plus a "Re-summarize" button that asks an agent for a written summary on demand, so the user can return after a break and see what the session was about and which step it is on.
 - UI blends Claude Code and Codex.
 - Stack items from the user-supplied table are accepted except the Node orchestrator and the separate Python AI service (merged into the FastAPI backend) and Docker (moved out of the first build into phase 9).
-- Tauri is the desktop shell (decided 2026-10-22, replacing the Electron default). Effect: smaller and lighter shell, but its main process needs some Rust; the shell itself is built in phase 4.
+- Tauri is the desktop shell (decided 2026-10-22, replacing the Electron default). Effect: smaller and lighter shell, but its main process needs some Rust; the shell itself is built in phase 4d.
 - Tailscale is the remote-access method for phase 6 (decided 2026-10-22).
 
 **Assumptions**
@@ -232,7 +255,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Default handoff chain is Claude → Codex → local model.
 
 **Unresolved**
-- Subagent progress display style (decide during phase 4).
+- Subagent progress display style (decide at the start of phase 4b).
 - Local model runtime model and hardware (Ollama chosen; specific model open).
 - Whether headless `claude -p` and `codex exec` support mid-run user input (check in phase 1).
 - Current Anthropic policy on subscription CLI use (recheck against Anthropic's own pages).

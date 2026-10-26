@@ -36,14 +36,17 @@ from app.models import (
     SessionStatus,
     Stint,
     StintReason,
+    WorktreeStatus,
     current_stint,
     load_hub_settings,
+    session_worktree,
     utcnow,
 )
 
 log = logging.getLogger(__name__)
 
-AdapterFactory = Callable[[AgentSession, Stint], AgentAdapter]
+# Builds the adapter for a stint, running in `cwd` (the session's worktree or project folder).
+AdapterFactory = Callable[[AgentSession, Stint, Path], AgentAdapter]
 
 # The event that ends a turn decides where the session rests afterwards.
 RESTING_STATUS = {
@@ -67,6 +70,18 @@ class AgentUnavailable(RuntimeError):
     pass
 
 
+def session_workdir(db: Session, agent_session: AgentSession) -> Path:
+    """Where the session's agents run: its worktree, or the project folder when it has none."""
+    worktree = session_worktree(db, agent_session.id)
+    if worktree is None:
+        return Path(agent_session.project_path)
+    if worktree.status is WorktreeStatus.REMOVED:
+        raise AgentUnavailable(
+            f"This session's worktree was removed. Its work is on branch {worktree.branch} in {worktree.repo_path}."
+        )
+    return Path(worktree.path) / worktree.subdir
+
+
 @dataclass
 class StreamMessage:
     kind: str  # "status", "event" or "ping"
@@ -74,20 +89,20 @@ class StreamMessage:
     id: int | None = None
 
 
-def default_adapter_factory(session: AgentSession, stint: Stint) -> AgentAdapter:
+def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> AgentAdapter:
     settings = get_settings()
     try:
         match stint.agent:
             case AgentKind.CLAUDE:
                 return ClaudeAdapter(
-                    Path(session.project_path),
+                    cwd,
                     model=stint.model,
                     native_session_id=stint.native_session_id,
                     permission_mode=settings.claude_permission_mode,
                 )
             case AgentKind.CODEX:
                 return CodexAdapter(
-                    Path(session.project_path),
+                    cwd,
                     model=stint.model,
                     native_session_id=stint.native_session_id,
                     sandbox=settings.codex_sandbox,
@@ -151,7 +166,9 @@ class Orchestrator:
             stint = current_stint(db, session_id)
             limit_known = _limit_already_reached(db, stint)
             if not limit_known:
-                adapter = self._adapters.get(session_id) or self._adapter_factory(agent_session, stint)
+                adapter = self._adapters.get(session_id) or self._adapter_factory(
+                    agent_session, stint, session_workdir(db, agent_session)
+                )
 
         self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": text}))
         if limit_known:
@@ -313,8 +330,9 @@ class Orchestrator:
 
     def _can_run(self, agent_session: AgentSession, entry: ChainEntry) -> bool:
         try:
-            self._adapter_factory(agent_session, Stint(session_id=agent_session.id, seq=0, agent=entry.agent,
-                                                       model=entry.model, reason=StintReason.LIMIT))
+            stint = Stint(session_id=agent_session.id, seq=0, agent=entry.agent, model=entry.model,
+                          reason=StintReason.LIMIT)
+            self._adapter_factory(agent_session, stint, Path(agent_session.project_path))
         except AgentUnavailable:
             return False
         return True
@@ -329,13 +347,15 @@ class Orchestrator:
                 events = db.exec(
                     select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(col(SessionEvent.id))
                 ).all()
+                workdir = session_workdir(db, agent_session)
+                worktree = session_worktree(db, session_id)
             stint = Stint(session_id=session_id, seq=previous.seq + 1, agent=target.agent, model=target.model,
                           reason=reason)
-            adapter = self._adapter_factory(agent_session, stint)  # AgentUnavailable before anything changes
+            adapter = self._adapter_factory(agent_session, stint, workdir)  # AgentUnavailable before anything changes
 
             self._set_status(session_id, SessionStatus.HANDING_OFF)
             try:
-                git = await git_state(Path(agent_session.project_path))
+                git = await git_state(workdir, base=worktree.base_commit if worktree else None)
                 stint.brief = build_brief(events, previous.id, previous.agent, target.agent, reason, git, note)
                 with Session(self._engine) as db:
                     ended = db.get(Stint, previous.id)

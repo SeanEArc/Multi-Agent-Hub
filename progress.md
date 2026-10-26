@@ -686,6 +686,10 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Next steps
 
+- Superseded by Session 20.
+
+**As written in Session 19**
+
 **For the user**
 - [ ] Choose the next phase: 4 (dashboard, worktrees, Tauri, runner interface) per the build order, or 5 or 7. (Carried over: whether phase 7 comes before phase 5.)
 - [ ] Delete the four `backend/.pytest-*-20261025` folders if they're unwanted (may need an elevated prompt).
@@ -696,3 +700,72 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Offered, not started: a "What remains" section in the brief.
 - [ ] Possible follow-ups: Bash versions of the commands in `CLAUDE.md`; read Codex usage straight from its newest session file; change a session's chain or policy after creation; a faster sidebar refresh for background sessions.
 - [ ] Carried over: `remark-gfm` for tables in the transcript.
+
+---
+
+2026-10-26 11:14 (UTC-05:00)
+
+# Session 20: Started Phase 4 with the runner interface and per-session git worktrees (backend, API and UI), on `feature/runner-interface`.
+
+## What was done
+
+1. **Phase 4 split into slices:**
+   1. runner interface;
+   2. worktrees;
+   3. dashboard, progress view, history and summaries;
+   4. style polish;
+   5. Tauri shell. Rust is not installed yet (`rustc` not found), so this slice comes last.
+2. **Decisions (user, recorded in `plan.md` section 7):**
+   - **Worktrees:** all live in one hub folder for easy cleanup. They are on by default for git repos, with an opt-out. Each session works on its own branch; when done, the worktree folder is removed, the branch is kept, and the user merges it.
+   - **Summaries:** both kinds. A hub-built summary kept current all session, plus a "Re-summarize" button where an agent writes one on demand, so the user can come back after a break and see what the session was about and which step it is on.
+3. **Worktree location changed from the proposal:** the worktrees went to `%LOCALAPPDATA%\MultiAgentHub\worktrees` instead of `backend/data/worktrees`. Claude Code loads every `CLAUDE.md` in the folders above its working folder, so worktrees inside this repo would load the hub's own `CLAUDE.md` into every session. It is still one hub-owned folder, and the Tauri app's data will go there too. Setting: `HUB_WORKTREES_DIR`.
+4. **Runner interface (`app/adapters/runner.py`):**
+   - `Runner.start(command, cwd, env)` returns a `RunningProcess` (`send_input`, `lines`, `read_stderr`, `wait`, `kill`).
+   - `HostRunner` holds the old launch and `taskkill /T` code.
+   - `CliAdapter` launches only through it. Adapters take an optional `runner=`, which the phase 9 Docker runner will use.
+5. **Worktrees (`app/worktrees.py`, new `worktrees` table, migration `c5e66c0f3b10`):**
+   - **Creation:** a session on a git repo gets `git worktree add -b hub/<title>-<id8>` from HEAD. A project subfolder maps to the same subfolder in the worktree. A repo with no commits is refused, with a message.
+   - **Where agents run:** the orchestrator's `session_workdir` gives the adapters the worktree folder. The adapter factory now takes `cwd`.
+   - **Handoff brief:** the diff is against the branch's base commit, so work the agents committed is included.
+   - **Remove** (`POST /sessions/{id}/worktree/remove`):
+     - refuses uncommitted changes and lists them, unless the user chooses "commit" or "discard";
+     - deletes the folder, or prunes it if the user already deleted it;
+     - keeps the branch, unless it has no commits of its own.
+   - **Delete session:** removes a clean worktree. A dirty one is refused.
+   - **After removal:** sending a message to the session says which branch holds the work.
+   - **`GET /folders/git`** tells the UI whether the folder is a repo and lists the user's uncommitted changes, which a worktree doesn't copy.
+   - The `worktrees.stint_id` column is ready for phase 8's per-stint worktrees.
+6. **UI:**
+   - **New session dialog:** a "Work in a separate git worktree" checkbox, shown only for repos, with a warning about uncommitted changes.
+   - **Session header:** a branch chip that opens the new Worktree dialog (branch, base commit, folder, merge hint, Remove / Commit and remove / Discard and remove).
+   - **Transcript paths** are shortened against the worktree folder.
+   - **Delete** explains when uncommitted worktree changes block it.
+7. **Tests:**
+   - `test_runner.py` (3) and `test_worktrees.py` (15, against real temp git repos).
+   - Fake Claude now echoes its cwd.
+   - **134 passed, 2 skipped.** The frontend type-checks.
+8. **Smoke test** against a real backend (temporary database and port, temp repo, no agent turns): the worktree was created under `%LOCALAPPDATA%\MultiAgentHub\worktrees`. Deleting the session removed it and its empty branch.
+
+## Current state
+
+- **Branch:** committed on `feature/runner-interface`, pushed, and fast-forwarded into `main` (pushed), at the user's request (2026-10-26).
+- **Phase 4 progress:** 4a is built and merged. 4b, 4c and 4d are not started. 4a is not marked done in `plan.md` until the user's real-project test passes.
+- **`plan.md`:** Phase 4 is split into sub-phases 4a (runner interface and worktrees), 4b (dashboard, progress view, history, summaries), 4c (style polish) and 4d (Tauri shell), each with its own scope and acceptance test (user asked, 2026-10-26).
+
+## Next steps
+
+**For the user**
+- [ ] Try a worktree session in the browser on a real project (phase 4a's acceptance test). Restart the backend first: the new migration runs on start. Check:
+  - the checkbox in New session;
+  - the branch chip;
+  - that the agent edits files in the worktree, not your checkout;
+  - Remove worktree, and Commit and remove.
+- [ ] Install Rust (rustup, MSVC toolchain) before phase 4d.
+- [ ] Carried over: delete the four `backend/.pytest-*-20261025` folders if unwanted (may need an elevated prompt).
+
+**For the agent**
+- [ ] Phase 4b: dashboard (all sessions at a glance), progress view (decide the subagent display style with the user), history, a hub-built summary kept current, and an agent-written "Re-summarize" button (decide which agent or model writes it, and show its usage cost).
+- [ ] Then 4c (style polish) and 4d (Tauri shell: backend as sidecar, start/monitor/restart, pass the token, data in `%LOCALAPPDATA%\MultiAgentHub`).
+- [ ] Check with a real Codex turn whether Codex's `workspace-write` sandbox can run `git commit` in a worktree. The worktree's git data lives in the main repo's `.git`, outside the sandbox. "Commit and remove" works either way, because the hub commits.
+- [ ] Each worktree path adds a "trusted" entry to `~/.codex/config.toml`. Consider pruning stale ones when a worktree is removed (that file belongs to Codex, so ask first).
+- [ ] Carried over: Codex ChatGPT sign-in in a container and mount speed (before phase 9); the intermittent test failure (`uv run pytest -rf`); "What remains" in the brief; `remark-gfm`; Bash versions of the commands in `CLAUDE.md`; changing a session's chain or policy after creation; a faster sidebar refresh.

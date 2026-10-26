@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -18,9 +19,15 @@ from app.models import (
     Stint,
     StintDetail,
     StintReason,
+    Worktree,
+    WorktreeRemove,
+    WorktreeStatus,
     session_read,
+    session_worktree,
+    utcnow,
 )
 from app.orchestrator import AgentUnavailable, Orchestrator, SessionBusy, SessionNotFound, StreamMessage
+from app.worktrees import WorktreeError, commit_all, create_worktree, remove_worktree, repo_info, worktree_changes
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -41,15 +48,25 @@ def _get_or_404(db: Session, session_id: str) -> AgentSession:
 
 
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
-def create_session(body: SessionCreate, db: DbSession) -> SessionRead:
+async def create_session(body: SessionCreate, db: DbSession, request: Request) -> SessionRead:
+    """Create a session. In a git repository it gets its own worktree and branch unless `use_worktree` is false."""
     agent_session = AgentSession(
         title=body.title,
         project_path=body.project_path,
         chain=[entry.model_dump(mode="json") for entry in body.chain] if body.chain else None,
         limit_policy=body.limit_policy,
     )
+    repo = await repo_info(Path(body.project_path)) if body.use_worktree else None
+    if repo is not None:
+        try:
+            created = await create_worktree(request.app.state.worktrees_dir, repo, agent_session.id, body.title)
+        except WorktreeError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not create a worktree: {exc}") from None
     db.add(agent_session)
     db.add(Stint(session_id=agent_session.id, seq=1, agent=body.agent, model=body.model, reason=StintReason.NEW))
+    if repo is not None:
+        db.add(Worktree(session_id=agent_session.id, repo_path=str(repo.root), path=str(created.path),
+                        subdir=repo.subdir, branch=created.branch, base_commit=created.base_commit))
     db.commit()
     db.refresh(agent_session)
     return session_read(db, agent_session)
@@ -77,8 +94,12 @@ def get_stint(session_id: str, stint_id: int, db: DbSession) -> Stint:
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(session_id: str, db: DbSession, orchestrator: Orch) -> None:
+    """Delete the session and its history. Its worktree is removed too (branch kept), but only if it is clean."""
     agent_session = _get_or_404(db, session_id)
     await orchestrator.forget(session_id)
+    worktree = session_worktree(db, session_id)
+    if worktree is not None and worktree.status is WorktreeStatus.ACTIVE:
+        await _remove_worktree(db, agent_session, worktree, WorktreeRemove())
     # The session's events are removed by the database (ON DELETE CASCADE).
     db.delete(agent_session)
     db.commit()
@@ -119,6 +140,47 @@ async def stop_session(session_id: str, db: DbSession, orchestrator: Orch) -> Se
         raise HTTPException(status.HTTP_409_CONFLICT, "No turn is running for this session")
     db.refresh(agent_session)
     return session_read(db, agent_session)
+
+
+@router.post("/{session_id}/worktree/remove", response_model=SessionRead)
+async def remove_session_worktree(
+    session_id: str, body: WorktreeRemove, db: DbSession, orchestrator: Orch
+) -> SessionRead:
+    """Delete the session's worktree folder. The branch is kept for merging unless it has no commits.
+
+    Uncommitted changes are refused (409, with the changed files) unless `commit` or `discard` says what to do.
+    """
+    agent_session = _get_or_404(db, session_id)
+    worktree = session_worktree(db, session_id)
+    if worktree is None or worktree.status is not WorktreeStatus.ACTIVE:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This session has no worktree to remove")
+    if orchestrator.is_running(session_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "A turn is running for this session; stop it first")
+    await _remove_worktree(db, agent_session, worktree, body)
+    await orchestrator.forget(session_id)
+    db.refresh(agent_session)
+    return session_read(db, agent_session)
+
+
+async def _remove_worktree(db: Session, agent_session: AgentSession, worktree: Worktree, body: WorktreeRemove) -> None:
+    path = Path(worktree.path)
+    try:
+        changes = await worktree_changes(path) if path.exists() else []
+        if changes and body.commit:
+            await commit_all(path, f"{agent_session.title}\n\nWork from a Multi-Agent Hub session.")
+        elif changes and not body.discard:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                {"message": "The worktree has uncommitted changes. Commit or discard them first.", "changes": changes},
+            )
+        await remove_worktree(Path(worktree.repo_path), path, worktree.branch, worktree.base_commit,
+                              force=body.discard)
+    except WorktreeError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Could not remove the worktree: {exc}") from None
+    worktree.status = WorktreeStatus.REMOVED
+    worktree.removed_at = utcnow()
+    db.add(worktree)
+    db.commit()
 
 
 @router.get("/{session_id}/events", response_model=list[EventRead])

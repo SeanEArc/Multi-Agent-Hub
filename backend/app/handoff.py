@@ -39,15 +39,19 @@ class GitState:
     diff: str
 
 
-async def git_state(path: Path) -> GitState | None:
-    """`git status` and the diff against HEAD, or None if the folder is not a git work tree."""
+async def git_state(path: Path, base: str | None = None) -> GitState | None:
+    """`git status` and the diff against `base` (default HEAD), or None if the folder is not a git work tree.
+
+    A worktree passes its base commit, so work the agents already committed on the branch is included.
+    """
     inside = await _git(path, "rev-parse", "--is-inside-work-tree")
     if inside is None or inside.strip() != "true":
         return None
     status = await _git(path, "status", "--short")
+    since = base or "HEAD"
     # A repository with no commits has no HEAD; fall back to the unstaged diff.
-    diff_stat = await _git(path, "diff", "--stat", "HEAD") or await _git(path, "diff", "--stat") or ""
-    diff = await _git(path, "diff", "HEAD") or await _git(path, "diff") or ""
+    diff_stat = await _git(path, "diff", "--stat", since) or await _git(path, "diff", "--stat") or ""
+    diff = await _git(path, "diff", since) or await _git(path, "diff") or ""
     return GitState(status=status or "", diff_stat=diff_stat, diff=diff)
 
 

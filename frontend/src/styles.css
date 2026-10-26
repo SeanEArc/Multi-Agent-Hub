@@ -982,3 +982,73 @@ textarea:focus,
     border-right: 0;
   }
 }
+
+/* --- Worktrees ---------------------------------------------------------------------------- */
+
+.dialog label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.dialog label.checkbox input {
+  width: auto;
+  margin: 0;
+}
+
+.hint.warning {
+  color: var(--warn);
+}
+
+.chip-button {
+  color: var(--text);
+  font-family: var(--mono);
+  cursor: pointer;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip-button:hover {
+  border-color: var(--muted);
+}
+
+.chip-button.removed {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.worktree-changes pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 12px;
+}

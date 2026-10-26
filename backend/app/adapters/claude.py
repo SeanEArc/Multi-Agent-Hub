@@ -21,6 +21,7 @@ from typing import Any
 
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter
+from app.adapters.runner import Runner
 from app.models import AgentKind
 
 # Wording of subscription-limit errors is not verified; rate_limit_event "rejected" is the primary signal.
@@ -53,8 +54,9 @@ class ClaudeAdapter(CliAdapter):
         native_session_id: str | None = None,
         permission_mode: str = "acceptEdits",
         command: Sequence[str] | None = None,
+        runner: Runner | None = None,
     ) -> None:
-        super().__init__(cwd, command or [find_claude()])
+        super().__init__(cwd, command or [find_claude()], runner)
         self.model = model
         self.permission_mode = permission_mode
         self._session_id = native_session_id

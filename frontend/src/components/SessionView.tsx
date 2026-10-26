@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AGENT_NAMES, api, type AgentSession, type SessionEvent } from "../api";
+import { AGENT_NAMES, ApiError, api, workdir, type AgentSession, type SessionEvent } from "../api";
 import { useSessionStream } from "../useSessionStream";
 import { Composer } from "./Composer";
 import { HandoffDialog } from "./HandoffDialog";
 import { StatusBadge } from "./StatusBadge";
 import { Transcript } from "./Transcript";
 import { UsageMeters } from "./UsageMeters";
+import { WorktreeDialog } from "./WorktreeDialog";
 
 interface Props {
   session: AgentSession;
@@ -19,6 +20,7 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const [handingOff, setHandingOff] = useState(false);
+  const [showWorktree, setShowWorktree] = useState(false);
 
   // Keep the sidebar (and this session's current agent) in step when the live status changes.
   useEffect(() => {
@@ -45,6 +47,8 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
   const lastUsageReport = lastOf(events, "rate_limit", "limit_reached");
   const agentName = AGENT_NAMES[session.agent];
   const busy = status === "working" || status === "handing_off";
+  const folder = workdir(session);
+  const worktree = session.worktree;
 
   // The agent names its model once a turn starts (Codex after it ends); show it in the sidebar too.
   useEffect(() => {
@@ -52,8 +56,19 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
   }, [reportedModel, session.reported_model]);
 
   async function remove() {
-    if (!confirm(`Delete "${session.title}" and its history? Files in the project folder are not touched.`)) return;
-    await api.deleteSession(session.id);
+    const files = worktree?.status === "active"
+      ? `Its worktree folder is removed too; the branch ${worktree.branch} is kept.`
+      : "Files in the project folder are not touched.";
+    if (!confirm(`Delete "${session.title}" and its history? ${files}`)) return;
+    try {
+      await api.deleteSession(session.id);
+    } catch (err) {
+      if (err instanceof ApiError && err.detail?.changes) {
+        alert("The worktree has uncommitted changes. Open Worktree to commit or discard them, then delete the session.");
+        return;
+      }
+      throw err;
+    }
     onDeleted();
   }
 
@@ -65,7 +80,16 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
           <div className="session-meta">
             <span className="chip">{agentName}</span>
             <span className="chip">{reportedModel ?? session.reported_model ?? session.model ?? "default model"}</span>
-            <span className="path" title={session.project_path}>
+            {worktree && (
+              <button
+                className={`chip chip-button${worktree.status === "removed" ? " removed" : ""}`}
+                onClick={() => setShowWorktree(true)}
+                title={worktree.status === "active" ? "Worktree branch" : "The worktree was removed; the branch is kept"}
+              >
+                ⑂ {worktree.branch}
+              </button>
+            )}
+            <span className="path" title={folder}>
               {session.project_path}
             </span>
           </div>
@@ -99,14 +123,14 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
         {events.length === 0 && status === "ready" ? (
           <div className="empty-state">
             <p>Send a message to start {agentName} in</p>
-            <code>{session.project_path}</code>
+            <code>{folder}</code>
           </div>
         ) : (
           <Transcript
             sessionId={session.id}
             events={events}
             status={status}
-            projectPath={session.project_path}
+            projectPath={folder}
             onAcceptHandoff={async (agent, model) => {
               stickToBottom.current = true;
               await api.handoff(session.id, { agent, model });
@@ -129,6 +153,16 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
           onChanged();
         }}
       />
+
+      {showWorktree && worktree && (
+        <WorktreeDialog
+          session={session}
+          worktree={worktree}
+          busy={busy}
+          onDone={onChanged}
+          onClose={() => setShowWorktree(false)}
+        />
+      )}
 
       {handingOff && (
         <HandoffDialog

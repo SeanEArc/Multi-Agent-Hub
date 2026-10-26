@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,8 +18,9 @@ def create_app(
     engine: Engine | None = None,
     adapter_factory: AdapterFactory = default_adapter_factory,
     token: str | None = None,
+    worktrees_dir: Path | None = None,
 ) -> FastAPI:
-    """Tests pass `token`; otherwise it is read from (or created in) the token file at startup."""
+    """Tests pass `token` and `worktrees_dir`; otherwise they come from the settings."""
     settings = get_settings()
     engine = engine or make_engine(settings.database_url)
     orchestrator = Orchestrator(engine, adapter_factory, simulate_limit=set(settings.simulate_limit))
@@ -35,6 +37,7 @@ def create_app(
     app = FastAPI(title="Multi-Agent Hub", version="0.1.0", lifespan=lifespan)
     app.state.engine = engine
     app.state.orchestrator = orchestrator
+    app.state.worktrees_dir = worktrees_dir or settings.worktrees_dir
 
     app.add_middleware(
         CORSMiddleware,

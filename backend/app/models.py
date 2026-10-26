@@ -58,6 +58,11 @@ class LimitPolicy(StrEnum):
     ASK = "ask"  # wait until the user confirms the handoff
 
 
+class WorktreeStatus(StrEnum):
+    ACTIVE = "active"
+    REMOVED = "removed"  # folder deleted; the branch is kept for the user to merge
+
+
 class ChainEntry(SQLModel):
     agent: AgentKind
     model: str | None = None
@@ -106,6 +111,37 @@ class Stint(SQLModel, table=True):
     ended_at: datetime | None = None
 
 
+class Worktree(SQLModel, table=True):
+    """A git worktree the hub created: its own folder on its own branch, so parallel work never collides."""
+
+    __tablename__ = "worktrees"
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: str = Field(foreign_key="sessions.id", ondelete="CASCADE", index=True)
+    # None: the whole session works here. Set for a stint with its own worktree (parallel split, phase 8).
+    stint_id: int | None = Field(default=None, foreign_key="stints.id", ondelete="CASCADE")
+    repo_path: str  # top level of the user's repository
+    path: str  # the worktree folder
+    # The project folder relative to the repository's top level ("" when it is the top level).
+    subdir: str = ""
+    branch: str
+    base_commit: str  # where the branch started; the handoff diff and summaries compare against it
+    status: WorktreeStatus = Field(
+        default=WorktreeStatus.ACTIVE, sa_column=enum_column(WorktreeStatus, nullable=False)
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    removed_at: datetime | None = None
+
+
+def session_worktree(db: Session, session_id: str) -> Worktree | None:
+    """The worktree the whole session works in, if it has one."""
+    return db.exec(
+        select(Worktree)
+        .where(Worktree.session_id == session_id, col(Worktree.stint_id).is_(None))
+        .order_by(col(Worktree.id).desc())
+    ).first()
+
+
 def current_stint(db: Session, session_id: str) -> Stint | None:
     """The agent working on the session now. Phase 3 has one at a time: the latest."""
     return db.exec(select(Stint).where(Stint.session_id == session_id).order_by(col(Stint.seq).desc())).first()
@@ -118,6 +154,8 @@ class SessionCreate(SQLModel):
     model: str | None = None
     chain: list[ChainEntry] | None = None
     limit_policy: LimitPolicy | None = None
+    # Work in a new git worktree on its own branch. Ignored for folders that aren't in a git repository.
+    use_worktree: bool = True
 
     @field_validator("project_path")
     @classmethod
@@ -155,6 +193,26 @@ class StintDetail(StintRead):
     brief: str | None
 
 
+class WorktreeRead(SQLModel):
+    id: int
+    stint_id: int | None
+    repo_path: str
+    path: str
+    subdir: str
+    branch: str
+    base_commit: str
+    status: WorktreeStatus
+    created_at: datetime
+    removed_at: datetime | None
+
+
+class WorktreeRemove(SQLModel):
+    # What to do with uncommitted changes: commit them to the branch first, or throw them away.
+    # With neither, removing a worktree that has changes is refused.
+    commit: bool = False
+    discard: bool = False
+
+
 class SessionRead(SQLModel):
     id: str
     title: str
@@ -169,6 +227,8 @@ class SessionRead(SQLModel):
     chain: list[ChainEntry] | None
     limit_policy: LimitPolicy | None
     stints: list[StintRead]
+    # The session's worktree (None when it runs in the project folder itself).
+    worktree: WorktreeRead | None
     created_at: datetime
     updated_at: datetime
 
@@ -188,6 +248,7 @@ def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
         native_session_id=current.native_session_id,
         reported_model=(reported.payload or {}).get("model") if reported else None,
         stints=[StintRead.model_validate(s) for s in stints],
+        worktree=session_worktree(db, agent_session.id),
     )
 
 

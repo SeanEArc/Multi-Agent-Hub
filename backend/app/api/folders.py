@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from sqlmodel import SQLModel
 
+from app.worktrees import repo_info
+
 router = APIRouter(prefix="/folders", tags=["folders"])
 
 
@@ -18,6 +20,15 @@ class FolderListing(SQLModel):
     path: str | None
     parent: str | None
     folders: list[FolderEntry]
+
+
+class GitInfo(SQLModel):
+    is_repo: bool
+    root: str | None = None
+    branch: str | None = None
+    has_commits: bool = False
+    # Uncommitted changes in the user's checkout; a new worktree starts from HEAD without them.
+    changes: list[str] = []
 
 
 def _roots() -> list[FolderEntry]:
@@ -62,6 +73,19 @@ def list_folders(path: str | None = None, show_hidden: bool = False) -> FolderLi
         parent=parent,
         folders=[FolderEntry(name=entry.name, path=str(folder / entry.name)) for entry in children],
     )
+
+
+@router.get("/git", response_model=GitInfo)
+async def git_info(path: str) -> GitInfo:
+    """Whether the folder is in a git repository, so the UI can offer a worktree."""
+    folder = Path(path).expanduser()
+    if not folder.is_dir():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Folder not found")
+    repo = await repo_info(folder)
+    if repo is None:
+        return GitInfo(is_repo=False)
+    return GitInfo(is_repo=True, root=str(repo.root), branch=repo.branch, has_commits=repo.head is not None,
+                   changes=repo.changes)
 
 
 def _is_dir(entry: os.DirEntry) -> bool:

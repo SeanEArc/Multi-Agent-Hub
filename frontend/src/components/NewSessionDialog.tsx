@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { MODELS, type AgentKind, type ChainEntry, type LimitPolicy, type NewSession } from "../api";
+import { MODELS, api, type AgentKind, type ChainEntry, type GitInfo, type LimitPolicy, type NewSession } from "../api";
 import { ChainEditor, POLICY_LABELS } from "./ChainEditor";
 import { FolderPicker } from "./FolderPicker";
 
@@ -22,12 +22,34 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   // null: use the defaults from Settings.
   const [chain, setChain] = useState<ChainEntry[] | null>(null);
   const [policy, setPolicy] = useState<LimitPolicy | "">("");
+  const [useWorktree, setUseWorktree] = useState(true);
+  const [git, setGit] = useState<GitInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
+
+  // Look up the folder's repository once typing pauses, to offer a worktree.
+  useEffect(() => {
+    const path = projectPath.trim();
+    setGit(null);
+    if (!path) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      api
+        .gitInfo(path)
+        .then((info) => current && setGit(info))
+        .catch(() => current && setGit(null));
+    }, 300);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [projectPath]);
+
+  const canUseWorktree = !!git?.is_repo && git.has_commits;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -42,6 +64,7 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
           model: model || null,
           chain,
           limit_policy: policy || null,
+          use_worktree: canUseWorktree && useWorktree,
         },
         firstMessage.trim(),
       );
@@ -66,6 +89,33 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
           <FolderPicker value={projectPath} onChange={setProjectPath} recent={recentProjects} />
           <span className="hint">Type or paste a path, or browse to the folder. The agent can edit files in it.</span>
         </div>
+
+        {git?.is_repo && (
+          <div className="field">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={canUseWorktree && useWorktree}
+                disabled={!canUseWorktree}
+                onChange={(e) => setUseWorktree(e.target.checked)}
+              />
+              Work in a separate git worktree
+            </label>
+            <span className="hint">
+              {!git.has_commits
+                ? "The repository has no commits yet, so the session runs in the folder itself."
+                : useWorktree
+                  ? `The agents work on a new branch in their own folder, starting from ${git.branch ?? "the current commit"}. Other sessions and your own checkout are not affected.`
+                  : "The agents work directly in this folder, on your current branch."}
+            </span>
+            {canUseWorktree && useWorktree && git.changes.length > 0 && (
+              <span className="hint warning">
+                Your {git.changes.length} uncommitted {git.changes.length === 1 ? "change is" : "changes are"} not
+                copied into the worktree. Commit them first if the agent needs them.
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="field-row">
           <label>
