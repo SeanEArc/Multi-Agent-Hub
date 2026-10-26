@@ -40,7 +40,7 @@ Working name: `multi-agent-hub`. Status: confirmed by the user in the planning i
 - The iPhone app and remote access (postponed to a later phase).
 - Multi-user features.
 - RAG, evaluations and ML features (the user's future project; the Python backend is chosen so they can be added later).
-- Docker isolation (deferred; see tradeoffs).
+- Docker isolation in the first build. It is planned as phase 9 (decided 2026-10-25), after phase 4 and before phase 6; see tradeoffs.
 - Running or installing agents on the phone.
 
 No out-of-scope item was kept against a challenge. All deferrals are the user's decisions.
@@ -57,7 +57,7 @@ No out-of-scope item was kept against a challenge. All deferrals are the user's 
 | Claude control | Approach A: run the official `claude` CLI headless as a child process and read its streamed events | User choice |
 | Local models | Ollama, behind an adapter | User-supplied table, accepted |
 | Storage | SQLite: tasks, settings, logs, history | User-supplied table, accepted |
-| Isolation | Git worktrees per session or agent | User-supplied table, accepted |
+| Isolation | Git worktrees per session or agent (phase 4); Docker containers per session (phase 9) | User-supplied table, accepted; containers added 2026-10-25 |
 
 **Rationale.** Python is the user's strongest language and keeps a clean path to RAG, evaluations and ML. React keeps the UI reusable as a future iPhone web client, and the FastAPI backend already provides the API for it. The adapter interface lets the way an agent is driven be swapped without touching handoff, the UI or history.
 
@@ -77,7 +77,7 @@ No out-of-scope item was kept against a challenge. All deferrals are the user's 
 - **Python backend plus Tauri shell.** Positive: strongest language for the author, and a path to AI features. Negative: three languages (TypeScript UI, Python backend, a small amount of Rust in the shell), a bundled Python runtime (for example a PyInstaller build registered as a Tauri sidecar binary), and the shell must start, monitor and restart the backend. **General knowledge, unverified.**
 - **Tauri versus Electron (decided: Tauri).** One 2026 test reports about 3 MB versus 85 MB bundles and about 42 MB versus 168 MB idle memory in favor of Tauri; sources vary and no measurement of a Python sidecar was found, which will dominate the bundle size either way. **Source-reported, partly unverified** (DevToolPicks). Cost accepted: the shell's main process is Rust instead of Node, and the Rust toolchain plus the WebView2 runtime are needed to build. The Tauri webview has its own origin (on Windows reportedly `http://tauri.localhost`), which the backend's `Origin` check must allow; **unverified, check against the Tauri version used**.
 - **React UI and FastAPI API.** Positive: the same UI can become the iPhone web app later. Negative: the network layer and login add work then. **General knowledge, unverified.**
-- **Git worktrees without Docker.** Positive: lightweight, and agents on the same repository do not overwrite each other. Negative: not a security sandbox; agents can still reach the user's files. Docker would add Docker Desktop weight on Windows and complicate use of logged-in CLIs. **General knowledge, unverified.**
+- **Git worktrees first, Docker later (decided 2026-10-25: Docker as phase 9).** Worktrees are lightweight, and agents on the same repository do not overwrite each other, but they are not a security sandbox: until phase 9 an agent can still read the user's files (Codex's own sandbox limits writes, not reads; Claude has only permission rules). Docker gives real isolation but costs Docker Desktop on Windows, a separate CLI login inside the container (the Windows logins can't be shared in), a toolchain image per project, and slow file access for projects on the Windows drive mounted into WSL2-based Linux containers. The usual fix for that is keeping projects inside the WSL file system. It is planned before phase 6 because remote control from the phone raises the stakes more than parallel sessions do. **General knowledge, unverified** (in particular the mount speed on this PC and whether Codex's ChatGPT sign-in works inside a container).
 - **Limit detection.** "Nearing the limit" may only be detectable after a limit error appears; early warning is best effort. **Unverified.**
 - **Vendor handoff.** Sessions cannot share native state across vendors, so context is rebuilt from a written summary plus the git diff. Some detail is lost, and local models are much weaker at coding. **General knowledge, unverified.**
 - **iPhone delivery (later).** Installable web app: free, no re-signing, push notifications reportedly need a home-screen install. Free Apple ID sideload: expires every 7 days, 3-app limit, reportedly no push. Paid developer account (about $99/year) removes the limits. **Secondary sources, mostly unverified** (superappp.com, mjtsai.com).
@@ -146,12 +146,12 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 **Phase 4: Multi-session dashboard and isolation**
 - Goal: several sessions on different projects, reviewable in one place.
-- In scope: dashboard, progress view (style decided here), per-session history and summaries, git worktrees per session, Claude Code and Codex style polish, and the Tauri desktop shell (backend bundled as a sidecar, started, monitored and restarted by the shell, which passes it the auth token).
+- In scope: dashboard, progress view (style decided here), per-session history and summaries, git worktrees per session, Claude Code and Codex style polish, the Tauri desktop shell (backend bundled as a sidecar, started, monitored and restarted by the shell, which passes it the auth token), and a **runner interface** (added 2026-10-25): every agent launch goes through one small interface that starts a CLI in a folder, sends the prompt, streams the output and kills it. Phase 4 ships only the host runner (today's behavior); phase 9 adds a Docker runner behind the same interface, so the orchestrator, handoff, worktrees and UI don't change.
 - Exclusions: remote access.
 - Dependencies: phases 1 to 3.
 - Acceptance: two or more sessions run in parallel without file conflicts, and each session's history and summary are viewable.
 - Note: the worktree handling built here is reused per stint by phase 8, so it should create, track and remove a worktree for any stint, not only for a whole session.
-- Tradeoffs: worktrees are not a sandbox; the subagent display decision may need a design iteration.
+- Tradeoffs: worktrees are not a sandbox (containers come in phase 9); the subagent display decision may need a design iteration.
 
 **Phase 5: Local model**
 - Goal: Ollama as the last-resort tier.
@@ -183,12 +183,27 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
 - Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
 
+**Phase 9: Container isolation (Docker)** (added 2026-10-25; numbered 9 so existing phase numbers stay valid; planned after phase 4 and before phase 6)
+- Goal: agents run inside Docker containers, so a misbehaving or prompt-injected agent can reach only its session's files, not the rest of the user's PC.
+- In scope:
+  - **Docker runner** behind the phase 4 runner interface: one container per session (or per stint, for phase 8 children), with the session's worktree mounted as the only project folder, started by the hub and stopped when the session ends; the agent's turn runs through `docker exec`, and stopping a turn kills the process inside the container.
+  - **Agent logins in containers:** each CLI is signed in once inside the container, through its official login flow, with credentials kept in a named Docker volume reused by every container. The hub still never reads or stores tokens.
+  - **Agent state paths:** the Codex usage reader and the session ids work against the container's volumes (for example Codex's session files), not the Windows home folder.
+  - **Project images:** a default image with common toolchains (Python with uv, Node), and a per-project override (a Dockerfile or dev container config in the project).
+  - **Per-session choice:** container or host runner, with a global default; the host runner stays for projects that don't fit a container.
+  - **File-location decision:** whether projects move into the WSL file system for speed or stay on the Windows drive, measured on this PC first.
+- Exclusions: network egress filtering beyond Docker's defaults (later); running the hub backend itself in a container.
+- Dependencies: phase 4 (runner interface and worktrees). Docker Desktop installed with the WSL2 backend. Phase 8 benefits but does not depend on it.
+- Acceptance: a Claude session and a Codex session each run in their own container, complete a task in the project, can't read a file planted outside the mounted folder, and hand off to each other as before.
+- Open: whether Codex's ChatGPT sign-in works inside a container (device-code or browser flow); Claude Code's official dev container setup as a starting point; image size and start-up time; how the Codex and Claude permission settings change inside a container (their own sandboxes may be redundant there).
+- Tradeoffs: real isolation, at the cost of Docker Desktop's memory and start-up time, a second login per agent, per-project images, and slower file access unless projects live in WSL.
+
 **Phase 6 (later): iPhone access**
 - Goal: monitor and control sessions from the phone.
 - In scope: network exposure of the API, full login (password or passkey, session cookie with `Secure`, `HttpOnly` and `SameSite` flags), device pairing (for example a QR code from the desktop app), rate limiting and token revocation, mobile web client as an installable web app, private remote access (Tailscale with `tailscale serve` for HTTPS, decided 2026-10-22; FastAPI serves the built React app same-origin; a Vercel-hosted frontend is not needed for a single user), and push notifications for waiting-for-input, handoff and completion.
 - Availability caveat: the PC must stay on, awake and online, with the backend and the remote-access client starting at boot or login.
 - Exclusions: running agents on the phone.
-- Dependencies: phases 1 to 4.
+- Dependencies: phases 1 to 4; phase 9 (containers) recommended first, because remote control raises the impact of a misbehaving agent.
 - Acceptance: from the phone, the user can see session status and send replies.
 - Tradeoffs: see iPhone delivery and remote access above.
 
@@ -203,9 +218,10 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Delegation with return to the original agent is its own phase (phase 7), built after handoff so it reuses stints, the brief and the chain config (decided 2026-10-25).
 - Parallel split of one task across several agents is wanted, starting with a minimal user-triggered version in phase 8 and developed further later; several sessions at once stays in phase 4 (decided 2026-10-25).
 - Mobile postponed; Gmail and non-coding agents deferred.
-- Phase order as in section 6.
+- Phase order as in section 6. Planned build order (2026-10-25): 3 (done), 4, then 5 and 7, then 9, then 8 and 6.
+- Docker container isolation is its own phase (phase 9), after phase 4 and before phase 6; phase 4 adds the runner interface it plugs into (decided 2026-10-25).
 - UI blends Claude Code and Codex.
-- Stack items from the user-supplied table are accepted except the Node orchestrator and the separate Python AI service (merged into the FastAPI backend) and Docker (deferred).
+- Stack items from the user-supplied table are accepted except the Node orchestrator and the separate Python AI service (merged into the FastAPI backend) and Docker (moved out of the first build into phase 9).
 - Tauri is the desktop shell (decided 2026-10-22, replacing the Electron default). Effect: smaller and lighter shell, but its main process needs some Rust; the shell itself is built in phase 4.
 - Tailscale is the remote-access method for phase 6 (decided 2026-10-22).
 
@@ -224,3 +240,4 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Whether limit nearing can be detected before the error.
 - How the parallel split develops after its minimal version (phase 8): agent-proposed splits, conflict handling, dependent sub-tasks, and the live view.
 - Placement of phase 7 relative to phase 5 (both depend only on phase 3). Phase 8 comes after phases 4 and 7.
+- Phase 9 details: Codex's ChatGPT sign-in inside a container, the default image's contents, and whether projects move into WSL for file speed.

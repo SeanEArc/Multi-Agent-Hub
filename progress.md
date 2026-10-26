@@ -638,6 +638,10 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Next steps
 
+- Superseded by Session 19.
+
+**As written in Session 18**
+
 **For the user**
 - [ ] Delete the four `backend/.pytest-*-20261025` folders if they're unwanted. They may need to be deleted from an elevated prompt, since the user's account can't open them.
 - [ ] Decide whether phase 7 (delegation) comes before phase 5 (local model), and so which phase is next. (Carried over.)
@@ -645,5 +649,50 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the agent**
 - [ ] If the intermittent failure shows up again, capture its name (`uv run pytest -rf`) and fix the race.
 - [ ] Offered, not started: a "What remains" section in the brief from the agent's latest to-do list.
+- [ ] Possible follow-ups: Bash versions of the commands in `CLAUDE.md`; read Codex usage straight from its newest session file; change a session's chain or policy after creation; a faster sidebar refresh for background sessions.
+- [ ] Carried over: `remark-gfm` for tables in the transcript.
+
+---
+
+2026-10-25 20:02 (UTC-05:00)
+
+# Session 19: Planned Docker container isolation as its own phase (phase 9), with a runner interface in phase 4 to prepare for it (plan only, no code).
+
+## What was done
+
+1. **User's question:** handle sandboxing (meaning Docker containers) in phase 4, or now? Agreed approach: neither. Containers become their own phase, after phase 4 and before phase 6 (iPhone access).
+2. **Reasons, recorded in `plan.md`.**
+   - **Logins:** the CLIs need a separate login inside the container, since the Windows logins can't be shared in.
+   - **Adapter changes:** the adapters' native `.exe` launching, `taskkill` and Codex session-file paths would all change.
+   - **File speed:** projects on the Windows drive mounted into WSL2 containers are slow.
+   - **Images:** each project needs a toolchain image.
+   - **Phase 4 is already large.**
+   - **Remote control:** phase 6 raises the impact of a misbehaving agent the most.
+3. **`plan.md` updated.**
+   - **New phase 9, "Container isolation (Docker)":**
+     - a Docker runner, one container per session or stint, with the worktree as the only mounted folder;
+     - CLI logins kept in a Docker volume (the hub still never touches tokens);
+     - Codex state paths in volumes;
+     - a default image plus per-project overrides;
+     - a per-session container-or-host choice;
+     - the WSL file-location decision;
+     - its acceptance test (agents can't read a file planted outside the mounted folder, and handoff still works) and open questions (Codex's ChatGPT sign-in in a container, image size, the agents' own sandboxes inside a container).
+   - **Phase 4:** adds a **runner interface** (start a CLI in a folder, send the prompt, stream the output, kill it), shipping only the host runner, so the Docker runner plugs in without touching the orchestrator, handoff, worktrees or UI.
+   - **Elsewhere:** phase 6 lists phase 9 as recommended first; the scope, stack table, the Docker tradeoff and section 7 (decisions, open questions, build order 3 → 4 → 5/7 → 9 → 8/6) match. `CLAUDE.md` now says phases 1–9.
+
+## Current state
+
+- The plan update is committed on `docs/container-phase`, pushed, and fast-forwarded into `main` (pushed). Docs only, no code.
+
+## Next steps
+
+**For the user**
+- [ ] Choose the next phase: 4 (dashboard, worktrees, Tauri, runner interface) per the build order, or 5 or 7. (Carried over: whether phase 7 comes before phase 5.)
+- [ ] Delete the four `backend/.pytest-*-20261025` folders if they're unwanted (may need an elevated prompt).
+
+**For the agent**
+- [ ] Before phase 9: check Codex's ChatGPT sign-in inside a container and Claude Code's official dev container setup, and measure mounted-file speed on this PC.
+- [ ] If the intermittent test failure shows up again, capture its name (`uv run pytest -rf`) and fix the race.
+- [ ] Offered, not started: a "What remains" section in the brief.
 - [ ] Possible follow-ups: Bash versions of the commands in `CLAUDE.md`; read Codex usage straight from its newest session file; change a session's chain or policy after creation; a faster sidebar refresh for background sessions.
 - [ ] Carried over: `remark-gfm` for tables in the transcript.
