@@ -1,10 +1,11 @@
 import { agentLabel, type AgentSession } from "../api";
+import { folderName } from "./Dashboard";
 import { StatusDot } from "./StatusBadge";
 
 interface Props {
   sessions: AgentSession[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   onNew: () => void;
   onSettings: () => void;
 }
@@ -17,6 +18,12 @@ export function Sidebar({ sessions, selectedId, onSelect, onNew, onSettings }: P
       </div>
       <button className="button primary new-session" onClick={onNew}>
         + New session
+      </button>
+      <button
+        className={`session-item dashboard-link${selectedId === null ? " selected" : ""}`}
+        onClick={() => onSelect(null)}
+      >
+        All sessions
       </button>
       <nav className="session-list" aria-label="Sessions">
         {sessions.length === 0 && <p className="muted small">No sessions yet.</p>}
@@ -41,8 +48,4 @@ export function Sidebar({ sessions, selectedId, onSelect, onNew, onSettings }: P
       </button>
     </aside>
   );
-}
-
-function folderName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }

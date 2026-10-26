@@ -49,6 +49,17 @@ def test_turn_runs_and_completes(client: TestClient, tmp_path: Path) -> None:
     assert event_types(client, session_id) == ["user_message", "started", "message", "usage", "completed"]
 
 
+def test_session_reports_last_activity(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "question")
+    assert client.get(f"/api/sessions/{session_id}").json()["last_event"] is None
+
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "do the thing"})
+    body = wait_until_idle(client, session_id)
+    # Usage reports don't count as activity; the question that ended the turn does.
+    assert body["last_event"]["type"] == "question"
+    assert client.get("/api/sessions").json()[0]["last_event"]["id"] == body["last_event"]["id"]
+
+
 def test_question_then_reply_resumes_same_session(client: TestClient, tmp_path: Path) -> None:
     session_id = create(client, tmp_path, "question")
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})

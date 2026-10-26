@@ -446,12 +446,6 @@ textarea:focus,
   gap: 10px;
 }
 
-.row.nested {
-  margin-left: 22px;
-  padding-left: 10px;
-  border-left: 2px solid var(--border);
-}
-
 .user-message {
   display: flex;
   gap: 10px;
@@ -1051,4 +1045,433 @@ textarea:focus,
   background: var(--code-bg);
   font-family: var(--mono);
   font-size: 12px;
+}
+
+/* --- Dashboard ---------------------------------------------------------------- */
+
+.dashboard-link {
+  margin: 0 4px;
+  padding: 6px 8px;
+}
+
+.dashboard {
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.dashboard-group h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+
+.session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-card:hover {
+  border-color: var(--muted);
+}
+
+.session-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Each status class sets --status. */
+.session-card[class*="status-"] {
+  border-left-color: var(--status);
+}
+
+.session-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.session-card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.session-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-card-activity {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.chip.mono {
+  font-family: var(--mono);
+}
+
+.chip.removed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+/* --- Progress: plan, subagents, files changed ------------------------------------- */
+
+.session-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.session-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.layout-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.layout-switch button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.layout-switch button[aria-pressed="true"] {
+  background: var(--panel-raised);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.layout-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.progress-card {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 6px 12px -8px rgb(0 0 0 / 0.4);
+  /* Sticky, so it must leave room for the transcript under it. */
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.progress-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-card-header > strong {
+  flex: 1;
+  font-size: 13px;
+}
+
+.progress-card-header .button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.plan-heading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plan-heading strong {
+  font-size: 13px;
+}
+
+.plan-bar {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.plan-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+
+.plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.plan-mark {
+  flex: none;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+}
+
+.plan-item.in_progress .plan-mark {
+  border: 2px solid var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+
+.plan-item.in_progress {
+  font-weight: 600;
+}
+
+.plan-item.completed .plan-mark {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.plan-item.completed .plan-mark::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3px;
+  height: 7px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.plan-item.completed {
+  color: var(--muted);
+}
+
+.progress-subagents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-subagents.divided {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.subagent {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  min-width: 0;
+}
+
+.subagent-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.subagent-description {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-state {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.subagent-state.running {
+  color: var(--info);
+}
+
+.subagent-state.done {
+  color: var(--ok);
+}
+
+.subagent-state.failed {
+  color: var(--danger);
+}
+
+.subagent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px 22px;
+}
+
+.subagent > .subagent-steps {
+  border-top: 1px solid var(--border);
+}
+
+.progress-aside {
+  flex: none;
+  width: 320px;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.progress-aside section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-aside h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.progress-aside p {
+  margin: 0;
+}
+
+.progress-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.progress-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.progress-file-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-aside .subagent-summary {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.progress-aside .subagent-description {
+  white-space: normal;
+  flex-basis: 100%;
+  order: 3;
+}
+
+.session-body.split .composer {
+  width: calc(100% - 32px);
+}
+
+/* The split layout shows the side panel; narrow windows get the card instead. */
+.session-body.split .progress-card {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .session-body.split .progress-card {
+    display: flex;
+  }
+
+  .session-body.split .progress-aside {
+    display: none;
+  }
 }

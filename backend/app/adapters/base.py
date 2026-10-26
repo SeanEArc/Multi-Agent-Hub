@@ -23,6 +23,7 @@ class EventType(StrEnum):
     MESSAGE = "message"  # assistant text
     TOOL_USE = "tool_use"
     TOOL_RESULT = "tool_result"
+    PLAN = "plan"  # the agent's to-do list, whole each time: {items: [{text, status: pending|in_progress|completed}]}
     PERMISSION_DENIED = "permission_denied"  # a tool call needed approval and was refused
     QUESTION = "question"  # turn ended waiting for user input
     RATE_LIMIT = "rate_limit"  # usage-window status; early warning before a limit

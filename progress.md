@@ -746,6 +746,10 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
    - **134 passed, 2 skipped.** The frontend type-checks.
 8. **Smoke test** against a real backend (temporary database and port, temp repo, no agent turns): the worktree was created under `%LOCALAPPDATA%\MultiAgentHub\worktrees`. Deleting the session removed it and its empty branch.
 
+9. **4b decisions (user, after the merge):**
+   - **"Re-summarize":** the session's current agent writes the summary (option A), as a separate one-off call, with the handoff chain as the fallback. Recorded in `plan.md` (not yet committed).
+   - **Progress view:** three mockups (A checklist panel, B inline only, C split view) were published as a private Design artifact, "Progress View Options". The user chose A as the default, with C available through a layout switch saved as a hub setting. Recorded in `plan.md` (not yet committed).
+
 ## Current state
 
 - **Branch:** committed on `feature/runner-interface`, pushed, and fast-forwarded into `main` (pushed), at the user's request (2026-10-26).
@@ -753,6 +757,10 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - **`plan.md`:** Phase 4 is split into sub-phases 4a (runner interface and worktrees), 4b (dashboard, progress view, history, summaries), 4c (style polish) and 4d (Tauri shell), each with its own scope and acceptance test (user asked, 2026-10-26).
 
 ## Next steps
+
+- Superseded by Session 22.
+
+**As written in Session 20**
 
 **For the user**
 - [ ] Try a worktree session in the browser on a real project (phase 4a's acceptance test). Restart the backend first: the new migration runs on start. Check:
@@ -764,7 +772,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Carried over: delete the four `backend/.pytest-*-20261025` folders if unwanted (may need an elevated prompt).
 
 **For the agent**
-- [ ] Phase 4b: dashboard (all sessions at a glance), progress view (decide the subagent display style with the user), history, a hub-built summary kept current, and an agent-written "Re-summarize" button (decide which agent or model writes it, and show its usage cost).
+- [ ] Phase 4b: dashboard (all sessions at a glance), progress view (checklist panel by default, split view as a switchable layout), history, a hub-built summary kept current, and a "Re-summarize" button written by the session's current agent (decide how its usage cost is shown).
 - [ ] Then 4c (style polish) and 4d (Tauri shell: backend as sidecar, start/monitor/restart, pass the token, data in `%LOCALAPPDATA%\MultiAgentHub`).
 - [ ] Check with a real Codex turn whether Codex's `workspace-write` sandbox can run `git commit` in a worktree. The worktree's git data lives in the main repo's `.git`, outside the sandbox. "Commit and remove" works either way, because the hub commits.
 - [ ] Each worktree path adds a "trusted" entry to `~/.codex/config.toml`. Consider pruning stale ones when a worktree is removed (that file belongs to Codex, so ask first).
@@ -782,5 +790,58 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Next steps
 
+- Superseded by Session 22.
+
+**As written in Session 21**
+
 - Unchanged from Session 20.
 - [ ] Update `README.md` as each phase lands (for example, Ollama in phase 5 and the Tauri install steps in 4d).
+
+---
+
+2026-10-26 14:51 (UTC-05:00)
+
+# Session 22: Built Phase 4b's dashboard and progress view (plan, subagents, files changed, with a Panel/Split layout switch), on `feature/dashboard-summaries`.
+
+## What was done
+
+1. **Decision (user):** the progress view uses layout A (a card above the transcript) by default, with layout C (a side panel) as a switchable option saved as a hub setting. Recorded in `plan.md`.
+2. **Dashboard (slice 1):**
+   - With no session open, the main area shows every session as a card, grouped into "Needs you" (waiting for input, failed), "Working" and "Idle", the most recently active first.
+   - Each card shows the title, status, agent and model, branch, project folder, one line on the latest activity, and how long ago it was. An "All sessions" link in the sidebar returns to it.
+   - The API's `SessionRead` gained `last_event`: the latest main-conversation event, leaving out usage reports, rate limits, `completed` and subagent steps (`models.last_activity`).
+   - The dashboard polls every 5 s. With a session open, the session list polls every 20 s instead of 60 s, which covers the old "faster sidebar refresh" item.
+3. **Progress view (slice 2):**
+   - **New `plan` event** (`EventType.PLAN`, `{items: [{text, status}]}`), always the whole list:
+     - Codex's `todo_list` item becomes a plan event on `item.started`, `item.updated` and `item.completed`, only when it changed. Before, the updates were dropped and the plan appeared as a "Plan" tool row; the first unchecked item counts as in progress.
+     - Claude's `TodoWrite` becomes a plan event when the main agent calls it. Claude Code 2.1.310 doesn't offer `TodoWrite` headless (checked from a saved init event's tool list), so Claude sessions show no plan for now; its subagents (`Task`) do show.
+   - **Frontend (`progress.ts`, `ProgressPanel.tsx`):** the plan comes from the current stint's latest plan event. Subagents are the main agent's `Task`/`Agent` calls since the last user message or handoff, with their steps found by `parent_tool_use_id`. Files changed are every Edit/Write/MultiEdit/NotebookEdit path and every Codex patch path in the session, with edit counts.
+   - **Panel layout (default):** a sticky card above the transcript (max 45% of the window high) with the plan, a progress bar, and the subagents. Each subagent row expands to its steps. A Hide button collapses the card.
+   - **Split layout:** a side panel with the plan, subagents and files changed. Below 960 px it falls back to the card.
+   - **Switch:** Panel/Split buttons in the session header, plus a setting in Settings. Stored as `progress_layout` in `HubSettings` (a settings key, so no migration).
+   - **Transcript:** subagent steps no longer appear inline. They are folded under the subagent's tool row (open it to see them). Each finished turn shows its final plan as a "Plan · 3 of 5 done" row.
+4. **Tests:** new tests for `last_event`, Codex plan events and Claude's `TodoWrite`, and the settings tests now include `progress_layout`. **137 passed, 2 skipped.** The frontend type-checks.
+5. **Screenshots:** checked the dashboard and both layouts (dark, light, narrow) against a temporary backend seeded with sample sessions. Headless Chrome's `--screenshot` hangs on pages with an open event stream, so a small DevTools-protocol script (in the scratchpad) was used. A PUT from a dev server on a port other than 5173 gets 403 from `HostOriginMiddleware`. That is expected; the test backend needed `HUB_CORS_ORIGINS` for that port.
+
+6. **Commit and merge (user asked):** committed on `feature/dashboard-summaries`, pushed, and fast-forwarded `main` to it. Tests were rerun first (137 passed, 2 skipped; the frontend type-checks).
+7. **Old pytest folders (user asked to delete):** the four `backend/.pytest-*-20261025` folders could not be deleted. Even `takeown` is denied from the user's normal (non-elevated) account. They are git-ignored.
+
+## Current state
+
+- **Branch:** `feature/dashboard-summaries`, merged into `main` (fast-forward) and pushed. The branch is kept.
+- **Phase 4b:** dashboard and progress view are built and merged. History and summaries are not.
+
+## Next steps
+
+**For the user**
+- [ ] Look at the dashboard and progress view in the browser. Restart the backend so `last_event` and `progress_layout` are served; no migration is needed. A Codex session that makes a plan shows it live.
+- [ ] Carried over: try a worktree session on a real project (phase 4a's acceptance test); install Rust before phase 4d.
+- [ ] Delete the four old `backend/.pytest-*-20261025` folders from an **administrator** PowerShell in the repo root: `takeown /F backend\.pytest-*-20261025 /R /A /D Y; icacls backend\.pytest-*-20261025 /grant Administrators:F /T; Remove-Item -Recurse -Force backend\.pytest-*-20261025`.
+
+**For the agent**
+- [ ] Phase 4b slice 3: per-session history (stints, handoffs and turns, easy to review afterwards).
+- [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
+- [ ] Consider putting the current plan into the handoff brief, so the next agent sees which steps are done.
+- [ ] Update `README.md` for the dashboard and progress view once 4b lands.
+- [ ] Then 4c (style polish; the session header crowds on narrow windows) and 4d (Tauri shell).
+- [ ] Carried over: Codex `workspace-write` and `git commit` in a worktree; pruning Codex trusted entries (ask first); Codex sign-in in a container and mount speed (before phase 9); the intermittent test failure; "What remains" in the brief; `remark-gfm`; Bash versions of the commands in `CLAUDE.md`; changing a session's chain or policy after creation.

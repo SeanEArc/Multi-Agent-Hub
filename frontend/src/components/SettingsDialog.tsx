@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, type HubSettings, type LimitPolicy } from "../api";
+import { api, type HubSettings, type LimitPolicy, type ProgressLayout } from "../api";
 import { ChainEditor, POLICY_LABELS } from "./ChainEditor";
 
 interface Props {
   onClose: () => void;
 }
 
-/** Defaults for sessions that don't set their own handoff chain or limit policy. */
+/** Defaults for sessions that don't set their own handoff chain or limit policy, and how sessions are shown. */
 export function SettingsDialog({ onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [settings, setSettings] = useState<HubSettings | null>(null);
@@ -57,6 +57,16 @@ export function SettingsDialog({ onClose }: Props) {
                     {label}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Show a session's plan and subagents
+              <select
+                value={settings.progress_layout}
+                onChange={(e) => setSettings({ ...settings, progress_layout: e.target.value as ProgressLayout })}
+              >
+                <option value="panel">In a panel above the transcript</option>
+                <option value="split">In a side panel, with the files changed</option>
               </select>
             </label>
           </>

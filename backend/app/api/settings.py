@@ -13,7 +13,7 @@ DbSession = Annotated[Session, Depends(get_session)]
 
 @router.get("", response_model=HubSettings)
 def get_settings(db: DbSession) -> HubSettings:
-    """The default handoff chain and limit policy, used by sessions that don't set their own."""
+    """The default handoff chain and limit policy (for sessions that don't set their own), and UI preferences."""
     return load_hub_settings(db)
 
 

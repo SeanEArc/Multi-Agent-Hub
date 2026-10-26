@@ -63,6 +63,13 @@ class WorktreeStatus(StrEnum):
     REMOVED = "removed"  # folder deleted; the branch is kept for the user to merge
 
 
+class ProgressLayout(StrEnum):
+    """Where a session's plan, subagents and changed files are shown."""
+
+    PANEL = "panel"  # a panel above the transcript
+    SPLIT = "split"  # a side panel beside the transcript
+
+
 class ChainEntry(SQLModel):
     agent: AgentKind
     model: str | None = None
@@ -229,8 +236,27 @@ class SessionRead(SQLModel):
     stints: list[StintRead]
     # The session's worktree (None when it runs in the project folder itself).
     worktree: WorktreeRead | None
+    # The latest thing that happened in the main conversation, for the dashboard.
+    last_event: "EventRead | None" = None
     created_at: datetime
     updated_at: datetime
+
+
+# Event types that say what a session is doing. Usage, rate limits and subagent steps don't, and the
+# turn's last message says more than its `completed` event.
+ACTIVITY_TYPES = ("user_message", "message", "tool_use", "question", "error", "handoff", "handoff_offer",
+                  "limit_reached")
+
+
+def last_activity(db: Session, session_id: str) -> "SessionEvent | None":
+    """The session's latest activity event outside subagents (searches the last 50 events)."""
+    recent = db.exec(
+        select(SessionEvent)
+        .where(SessionEvent.session_id == session_id, col(SessionEvent.type).in_(ACTIVITY_TYPES))
+        .order_by(col(SessionEvent.id).desc())
+        .limit(50)
+    )
+    return next((e for e in recent if not (e.payload or {}).get("parent_tool_use_id")), None)
 
 
 def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
@@ -249,6 +275,7 @@ def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
         reported_model=(reported.payload or {}).get("model") if reported else None,
         stints=[StintRead.model_validate(s) for s in stints],
         worktree=session_worktree(db, agent_session.id),
+        last_event=last_activity(db, agent_session.id),
     )
 
 
@@ -270,6 +297,7 @@ DEFAULT_CHAIN = [ChainEntry(agent=AgentKind.CLAUDE), ChainEntry(agent=AgentKind.
 class HubSettings(SQLModel):
     default_chain: list[ChainEntry] = Field(default_factory=lambda: list(DEFAULT_CHAIN), min_length=1)
     limit_policy: LimitPolicy = LimitPolicy.AUTO
+    progress_layout: ProgressLayout = ProgressLayout.PANEL
 
 
 def load_hub_settings(db: Session) -> HubSettings:
@@ -310,3 +338,6 @@ class EventRead(SQLModel):
     type: str
     payload: dict[str, Any]
     created_at: datetime
+
+
+SessionRead.model_rebuild()  # last_event refers to EventRead, defined after it

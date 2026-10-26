@@ -155,6 +155,11 @@ class TurnParser:
                 text = block.get("text", "").replace(NEEDS_INPUT_MARKER, "").rstrip()
                 if text:
                     events.append(AgentEvent(EventType.MESSAGE, {"text": text, "parent_tool_use_id": parent}))
+            elif block.get("type") == "tool_use" and block.get("name") == "TodoWrite" and parent is None:
+                # The to-do list, when the CLI offers it (2.1.310 headless doesn't): a plan event, not a tool row.
+                todos = (block.get("input") or {}).get("todos") or []
+                items = [{"text": t.get("content") or "", "status": t.get("status") or "pending"} for t in todos]
+                events.append(AgentEvent(EventType.PLAN, {"items": items}))
             elif block.get("type") == "tool_use":
                 events.append(
                     AgentEvent(

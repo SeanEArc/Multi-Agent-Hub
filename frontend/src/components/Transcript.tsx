@@ -1,6 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
+import { isSubagent, planCounts, stepsByParent, toolOutcomes, type PlanItem, type ToolOutcomes } from "../progress";
 
 interface Props {
   sessionId: string;
@@ -9,6 +10,8 @@ interface Props {
   projectPath: string;
   // Confirms a handoff the hub offered after a usage limit (the "ask first" policy).
   onAcceptHandoff: (agent: AgentKind, model: string | null) => Promise<void>;
+  // Shown at the top of the transcript (the progress card).
+  header?: ReactNode;
 }
 
 const REASONS: Record<string, string> = {
@@ -17,13 +20,28 @@ const REASONS: Record<string, string> = {
   delegation: "delegated",
 };
 
-/** Renders a session's events as a conversation, pairing each tool call with its result. */
-export function Transcript({ sessionId, events, status, projectPath, onAcceptHandoff }: Props) {
-  const results = new Map<string, SessionEvent>();
-  const denied = new Set<string>();
+// Events that end a turn. The plan as it stood then is shown in the transcript.
+const TURN_ENDS = ["completed", "question", "error", "limit_reached", "user_message", "handoff"];
+
+/**
+ * Renders a session's events as a conversation, pairing each tool call with its result.
+ * A subagent's steps are folded under the tool call that started it.
+ */
+export function Transcript({ sessionId, events, status, projectPath, onAcceptHandoff, header }: Props) {
+  const outcomes = toolOutcomes(events);
+  const { results, denied } = outcomes;
+  const steps = stepsByParent(events);
+  const running = status === "working";
+
+  // Each turn's plan is shown once, as it stood when the turn ended; the running turn's is in the progress panel.
+  const finalPlans = new Set<number>();
+  let latestPlan: SessionEvent | null = null;
   for (const event of events) {
-    if (event.type === "tool_result") results.set(event.payload.tool_use_id, event);
-    if (event.type === "permission_denied") denied.add(event.payload.tool_use_id);
+    if (event.type === "plan") latestPlan = event;
+    else if (latestPlan && TURN_ENDS.includes(event.type)) {
+      finalPlans.add(latestPlan.id);
+      latestPlan = null;
+    }
   }
 
   let lastUsage: SessionEvent | null = null;
@@ -32,6 +50,7 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
   let threadTokens = 0;
   const rows = events.map((event, index) => {
     const p = event.payload;
+    if (p.parent_tool_use_id) return null;
     switch (event.type) {
       case "handoff":
         // A new agent starts a new thread, so Codex's running total starts over.
@@ -58,10 +77,12 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
         );
       case "message":
         return (
-          <div key={event.id} className={`row assistant-message${p.parent_tool_use_id ? " nested" : ""}`}>
+          <div key={event.id} className="row assistant-message">
             <Markdown>{p.text}</Markdown>
           </div>
         );
+      case "plan":
+        return finalPlans.has(event.id) ? <PlanRow key={event.id} items={p.items ?? []} /> : null;
       case "tool_use":
         return (
           <ToolRow
@@ -71,9 +92,20 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
             projectPath={projectPath}
             result={results.get(p.tool_use_id)}
             denied={denied.has(p.tool_use_id)}
-            pending={status === "working"}
-            nested={Boolean(p.parent_tool_use_id)}
-          />
+            pending={running}
+          >
+            {isSubagent(event) && (
+              <>
+                <div className="tool-label">Steps</div>
+                <SubagentSteps
+                  steps={steps.get(p.tool_use_id) ?? []}
+                  outcomes={outcomes}
+                  projectPath={projectPath}
+                  running={running}
+                />
+              </>
+            )}
+          </ToolRow>
         );
       case "usage": {
         const total = tokenTotal(p.usage);
@@ -136,6 +168,7 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
 
   return (
     <div className="transcript">
+      {header}
       {rows}
       {(status === "working" || status === "handing_off") && (
         <div className="row working">
@@ -231,6 +264,73 @@ function agentName(agent: string): string {
   return AGENT_NAMES[agent as AgentKind] ?? agent;
 }
 
+/** The plan as it stood at the end of a turn: "Plan · 3 of 5 done", with the list on click. */
+function PlanRow({ items }: { items: PlanItem[] }) {
+  const [open, setOpen] = useState(false);
+  const { done, total } = planCounts(items);
+  return (
+    <div className="row tool">
+      <button className="tool-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="tool-dot tool-done" aria-hidden="true" />
+        <span className="tool-name">Plan</span>
+        <span className="tool-arg">
+          {done} of {total} done
+        </span>
+        <span className="tool-toggle" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+      {open && (
+        <div className="tool-body">
+          <PlanList items={items} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PLAN_LABELS: Record<string, string> = { completed: "Done", in_progress: "In progress", pending: "Pending" };
+
+export function PlanList({ items }: { items: PlanItem[] }) {
+  return (
+    <ul className="plan-list">
+      {items.map((item, i) => (
+        <li key={i} className={`plan-item ${item.status}`}>
+          <span className="plan-mark" role="img" aria-label={PLAN_LABELS[item.status] ?? item.status} />
+          <span>{item.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A subagent's own messages and tool calls, in order. */
+export function SubagentSteps(props: { steps: SessionEvent[]; outcomes: ToolOutcomes; projectPath: string; running: boolean }) {
+  const { steps, outcomes, projectPath, running } = props;
+  if (steps.length === 0) return <p className="muted small subagent-steps">No steps yet.</p>;
+  return (
+    <div className="subagent-steps">
+      {steps.map((event) =>
+        event.type === "message" ? (
+          <div key={event.id} className="row assistant-message">
+            <Markdown>{event.payload.text}</Markdown>
+          </div>
+        ) : (
+          <ToolRow
+            key={event.id}
+            name={event.payload.name}
+            input={event.payload.input}
+            projectPath={projectPath}
+            result={outcomes.results.get(event.payload.tool_use_id)}
+            denied={outcomes.denied.has(event.payload.tool_use_id)}
+            pending={running}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
 interface ToolRowProps {
   name: string;
   input: Record<string, any>;
@@ -238,15 +338,16 @@ interface ToolRowProps {
   result?: SessionEvent;
   denied: boolean;
   pending: boolean;
-  nested: boolean;
+  // Shown under the result when the row is open (a subagent's steps).
+  children?: ReactNode;
 }
 
-function ToolRow({ name, input, projectPath, result, denied, pending, nested }: ToolRowProps) {
+export function ToolRow({ name, input, projectPath, result, denied, pending, children }: ToolRowProps) {
   const [open, setOpen] = useState(false);
   const state = denied ? "denied" : result?.payload.is_error ? "failed" : result ? "done" : pending ? "running" : "done";
 
   return (
-    <div className={`row tool${nested ? " nested" : ""}`}>
+    <div className="row tool">
       <button className="tool-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`tool-dot tool-${state}`} aria-hidden="true" />
         <span className="tool-name">{name}</span>
@@ -266,6 +367,7 @@ function ToolRow({ name, input, projectPath, result, denied, pending, nested }: 
               <pre className="tool-detail">{truncate(result.payload.content || "(empty)", 4000)}</pre>
             </>
           )}
+          {children}
         </div>
       )}
     </div>
@@ -316,7 +418,7 @@ function formatTokens(count: number): string {
 }
 
 /** One short line describing a tool call, like Claude Code's `Write(color.txt)`. */
-function summarize(input: Record<string, any>, projectPath: string): string {
+export function summarize(input: Record<string, any>, projectPath: string): string {
   const value =
     input.command ?? input.file_path ?? input.path ?? input.pattern ?? input.url ?? input.query ?? input.description;
   const text = typeof value === "string" ? relativeTo(projectPath, value) : JSON.stringify(input);
@@ -324,7 +426,7 @@ function summarize(input: Record<string, any>, projectPath: string): string {
 }
 
 /** Shows paths inside the project relative to it; Windows paths compare case-insensitively. */
-function relativeTo(root: string, path: string): string {
+export function relativeTo(root: string, path: string): string {
   const normalize = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   const base = normalize(root);
   const target = normalize(path);
@@ -332,6 +434,6 @@ function relativeTo(root: string, path: string): string {
   return target.startsWith(`${base}/`) ? path.slice(base.length + 1) : path;
 }
 
-function truncate(text: string, max: number): string {
+export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }

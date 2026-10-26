@@ -7,7 +7,8 @@ Behavior verified against codex-cli 0.164.0 (ChatGPT login, Windows):
   event can appear on its own. The usage on `turn.completed` is the thread's
   running total across all turns so far, not the turn's own tokens.
 - Items are `agent_message`, `reasoning`, `command_execution`, `file_change`,
-  `mcp_tool_call`, `web_search`, `todo_list` and `error`. Item ids restart at
+  `mcp_tool_call`, `web_search`, `todo_list` (the plan, sent again by
+  `item.updated` whenever a step is checked off) and `error`. Item ids restart at
   `item_0` every turn.
 - The thread id is chosen by Codex and only known from `thread.started`. A reply is
   `codex exec resume <thread id> -`, which keeps the context and the same id.
@@ -56,7 +57,6 @@ TOOL_NAMES = {
     "command_execution": "Shell",
     "file_change": "Edit",
     "web_search": "WebSearch",
-    "todo_list": "Plan",
 }
 # Usage windows by length in minutes, named like Claude's so the UI meter labels them.
 WINDOW_NAMES = {300: "five_hour", 10080: "seven_day"}
@@ -238,6 +238,7 @@ class TurnParser:
         self._limit_reported = False
         self._last_message = ""
         self._started_items: set[str] = set()
+        self._last_plan: list[dict[str, str]] | None = None
         # Item ids repeat every turn, so tool ids get a per-turn prefix to stay unique in a session.
         self._turn = uuid.uuid4().hex[:8]
         self._began = time.monotonic()
@@ -259,6 +260,8 @@ class TurnParser:
         match raw.get("type"):
             case "thread.started":
                 return [AgentEvent(EventType.STARTED, {"session_id": raw.get("thread_id")})]
+            case "item.started" | "item.updated" | "item.completed" if (raw.get("item") or {}).get("type") == "todo_list":
+                return self._plan(raw["item"])
             case "item.started":
                 return self._item_started(raw.get("item") or {})
             case "item.completed":
@@ -270,7 +273,7 @@ class TurnParser:
                 return self._failure((raw.get("error") or {}).get("message") or "Turn failed")
             case "error":
                 return self._failure(raw.get("message") or "Unknown error")
-        # turn.started, item.updated and anything new are not shown in the UI.
+        # turn.started, other item.updated events and anything new are not shown in the UI.
         return []
 
     def _item_started(self, item: dict[str, Any]) -> list[AgentEvent]:
@@ -294,6 +297,19 @@ class TurnParser:
         # reasoning is not shown, like Claude's thinking.
         return []
 
+    def _plan(self, item: dict[str, Any]) -> list[AgentEvent]:
+        """Codex's to-do list as a plan event, each time it changes. The first unchecked item is in progress."""
+        items, current = [], True
+        for entry in item.get("items") or []:
+            done = bool(entry.get("completed"))
+            status = "completed" if done else "in_progress" if current else "pending"
+            items.append({"text": entry.get("text") or "", "status": status})
+            current = current and done
+        if items == self._last_plan:
+            return []
+        self._last_plan = items
+        return [AgentEvent(EventType.PLAN, {"items": items})]
+
     def _tool_use(self, item: dict[str, Any]) -> AgentEvent:
         kind = item.get("type")
         if kind == "command_execution":
@@ -303,8 +319,6 @@ class TurnParser:
             name, tool_input = TOOL_NAMES[kind], {"path": ", ".join(c.get("path", "") for c in changes), "changes": changes}
         elif kind == "web_search":
             name, tool_input = TOOL_NAMES[kind], {"query": item.get("query")}
-        elif kind == "todo_list":
-            name, tool_input = TOOL_NAMES[kind], {"items": item.get("items") or []}
         else:
             name, tool_input = f"mcp__{item.get('server')}__{item.get('tool')}", item.get("arguments") or {}
         return AgentEvent(
@@ -320,10 +334,6 @@ class TurnParser:
             content = item.get("aggregated_output") or ""
         elif kind == "file_change":
             content = "\n".join(f"{c.get('kind')}: {c.get('path')}" for c in item.get("changes") or [])
-        elif kind == "todo_list":
-            content = "\n".join(
-                f"[{'x' if i.get('completed') else ' '}] {i.get('text')}" for i in item.get("items") or []
-            )
         elif kind == "mcp_tool_call":
             failed = failed or bool(item.get("error"))
             content = json.dumps(item.get("error") or item.get("result"), ensure_ascii=False)

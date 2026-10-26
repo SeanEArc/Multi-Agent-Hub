@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AGENT_NAMES, ApiError, api, workdir, type AgentSession, type SessionEvent } from "../api";
+import { AGENT_NAMES, ApiError, api, workdir, type AgentSession, type ProgressLayout, type SessionEvent } from "../api";
+import { deriveProgress, toolOutcomes } from "../progress";
 import { useSessionStream } from "../useSessionStream";
 import { Composer } from "./Composer";
 import { HandoffDialog } from "./HandoffDialog";
+import { ProgressAside, ProgressCard } from "./ProgressPanel";
 import { StatusBadge } from "./StatusBadge";
 import { Transcript } from "./Transcript";
 import { UsageMeters } from "./UsageMeters";
@@ -12,9 +14,11 @@ interface Props {
   session: AgentSession;
   onChanged: () => void;
   onDeleted: () => void;
+  layout: ProgressLayout;
+  onLayoutChange: (layout: ProgressLayout) => void;
 }
 
-export function SessionView({ session, onChanged, onDeleted }: Props) {
+export function SessionView({ session, onChanged, onDeleted, layout, onLayoutChange }: Props) {
   const { events, status: liveStatus, connected } = useSessionStream(session.id);
   const status = liveStatus ?? session.status;
   const scroller = useRef<HTMLDivElement>(null);
@@ -49,6 +53,9 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
   const busy = status === "working" || status === "handing_off";
   const folder = workdir(session);
   const worktree = session.worktree;
+  const outcomes = toolOutcomes(events);
+  const progress = deriveProgress(events, outcomes, currentStintId, status === "working");
+  const progressProps = { progress, outcomes, projectPath: folder, running: status === "working" };
 
   // The agent names its model once a turn starts (Codex after it ends); show it in the sidebar too.
   useEffect(() => {
@@ -98,6 +105,18 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
           <UsageMeters refreshKey={lastUsageReport?.id} current={session.agent} />
           {!connected && <span className="muted small">Reconnecting…</span>}
           <StatusBadge status={status} />
+          <div className="layout-switch" role="group" aria-label="Progress layout">
+            {(["panel", "split"] as const).map((option) => (
+              <button
+                key={option}
+                aria-pressed={layout === option}
+                onClick={() => onLayoutChange(option)}
+                title={option === "panel" ? "Plan and subagents above the transcript" : "Plan, subagents and files in a side panel"}
+              >
+                {option === "panel" ? "Panel" : "Split"}
+              </button>
+            ))}
+          </div>
           <button
             className="button"
             onClick={() => setHandingOff(true)}
@@ -112,47 +131,54 @@ export function SessionView({ session, onChanged, onDeleted }: Props) {
         </div>
       </header>
 
-      <div
-        className="transcript-scroller"
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-      >
-        {events.length === 0 && status === "ready" ? (
-          <div className="empty-state">
-            <p>Send a message to start {agentName} in</p>
-            <code>{folder}</code>
+      <div className={`session-body ${layout}`}>
+        <div className="session-main">
+          <div
+            className="transcript-scroller"
+            ref={scroller}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            }}
+          >
+            {events.length === 0 && status === "ready" ? (
+              <div className="empty-state">
+                <p>Send a message to start {agentName} in</p>
+                <code>{folder}</code>
+              </div>
+            ) : (
+              <Transcript
+                sessionId={session.id}
+                events={events}
+                status={status}
+                projectPath={folder}
+                onAcceptHandoff={async (agent, model) => {
+                  stickToBottom.current = true;
+                  await api.handoff(session.id, { agent, model });
+                  onChanged();
+                }}
+                // In the split layout the card stands in for the side panel on narrow windows.
+                header={<ProgressCard {...progressProps} />}
+              />
+            )}
           </div>
-        ) : (
-          <Transcript
-            sessionId={session.id}
-            events={events}
+
+          <Composer
             status={status}
-            projectPath={folder}
-            onAcceptHandoff={async (agent, model) => {
+            agentName={agentName}
+            onSend={async (text) => {
               stickToBottom.current = true;
-              await api.handoff(session.id, { agent, model });
+              await api.sendMessage(session.id, text);
+              onChanged();
+            }}
+            onStop={async () => {
+              await api.stop(session.id);
               onChanged();
             }}
           />
-        )}
+        </div>
+        {layout === "split" && <ProgressAside {...progressProps} />}
       </div>
-
-      <Composer
-        status={status}
-        agentName={agentName}
-        onSend={async (text) => {
-          stickToBottom.current = true;
-          await api.sendMessage(session.id, text);
-          onChanged();
-        }}
-        onStop={async () => {
-          await api.stop(session.id);
-          onChanged();
-        }}
-      />
 
       {showWorktree && worktree && (
         <WorktreeDialog

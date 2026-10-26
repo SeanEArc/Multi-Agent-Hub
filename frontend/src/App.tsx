@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type AgentSession } from "./api";
+import { api, type AgentSession, type HubSettings, type ProgressLayout } from "./api";
+import { Dashboard } from "./components/Dashboard";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SessionView } from "./components/SessionView";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 
 const SELECTED_KEY = "hub.selectedSession";
-const POLL_MS = 60000;
+// The dashboard polls often; with a session open, that session streams live and the rest poll slower.
+const DASHBOARD_POLL_MS = 5000;
+const POLL_MS = 20000;
 
 export function App() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -24,12 +27,31 @@ export function App() {
     }
   }, []);
 
-  // The sidebar polls so other sessions' statuses stay current; the open session streams live.
+  const selected = sessions.find((s) => s.id === selectedId) ?? null;
+
+  // Hub settings, for the progress layout; the settings dialog loads its own copy.
+  const [settings, setSettings] = useState<HubSettings | null>(null);
+  const loadSettings = useCallback(() => {
+    api.getSettings().then(setSettings, () => undefined);
+  }, []);
+  useEffect(loadSettings, [loadSettings]);
+
+  async function changeLayout(progress_layout: ProgressLayout) {
+    if (!settings) return;
+    setSettings({ ...settings, progress_layout });
+    try {
+      setSettings(await api.putSettings({ ...settings, progress_layout }));
+    } catch {
+      loadSettings();
+    }
+  }
+
+  // The sidebar and dashboard poll so every session's status stays current.
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
+    const timer = setInterval(() => void refresh(), selected ? POLL_MS : DASHBOARD_POLL_MS);
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, selected === null]);
 
   useEffect(() => {
     try {
@@ -39,8 +61,6 @@ export function App() {
       // storage unavailable; selection just won't be remembered
     }
   }, [selectedId]);
-
-  const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   return (
     <div className="app">
@@ -63,19 +83,22 @@ export function App() {
               setSelectedId(null);
               void refresh();
             }}
+            layout={settings?.progress_layout ?? "panel"}
+            onLayoutChange={(layout) => void changeLayout(layout)}
           />
         ) : (
-          <div className="empty-state">
-            <h2>No session selected</h2>
-            <p className="muted">Pick a session on the left, or start a new one.</p>
-            <button className="button primary" onClick={() => setCreating(true)}>
-              + New session
-            </button>
-          </div>
+          <Dashboard sessions={sessions} onSelect={setSelectedId} onNew={() => setCreating(true)} />
         )}
       </main>
 
-      {editingSettings && <SettingsDialog onClose={() => setEditingSettings(false)} />}
+      {editingSettings && (
+        <SettingsDialog
+          onClose={() => {
+            setEditingSettings(false);
+            loadSettings();
+          }}
+        />
+      )}
 
       {creating && (
         <NewSessionDialog

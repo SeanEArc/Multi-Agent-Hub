@@ -141,8 +141,26 @@ def test_reasoning_and_updates_are_ignored() -> None:
     assert parse(
         {"type": "turn.started"},
         {"type": "item.completed", "item": {"id": "item_0", "type": "reasoning", "text": "thinking"}},
-        {"type": "item.updated", "item": {"id": "item_1", "type": "todo_list", "items": []}},
+        {"type": "item.updated", "item": {"id": "item_1", "type": "command_execution", "command": "ls"}},
     ) == []
+
+
+def test_todo_list_becomes_plan_events_when_it_changes() -> None:
+    def todo(event: str, *done: bool) -> dict:
+        items = [{"text": f"step {i + 1}", "completed": d} for i, d in enumerate(done)]
+        return {"type": event, "item": {"id": "item_1", "type": "todo_list", "items": items}}
+
+    events = parse(
+        todo("item.started", False, False, False),
+        todo("item.updated", True, False, False),
+        todo("item.updated", True, False, False),  # unchanged: no new event
+        todo("item.completed", True, True, True),
+    )
+    assert [e.type for e in events] == [EventType.PLAN] * 3
+    assert [i["status"] for i in events[0].data["items"]] == ["in_progress", "pending", "pending"]
+    assert [i["status"] for i in events[1].data["items"]] == ["completed", "in_progress", "pending"]
+    assert events[1].data["items"][1]["text"] == "step 2"
+    assert [i["status"] for i in events[2].data["items"]] == ["completed"] * 3
 
 
 # --- Usage windows from the session file -------------------------------------

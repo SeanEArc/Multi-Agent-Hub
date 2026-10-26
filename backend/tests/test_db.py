@@ -83,10 +83,14 @@ def test_stints_migration_keeps_existing_history() -> None:
 
 
 def test_hub_settings_default_and_saved(db: Session) -> None:
-    assert [e.agent for e in load_hub_settings(db).default_chain] == ["claude", "codex", "ollama"]
-    save_hub_settings(db, HubSettings.model_validate({"default_chain": [{"agent": "codex"}], "limit_policy": "ask"}))
+    defaults = load_hub_settings(db)
+    assert [e.agent for e in defaults.default_chain] == ["claude", "codex", "ollama"]
+    assert defaults.progress_layout == "panel"
+    save_hub_settings(db, HubSettings.model_validate(
+        {"default_chain": [{"agent": "codex"}], "limit_policy": "ask", "progress_layout": "split"}))
     saved = load_hub_settings(db)
     assert ([e.agent for e in saved.default_chain], saved.limit_policy) == (["codex"], "ask")
+    assert saved.progress_layout == "split"
 
 
 def test_foreign_keys_enforced(db: Session) -> None:

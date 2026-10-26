@@ -94,6 +94,8 @@ export interface AgentSession {
   stints: Stint[];
   // null when the session runs in the project folder itself.
   worktree: Worktree | null;
+  // The latest activity in the main conversation (not usage reports or subagent steps).
+  last_event: SessionEvent | null;
   created_at: string;
   updated_at: string;
 }
@@ -113,9 +115,13 @@ export interface AgentUsage {
   reported_at: string;
 }
 
+// Where the plan, subagents and changed files go: a card above the transcript, or a side panel.
+export type ProgressLayout = "panel" | "split";
+
 export interface HubSettings {
   default_chain: ChainEntry[];
   limit_policy: LimitPolicy;
+  progress_layout: ProgressLayout;
 }
 
 export interface SessionEvent {

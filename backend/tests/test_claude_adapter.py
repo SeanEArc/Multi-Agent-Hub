@@ -64,6 +64,23 @@ def test_parses_a_tool_turn() -> None:
     assert events[0].raw is not None
 
 
+def test_todo_write_becomes_a_plan_event() -> None:
+    todos = [{"content": "Read the model", "status": "completed", "activeForm": "Reading the model"},
+             {"content": "Write tests", "status": "in_progress", "activeForm": "Writing tests"}]
+    events = parse(
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"content": [
+            {"type": "tool_use", "id": "t1", "name": "TodoWrite", "input": {"todos": todos}},
+        ]}},
+        # A subagent's own to-do list stays a tool call.
+        {"type": "assistant", "parent_tool_use_id": "t0", "message": {"content": [
+            {"type": "tool_use", "id": "t2", "name": "TodoWrite", "input": {"todos": todos}},
+        ]}},
+    )
+    assert [e.type for e in events] == [EventType.PLAN, EventType.TOOL_USE]
+    assert events[0].data["items"] == [{"text": "Read the model", "status": "completed"},
+                                       {"text": "Write tests", "status": "in_progress"}]
+
+
 def test_marker_turns_result_into_question_and_is_hidden() -> None:
     text = "What is your favorite color?\n\n[[NEEDS_INPUT]]"
     events = parse(
