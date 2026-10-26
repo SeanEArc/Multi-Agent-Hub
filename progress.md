@@ -836,7 +836,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the user**
 - [ ] Look at the dashboard and progress view in the browser. Restart the backend so `last_event` and `progress_layout` are served; no migration is needed. A Codex session that makes a plan shows it live.
 - [ ] Carried over: try a worktree session on a real project (phase 4a's acceptance test); install Rust before phase 4d.
-- [ ] Delete the four old `backend/.pytest-*-20261025` folders from an **administrator** PowerShell in the repo root: `takeown /F backend\.pytest-*-20261025 /R /A /D Y; icacls backend\.pytest-*-20261025 /grant Administrators:F /T; Remove-Item -Recurse -Force backend\.pytest-*-20261025`.
+- [x] Deleted by the user after Session 22's merge: the four old `backend/.pytest-*-20261025` folders, from an **administrator** PowerShell in the repo root: `takeown /F backend\.pytest-*-20261025 /R /A /D Y; icacls backend\.pytest-*-20261025 /grant Administrators:F /T; Remove-Item -Recurse -Force backend\.pytest-*-20261025`.
 
 **For the agent**
 - [ ] Phase 4b slice 3: per-session history (stints, handoffs and turns, easy to review afterwards).
