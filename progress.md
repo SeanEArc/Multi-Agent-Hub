@@ -769,3 +769,18 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Check with a real Codex turn whether Codex's `workspace-write` sandbox can run `git commit` in a worktree. The worktree's git data lives in the main repo's `.git`, outside the sandbox. "Commit and remove" works either way, because the hub commits.
 - [ ] Each worktree path adds a "trusted" entry to `~/.codex/config.toml`. Consider pruning stale ones when a worktree is removed (that file belongs to Codex, so ask first).
 - [ ] Carried over: Codex ChatGPT sign-in in a container and mount speed (before phase 9); the intermittent test failure (`uv run pytest -rf`); "What remains" in the brief; `remark-gfm`; Bash versions of the commands in `CLAUDE.md`; changing a session's chain or policy after creation; a faster sidebar refresh.
+
+---
+
+2026-10-26 (UTC-05:00)
+
+# Session 21: Added a root `README.md`.
+
+## What was done
+
+1. **`README.md` at the repo root (on `main`):** overview, features, an architecture diagram, requirements, getting started, configuration (all `HUB_*` settings), security, development (tests, live tests, migrations), and the project layout. It covers only what's built: Claude and Codex, handoff, chains, worktrees, usage meters and auth. It leaves out the Ollama adapter, the dashboard and summaries, the Tauri shell, delegation, the parallel split, Docker and iPhone access. Claims were checked against the code (status values, routes, settings, the UI's cost and note fields).
+
+## Next steps
+
+- Unchanged from Session 20.
+- [ ] Update `README.md` as each phase lands (for example, Ollama in phase 5 and the Tauri install steps in 4d).
