@@ -81,6 +81,25 @@ def test_todo_write_becomes_a_plan_event() -> None:
                                        {"text": "Write tests", "status": "in_progress"}]
 
 
+def test_message_checklist_becomes_a_plan_event() -> None:
+    text = "Plan:\n[[PLAN]]\n- [X] Read the model\n* [ ] Write tests\n\nStarting now."
+    events = parse(
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "text", "text": text}]}},
+        # Unchanged plan: no new event. A subagent's checklist is not the session's plan.
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "text", "text": text}]}},
+        {"type": "assistant", "parent_tool_use_id": "t0", "message": {"content": [
+            {"type": "text", "text": "[[PLAN]]\n- [ ] Something else"}]}},
+        {"type": "result", "subtype": "success", "is_error": False, "result": text},
+    )
+    assert [e.type for e in events] == [EventType.MESSAGE, EventType.PLAN, EventType.MESSAGE, EventType.MESSAGE,
+                                        EventType.USAGE, EventType.COMPLETED]
+    assert events[0].data["text"] == "Plan:\n- [X] Read the model\n* [ ] Write tests\n\nStarting now."
+    assert events[1].data["items"] == [{"text": "Read the model", "status": "completed"},
+                                       {"text": "Write tests", "status": "in_progress"}]
+    assert events[3].data["text"] == "- [ ] Something else"
+    assert "[[PLAN]]" not in events[-1].data["text"]
+
+
 def test_marker_turns_result_into_question_and_is_hidden() -> None:
     text = "What is your favorite color?\n\n[[NEEDS_INPUT]]"
     events = parse(

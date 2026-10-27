@@ -163,6 +163,28 @@ def test_todo_list_becomes_plan_events_when_it_changes() -> None:
     assert [i["status"] for i in events[2].data["items"]] == ["completed"] * 3
 
 
+def test_message_checklist_becomes_plan_events() -> None:
+    def message(text: str) -> dict:
+        return {"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": text}}
+
+    events = parse(
+        message("I'll start.\n\n[[PLAN]]\n- [ ] Write the code\n- [ ] Test it"),
+        message("[[PLAN]]\n- [x] Write the code\n- [ ] Test it"),
+        message("[[PLAN]]\n- [x] Write the code\n- [ ] Test it"),  # unchanged: no new plan event
+        message("Done.\n[[PLAN]]\n- [x] Write the code\n- [x] Test it\n[[NEEDS_INPUT]]"),
+        {"type": "turn.completed", "usage": {}},
+    )
+    assert [e.type for e in events] == [
+        EventType.MESSAGE, EventType.PLAN, EventType.MESSAGE, EventType.PLAN, EventType.MESSAGE,
+        EventType.MESSAGE, EventType.PLAN, EventType.USAGE, EventType.QUESTION,
+    ]
+    assert events[0].data["text"] == "I'll start.\n\n- [ ] Write the code\n- [ ] Test it"
+    assert [i["status"] for i in events[1].data["items"]] == ["in_progress", "pending"]
+    assert [i["status"] for i in events[3].data["items"]] == ["completed", "in_progress"]
+    assert [i["status"] for i in events[6].data["items"]] == ["completed", "completed"]
+    assert "[[PLAN]]" not in events[-1].data["text"]
+
+
 # --- Usage windows from the session file -------------------------------------
 
 

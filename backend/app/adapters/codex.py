@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.base import AgentEvent, EventType
-from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter
+from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, plan_items, split_plan
 from app.adapters.runner import Runner
 from app.models import AgentKind
 
@@ -286,8 +286,9 @@ class TurnParser:
         match item.get("type"):
             case "agent_message":
                 self._last_message = item.get("text") or ""
-                text = self._last_message.replace(NEEDS_INPUT_MARKER, "").rstrip()
-                return [AgentEvent(EventType.MESSAGE, {"text": text, "parent_tool_use_id": None})] if text else []
+                text, plan = split_plan(self._last_message.replace(NEEDS_INPUT_MARKER, "").rstrip())
+                events = [AgentEvent(EventType.MESSAGE, {"text": text, "parent_tool_use_id": None})] if text else []
+                return [*events, *self._plan_event(plan)] if plan else events
             case "error":
                 return [AgentEvent(EventType.ERROR, {"message": item.get("message") or "Error"})]
             case kind if kind in TOOL_NAMES or kind == "mcp_tool_call":
@@ -298,13 +299,12 @@ class TurnParser:
         return []
 
     def _plan(self, item: dict[str, Any]) -> list[AgentEvent]:
-        """Codex's to-do list as a plan event, each time it changes. The first unchecked item is in progress."""
-        items, current = [], True
-        for entry in item.get("items") or []:
-            done = bool(entry.get("completed"))
-            status = "completed" if done else "in_progress" if current else "pending"
-            items.append({"text": entry.get("text") or "", "status": status})
-            current = current and done
+        """Codex's to-do list as a plan event, each time it changes."""
+        steps = [(entry.get("text") or "", bool(entry.get("completed"))) for entry in item.get("items") or []]
+        return self._plan_event(plan_items(steps))
+
+    def _plan_event(self, items: list[dict[str, str]]) -> list[AgentEvent]:
+        """A plan event, from the to-do list or a message's checklist, only when the plan changed."""
         if items == self._last_plan:
             return []
         self._last_plan = items
@@ -360,7 +360,7 @@ class TurnParser:
                 },
             )
         ]
-        text = self._last_message
+        text = split_plan(self._last_message)[0]
         if text.rstrip().endswith(NEEDS_INPUT_MARKER):
             events.append(AgentEvent(EventType.QUESTION, {"text": text.replace(NEEDS_INPUT_MARKER, "").rstrip()}))
         else:

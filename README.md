@@ -83,7 +83,7 @@ Settings are `HUB_*` environment variables or entries in `backend/.env` (see [`b
 | `HUB_TOKEN_FILE` | `backend/data/token` | API token file. Set it for both the backend and the Vite dev server. |
 | `HUB_WORKTREES_DIR` | `%LOCALAPPDATA%\MultiAgentHub\worktrees` | Where session worktrees are created. Keep it outside any repository. |
 | `HUB_CORS_ORIGINS` | Vite dev server origins | JSON array of allowed browser origins. |
-| `HUB_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Permission mode passed to Claude Code. |
+| `HUB_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Permission mode passed to Claude Code. With `acceptEdits`, Claude can edit files but every shell command is denied, because a headless session can't ask for approval. `auto` lets Claude Code's safety check approve safe commands (tests, git). Neither is a sandbox. |
 | `HUB_CODEX_SANDBOX` | `workspace-write` | Sandbox mode passed to Codex. |
 | `HUB_CODEX_PATH` | auto-detected | Path to the native `codex.exe`. |
 | `HUB_RELOAD` | `false` | Restart the backend on code changes (development). |

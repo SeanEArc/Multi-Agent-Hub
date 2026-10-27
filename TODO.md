@@ -2,15 +2,17 @@
 
 Tests to run by hand with real agents. The automated tests use fake agents, and the screenshots used sample data, so these are the only checks of how the features behave with the real Claude Code and Codex CLIs. They use some real Claude and Codex usage.
 
-**Before you start:** restart the backend (`uv run python -m app.main` in `backend/`) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. No database migration is needed.
+**Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. No database migration is needed.
 
 ## Phase 4b: dashboard and progress view
 
 - [x] **Claude subagents on the dashboard.** Confirmed on 2026-10-26: the working session's card lists each running subagent with its latest step.
 
-- [ ] **Codex plan, live.** Start a Codex session with a multi-step task, for example *"Add a function, write tests for it, and update the README. Make a plan first."*
-  - Expect: the plan card appears above the transcript, its items tick off and the "X of Y done" bar moves while Codex works. When the turn ends, the transcript shows a "Plan · X of Y done" row.
-  - Why: Codex's plan updates were dropped before this phase, and the new plan events have only been checked against fake Codex output. If no plan appears, note whether Codex made one at all.
+- [x] **Plan from a checklist, live (Codex and Claude).** Confirmed on 2026-10-26 with both agents, after the instruction was made firmer for Claude: the plan card appears and ticks off as the agent re-posts its `[[PLAN]]` checklist.
+
+- [ ] **Claude running commands in `auto` mode.** Start the backend with `$env:HUB_CLAUDE_PERMISSION_MODE="auto"`, then ask a Claude session in a worktree to run its tests, commit, and push its branch.
+  - Expect: the tests and the commit run without "denied: needs approval". Pushing straight to `main` may still be refused by the safety check; note which commands were refused.
+  - Why: with the default `acceptEdits`, every shell command is denied headless. `auto` has only been tried with `git status` and `python --version`; this decides whether it becomes the default.
 
 - [ ] **Panel / Split switch.** In any session, click **Split**, then **Panel**.
   - Expect: Split shows a side panel with the plan, subagents and **Files changed** (with edit counts). Below about 960 px wide, the side panel gives way to the card. The choice is still set after reloading the page, and matches the setting in **Settings**. **Hide** collapses the card.

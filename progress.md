@@ -882,3 +882,44 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Update `README.md` for the dashboard and progress view once 4b lands.
 - [ ] Then 4c (style polish; the session header crowds on narrow windows) and 4d (Tauri shell).
 - [ ] Carried over: Codex `workspace-write` and `git commit` in a worktree; pruning Codex trusted entries (ask first); Codex sign-in in a container and mount speed (before phase 9); the intermittent test failure; "What remains" in the brief; `remark-gfm`; Bash versions of the commands in `CLAUDE.md`; changing a session's chain or policy after creation.
+
+---
+
+2026-10-26 23:31 (UTC-05:00)
+
+# Session 24: Plans now come from a `[[PLAN]]` checklist in the agent's messages, because neither CLI has a plan tool headless; on `feature/checklist-plan`.
+
+## What was done
+
+1. **User testing (Codex plan):** the user ran a 5-step Codex task and saw no plan card. The hub had no `plan` events for the session. Codex's session log showed why: codex-cli 0.164.0 in `exec` mode offers no `update_plan` tool (no rollout had ever used it, and no feature flag turns it on), so it never sends `todo_list` items. Claude Code 2.1.310 has no `TodoWrite` headless either (Session 22). The prompt the user sent had also lost its "make a plan" line and its closing question.
+2. **Decision (user):** build the plan from a checklist for now (option 1), and look later for a Codex mode that offers `update_plan`, such as the app-server (option 3).
+3. **Backend (`app/adapters/cli.py`):** `HEADLESS_PROMPT` now asks for multi-step plans as a markdown checklist under a line `[[PLAN]]` (`PLAN_MARKER`), re-posted whole after each finished step, and none for small tasks. `split_plan(text)` removes the marker lines and reads the checklist under the last one (`- [ ]`, `- [x]`, `* [X]`). `plan_items` (shared with Codex's `todo_list`) marks the first unchecked step in progress.
+4. **Adapters:** both parsers turn a main-agent message's checklist into a `plan` event when it changed (Codex shares its dedupe with `todo_list`; a Claude subagent's checklist is ignored). The marker is stripped from messages and from the `completed`/`question` text; the checklist stays in the message. The frontend needed no change.
+5. **Tests:** one new test per adapter. **140 passed, 2 skipped.**
+6. **Docs:** `TODO.md`'s Codex plan test now covers both agents and the checklist; `CLAUDE.md`'s CLI plumbing entry describes it.
+7. **Live test (user):** Codex wrote and updated the checklist. Claude didn't write one; asked afterwards, it quoted the instruction and said it should have. The wording was soft ("several steps", "skip for small tasks"), and Claude Code's own prompt pushes it straight to tool calls. The instruction now says plans are required, sets a threshold of 3 or more steps, and asks for the checklist before the first tool call (about 130 tokens, up from about 85).
+8. **Also seen:** in the same Claude session, `python -m pytest -q` was denied (`--permission-prompts none`), so Claude couldn't run the tests.
+9. **Claude couldn't commit or push either.** In the next turn Claude's checklist appeared ("Plan · 0 of 4 done"), but `git commit` was denied the same way ("no approval surface in this session"), and so was its attempt to change its own permissions through the `update-config` skill. Cause: `HUB_CLAUDE_PERMISSION_MODE` defaults to `acceptEdits`, which allows edits only. The test repo has no `.claude/settings.json` allowlist like this repo's (Session 4). Codex has no such problem, because its `workspace-write` sandbox lets commands run.
+10. **`auto` permission mode works headless.** One `claude -p --permission-mode auto --permission-prompts none` call (Haiku, scratch repo) ran `git status` and `python --version` with nothing denied. The user restarted the backend with `HUB_CLAUDE_PERMISSION_MODE=auto` (no code change; the setting already existed). Whether it becomes the default is open (added to **Unresolved** in `plan.md`).
+11. **Live test passed (user):** with the firmer wording, both Claude and Codex wrote and updated the `[[PLAN]]` checklist, and the plan card worked for both.
+12. **Terminal notes:** the user's PowerShell window couldn't find `uv` (on the user `Path`, but the window predates it; see Session 6), so the backend was started with `python -m app.main` from the active virtual environment. A stray Ctrl+B in the command line (`app.main^B`) gave "No module named app.main".
+13. **Docs:** `plan.md` records the plan source (a `[[PLAN]]` checklist, with a Codex `update_plan` mode to look into later) under Phase 4b and in the decisions, and moves the Claude permission mode into **Unresolved** in place of the subagent display style, which was settled in Session 22. `TODO.md` marks the plan test done and adds a test of Claude in `auto` mode. The `HUB_CLAUDE_PERMISSION_MODE` row in `README.md` explains `acceptEdits` and `auto`. Nothing in `plan.md` is marked complete: Phase 4b still lacks history and summaries.
+
+## Current state
+
+- **Branch:** `feature/checklist-plan`, not committed yet. 140 passed, 2 skipped.
+- **Plans:** confirmed live with both agents.
+- **Claude permissions:** the backend currently runs with `HUB_CLAUDE_PERMISSION_MODE=auto` set in the user's terminal; the default is still `acceptEdits`.
+
+## Next steps
+
+**For the user**
+- [ ] Say whether to commit (and push, merge) `feature/checklist-plan`.
+- [ ] Run the "Claude running commands in `auto` mode" test in `TODO.md` (tests, commit, push; note anything refused), then decide whether `auto` becomes the default.
+- [ ] The rest of `TODO.md` (Panel/Split, worktree on a real project, light mode, handoff).
+- [ ] To keep `auto` across restarts before it's the default, add `HUB_CLAUDE_PERMISSION_MODE=auto` to `backend/.env`.
+
+**For the agent**
+- [ ] If the user picks `auto` as the default: change `claude_permission_mode` in `app/config.py`, `backend/.env.example`, both READMEs and `CLAUDE.md`, and move the item out of **Unresolved** in `plan.md`.
+- [ ] **Option 3 (user wants it later):** look for a Codex mode with `update_plan` (`codex app-server` or `mcp-server`), what moving the adapter would cost, and whether the checklist could then be removed for Codex.
+- [ ] Carried over from Session 23: ask the user whether the next phase is 4c or 4d, and mention 4b's history and summaries; the plan in the handoff brief; `README.md` for 4b; the other carried-over items.

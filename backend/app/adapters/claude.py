@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.base import AgentEvent, EventType
-from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter
+from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, split_plan
 from app.adapters.runner import Runner
 from app.models import AgentKind
 
@@ -97,6 +97,7 @@ class TurnParser:
     def __init__(self) -> None:
         self.finished = False
         self._limit_reported = False
+        self._last_plan: list[dict[str, str]] | None = None
 
     def feed(self, line: bytes) -> list[AgentEvent]:
         text = line.decode("utf-8", "replace").strip()
@@ -152,9 +153,13 @@ class TurnParser:
         events = []
         for block in _content_blocks(raw):
             if block.get("type") == "text":
-                text = block.get("text", "").replace(NEEDS_INPUT_MARKER, "").rstrip()
+                text, plan = split_plan(block.get("text", "").replace(NEEDS_INPUT_MARKER, "").rstrip())
                 if text:
                     events.append(AgentEvent(EventType.MESSAGE, {"text": text, "parent_tool_use_id": parent}))
+                # The main agent's checklist under PLAN_MARKER, only when it changed.
+                if plan and parent is None and plan != self._last_plan:
+                    self._last_plan = plan
+                    events.append(AgentEvent(EventType.PLAN, {"items": plan}))
             elif block.get("type") == "tool_use" and block.get("name") == "TodoWrite" and parent is None:
                 # The to-do list, when the CLI offers it (2.1.310 headless doesn't): a plan event, not a tool row.
                 todos = (block.get("input") or {}).get("todos") or []
@@ -229,7 +234,7 @@ class TurnParser:
                         {"subtype": raw.get("subtype"), "message": text, "errors": raw.get("errors")},
                     )
                 )
-        elif text.rstrip().endswith(NEEDS_INPUT_MARKER):
+        elif (text := split_plan(text)[0]).rstrip().endswith(NEEDS_INPUT_MARKER):
             events.append(AgentEvent(EventType.QUESTION, {"text": text.replace(NEEDS_INPUT_MARKER, "").rstrip()}))
         else:
             events.append(
