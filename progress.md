@@ -875,6 +875,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Carried over: try a worktree session on a real project (phase 4a's acceptance test); install Rust before phase 4d.
 
 **For the agent**
+- [ ] **User's call (end of Session 23):** the next session starts Phase 4c or 4d; ask the user which. Phase 4b's history and summaries (below) are not built yet, so mention them when choosing.
 - [ ] Phase 4b slice 3: per-session history (stints, handoffs and turns, easy to review afterwards).
 - [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
 - [ ] Consider putting the current plan into the handoff brief, so the next agent sees which steps are done.
