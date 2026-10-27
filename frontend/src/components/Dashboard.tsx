@@ -1,4 +1,12 @@
-import { AGENT_NAMES, agentLabel, workdir, type AgentKind, type AgentSession, type SessionStatus } from "../api";
+import {
+  AGENT_NAMES,
+  agentLabel,
+  workdir,
+  type AgentKind,
+  type AgentSession,
+  type SessionEvent,
+  type SessionStatus,
+} from "../api";
 import { timeAgo } from "../format";
 import { StatusBadge } from "./StatusBadge";
 import { summarize, truncate } from "./Transcript";
@@ -74,9 +82,41 @@ function SessionCard({ session, onSelect }: { session: AgentSession; onSelect: (
         <span className="path">{folderName(session.project_path)}</span>
       </span>
       <span className="session-card-activity">{activity(session)}</span>
+      {session.running_subagents.length > 0 && <CardSubagents session={session} />}
       <span className="muted small">{timeAgo(lastActive(session))}</span>
     </button>
   );
+}
+
+/** The subagents the session's agent is waiting on, each with its latest step. */
+function CardSubagents({ session }: { session: AgentSession }) {
+  const subagents = session.running_subagents;
+  return (
+    <span className="card-subagents">
+      <span className="card-subagents-count">
+        {subagents.length} {subagents.length === 1 ? "subagent" : "subagents"} running
+      </span>
+      {subagents.map((subagent) => (
+        <span key={subagent.tool_use_id} className="card-subagent">
+          <span className="card-subagent-name">
+            <span className="chip">{subagent.kind}</span>
+            <span className="card-subagent-description">{subagent.description || "Subagent"}</span>
+          </span>
+          {/* The count goes first, so a long step's ellipsis doesn't hide it. */}
+          <span className="card-subagent-step muted">
+            {subagent.last_step
+              ? `${subagent.steps} ${subagent.steps === 1 ? "step" : "steps"} · ${stepLine(subagent.last_step, workdir(session))}`
+              : "Starting…"}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function stepLine(event: SessionEvent, projectPath: string): string {
+  const p = event.payload;
+  return event.type === "message" ? firstLine(p.text) : `${p.name} ${summarize(p.input ?? {}, projectPath)}`;
 }
 
 function lastActive(session: AgentSession): string {

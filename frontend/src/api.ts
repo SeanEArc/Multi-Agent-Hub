@@ -96,6 +96,8 @@ export interface AgentSession {
   worktree: Worktree | null;
   // The latest activity in the main conversation (not usage reports or subagent steps).
   last_event: SessionEvent | null;
+  // Subagents started this turn that haven't reported back (only while working).
+  running_subagents: RunningSubagent[];
   created_at: string;
   updated_at: string;
 }
@@ -122,6 +124,16 @@ export interface HubSettings {
   default_chain: ChainEntry[];
   limit_policy: LimitPolicy;
   progress_layout: ProgressLayout;
+}
+
+export interface RunningSubagent {
+  tool_use_id: string;
+  kind: string;
+  description: string;
+  started_at: string;
+  // Its message and tool call count, and the latest one.
+  steps: number;
+  last_step: SessionEvent | null;
 }
 
 export interface SessionEvent {

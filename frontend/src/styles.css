@@ -1146,6 +1146,59 @@ textarea:focus,
   overflow-wrap: anywhere;
 }
 
+.card-subagents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.card-subagents-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--info);
+}
+
+.card-subagent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  min-width: 0;
+}
+
+.card-subagent-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.card-subagent-name .chip {
+  flex: none;
+}
+
+.card-subagent-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.card-subagent-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .chip.mono {
   font-family: var(--mono);
 }

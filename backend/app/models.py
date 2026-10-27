@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import field_validator
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, func
 from sqlmodel import JSON, Column, Field, Session, SQLModel, col, select
 
 
@@ -238,8 +238,20 @@ class SessionRead(SQLModel):
     worktree: WorktreeRead | None
     # The latest thing that happened in the main conversation, for the dashboard.
     last_event: "EventRead | None" = None
+    # Subagents started in the current turn that haven't reported back, while the session is working.
+    running_subagents: list["SubagentRead"] = []
     created_at: datetime
     updated_at: datetime
+
+
+class SubagentRead(SQLModel):
+    tool_use_id: str
+    kind: str
+    description: str
+    started_at: datetime
+    # How many messages and tool calls it has made, and the latest one.
+    steps: int
+    last_step: "EventRead | None" = None
 
 
 # Event types that say what a session is doing. Usage, rate limits and subagent steps don't, and the
@@ -259,6 +271,58 @@ def last_activity(db: Session, session_id: str) -> "SessionEvent | None":
     return next((e for e in recent if not (e.payload or {}).get("parent_tool_use_id")), None)
 
 
+# Claude Code's subagent tool was renamed from Task to Agent; both are recognized.
+SUBAGENT_TOOLS = ("Task", "Agent")
+
+
+def payload_field(name: str) -> Any:
+    return func.json_extract(col(SessionEvent.payload), f"$.{name}")
+
+
+def running_subagents(db: Session, stint_id: int) -> list[SubagentRead]:
+    """The stint's subagents started since the user's last message that have no result yet."""
+    turn_start = db.exec(
+        select(func.max(SessionEvent.id)).where(SessionEvent.stint_id == stint_id, SessionEvent.type == "user_message")
+    ).one() or 0
+    started = [
+        e for e in db.exec(
+            select(SessionEvent)
+            .where(SessionEvent.stint_id == stint_id, SessionEvent.type == "tool_use", col(SessionEvent.id) > turn_start,
+                   payload_field("name").in_(SUBAGENT_TOOLS))
+            .order_by(col(SessionEvent.id))
+        )
+        if not e.payload.get("parent_tool_use_id")
+    ]
+    if not started:
+        return []
+    finished = set(db.exec(
+        select(payload_field("tool_use_id")).where(
+            SessionEvent.stint_id == stint_id, SessionEvent.type == "tool_result",
+            payload_field("tool_use_id").in_([e.payload["tool_use_id"] for e in started]))
+    ))
+    running = []
+    for event in started:
+        tool_use_id = event.payload["tool_use_id"]
+        if tool_use_id in finished:
+            continue
+        steps = db.exec(
+            select(SessionEvent)
+            .where(SessionEvent.stint_id == stint_id, col(SessionEvent.type).in_(["tool_use", "message"]),
+                   payload_field("parent_tool_use_id") == tool_use_id)
+            .order_by(col(SessionEvent.id).desc())
+        ).all()
+        tool_input = event.payload.get("input") or {}
+        running.append(SubagentRead(
+            tool_use_id=tool_use_id,
+            kind=tool_input.get("subagent_type") or "Subagent",
+            description=tool_input.get("description") or "",
+            started_at=event.created_at,
+            steps=len(steps),
+            last_step=steps[0] if steps else None,
+        ))
+    return running
+
+
 def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
     stints = db.exec(select(Stint).where(Stint.session_id == agent_session.id).order_by(col(Stint.seq))).all()
     current = stints[-1]
@@ -276,6 +340,9 @@ def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
         stints=[StintRead.model_validate(s) for s in stints],
         worktree=session_worktree(db, agent_session.id),
         last_event=last_activity(db, agent_session.id),
+        running_subagents=(
+            running_subagents(db, current.id) if agent_session.status == SessionStatus.WORKING else []
+        ),
     )
 
 
@@ -340,4 +407,6 @@ class EventRead(SQLModel):
     created_at: datetime
 
 
-SessionRead.model_rebuild()  # last_event refers to EventRead, defined after it
+# last_event and last_step refer to EventRead, defined after them.
+SessionRead.model_rebuild()
+SubagentRead.model_rebuild()

@@ -12,7 +12,8 @@ from alembic.migration import MigrationContext
 from sqlmodel import SQLModel
 
 from app.db import alembic_config, init_db, make_engine
-from app.models import AgentKind, AgentSession, HubSettings, SessionEvent, Stint, StintReason, load_hub_settings, save_hub_settings
+from app.models import (AgentKind, AgentSession, HubSettings, SessionEvent, SessionStatus, Stint, StintReason,
+                        load_hub_settings, save_hub_settings, session_read)
 
 
 @pytest.fixture
@@ -91,6 +92,44 @@ def test_hub_settings_default_and_saved(db: Session) -> None:
     saved = load_hub_settings(db)
     assert ([e.agent for e in saved.default_chain], saved.limit_policy) == (["codex"], "ask")
     assert saved.progress_layout == "split"
+
+
+def test_session_lists_running_subagents(db: Session) -> None:
+    agent_session = AgentSession(title="t", project_path=".", status=SessionStatus.WORKING)
+    db.add(agent_session)
+    stint = Stint(session_id=agent_session.id, seq=1, agent=AgentKind.CLAUDE, reason=StintReason.NEW)
+    db.add(stint)
+    db.commit()
+
+    def add(type: str, **payload: object) -> None:
+        db.add(SessionEvent(session_id=agent_session.id, stint_id=stint.id, agent=AgentKind.CLAUDE, type=type,
+                            payload=payload))
+
+    def task(tool_use_id: str, description: str) -> None:
+        add("tool_use", tool_use_id=tool_use_id, name="Task",
+            input={"description": description, "subagent_type": "Explore"})
+
+    task("old", "from an earlier turn")  # stopped before it reported back
+    add("user_message", text="go")
+    task("a", "Find the refund code")
+    task("b", "Read the tests")
+    task("c", "Check the docs")
+    add("tool_use", tool_use_id="a1", name="Grep", input={"pattern": "refund"}, parent_tool_use_id="a")
+    add("message", text="Found it in ledger.py", parent_tool_use_id="a")
+    add("tool_use", tool_use_id="b1", name="Read", input={"file_path": "x.py"}, parent_tool_use_id="b")
+    add("tool_result", tool_use_id="c", content="Docs are current", is_error=False)
+    add("tool_use", tool_use_id="t1", name="Read", input={"file_path": "y.py"})
+    db.commit()
+
+    running = session_read(db, agent_session).running_subagents
+    assert [(s.tool_use_id, s.kind, s.description, s.steps) for s in running] == [
+        ("a", "Explore", "Find the refund code", 2), ("b", "Explore", "Read the tests", 1)
+    ]
+    assert running[0].last_step.payload["text"] == "Found it in ledger.py"
+
+    # Only a working session lists them.
+    agent_session.status = SessionStatus.WAITING_FOR_INPUT
+    assert session_read(db, agent_session).running_subagents == []
 
 
 def test_foreign_keys_enforced(db: Session) -> None:

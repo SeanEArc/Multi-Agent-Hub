@@ -833,12 +833,48 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Next steps
 
+- Superseded by Session 23.
+
+**As written in Session 22**
+
 **For the user**
 - [ ] Look at the dashboard and progress view in the browser. Restart the backend so `last_event` and `progress_layout` are served; no migration is needed. A Codex session that makes a plan shows it live.
 - [ ] Carried over: try a worktree session on a real project (phase 4a's acceptance test); install Rust before phase 4d.
 - [x] Deleted by the user after Session 22's merge: the four old `backend/.pytest-*-20261025` folders, from an **administrator** PowerShell in the repo root: `takeown /F backend\.pytest-*-20261025 /R /A /D Y; icacls backend\.pytest-*-20261025 /grant Administrators:F /T; Remove-Item -Recurse -Force backend\.pytest-*-20261025`.
 
 **For the agent**
+- [ ] Phase 4b slice 3: per-session history (stints, handoffs and turns, easy to review afterwards).
+- [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
+- [ ] Consider putting the current plan into the handoff brief, so the next agent sees which steps are done.
+- [ ] Update `README.md` for the dashboard and progress view once 4b lands.
+- [ ] Then 4c (style polish; the session header crowds on narrow windows) and 4d (Tauri shell).
+- [ ] Carried over: Codex `workspace-write` and `git commit` in a worktree; pruning Codex trusted entries (ask first); Codex sign-in in a container and mount speed (before phase 9); the intermittent test failure; "What remains" in the brief; `remark-gfm`; Bash versions of the commands in `CLAUDE.md`; changing a session's chain or policy after creation.
+
+---
+
+2026-10-26 21:43 (UTC-05:00)
+
+# Session 23: The dashboard's session cards now list each running subagent with its latest step, on `feature/dashboard-subagents`.
+
+## What was done
+
+1. **User testing (Claude subagents):** the user started 3 subagents in a Claude session and noticed the dashboard didn't show them. The dashboard had no subagent display; only the session view did. The user asked for the count and each running subagent on the card.
+2. **Backend:** `SessionRead.running_subagents` (`models.running_subagents`): the current stint's `Task`/`Agent` calls since the last user message that have no `tool_result` yet, each with its kind, description, step count and latest step (message or tool call, found by `parent_tool_use_id` with `json_extract`). Only filled while the session is `working`, so a subagent cut off by Stop isn't shown as running. New test `test_session_lists_running_subagents` in `test_db.py`. **138 passed, 2 skipped.**
+3. **Dashboard card:** below the activity line, "3 subagents running" and one row per subagent: kind chip, description (up to 2 lines), then "N steps · latest step" (or "Starting…"). It updates with the dashboard's 5 s poll. Checked in dark, light and narrow with the seeded sample sessions (seed now has 3 running subagents).
+
+## Current state
+
+- **Branch:** `feature/dashboard-subagents`, from `main` (`2fac864`). Uncommitted.
+- **Phase 4b:** dashboard (now with running subagents) and progress view are built. History and summaries are not.
+
+## Next steps
+
+**For the user**
+- [ ] Restart the backend and try the dashboard while a Claude session runs subagents; then continue the manual test list (Codex plan live, Panel/Split switch, worktree on a real project).
+- [ ] Carried over: try a worktree session on a real project (phase 4a's acceptance test); install Rust before phase 4d.
+
+**For the agent**
+- [ ] Commit, push and merge `feature/dashboard-subagents` when the user asks.
 - [ ] Phase 4b slice 3: per-session history (stints, handoffs and turns, easy to review afterwards).
 - [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
 - [ ] Consider putting the current plan into the handoff brief, so the next agent sees which steps are done.
