@@ -240,8 +240,16 @@ class SessionRead(SQLModel):
     last_event: "EventRead | None" = None
     # Subagents started in the current turn that haven't reported back, while the session is working.
     running_subagents: list["SubagentRead"] = []
+    # The current stint's latest plan (None until its agent writes one).
+    plan: list["PlanItemRead"] | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PlanItemRead(SQLModel):
+    text: str
+    # pending, in_progress or completed
+    status: str
 
 
 class SubagentRead(SQLModel):
@@ -323,6 +331,17 @@ def running_subagents(db: Session, stint_id: int) -> list[SubagentRead]:
     return running
 
 
+def current_plan(db: Session, stint_id: int) -> list[PlanItemRead] | None:
+    """The stint's latest plan event, so a handoff starts with no plan rather than the previous agent's."""
+    event = db.exec(
+        select(SessionEvent)
+        .where(SessionEvent.stint_id == stint_id, SessionEvent.type == "plan")
+        .order_by(col(SessionEvent.id).desc())
+    ).first()
+    items = (event.payload or {}).get("items") if event else None
+    return [PlanItemRead.model_validate(item) for item in items] if items else None
+
+
 def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
     stints = db.exec(select(Stint).where(Stint.session_id == agent_session.id).order_by(col(Stint.seq))).all()
     current = stints[-1]
@@ -343,6 +362,7 @@ def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
         running_subagents=(
             running_subagents(db, current.id) if agent_session.status == SessionStatus.WORKING else []
         ),
+        plan=current_plan(db, current.id),
     )
 
 

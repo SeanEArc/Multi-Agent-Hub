@@ -289,7 +289,7 @@ function PlanRow({ items }: { items: PlanItem[] }) {
   );
 }
 
-const PLAN_LABELS: Record<string, string> = { completed: "Done", in_progress: "In progress", pending: "Pending" };
+export const PLAN_LABELS: Record<string, string> ={ completed: "Done", in_progress: "In progress", pending: "Pending" };
 
 export function PlanList({ items }: { items: PlanItem[] }) {
   return (

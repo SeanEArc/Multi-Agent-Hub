@@ -1146,6 +1146,51 @@ textarea:focus,
   overflow-wrap: anywhere;
 }
 
+.card-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.card-plan .plan-heading {
+  flex: none;
+}
+
+.card-plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.card-plan .plan-item {
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-plan .plan-mark {
+  width: 12px;
+  height: 12px;
+}
+
+.card-plan .plan-item.completed .plan-mark::after {
+  left: 2.5px;
+  top: 0;
+  width: 2.5px;
+  height: 6px;
+}
+
+.card-plan-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .card-subagents {
   display: flex;
   flex-direction: column;

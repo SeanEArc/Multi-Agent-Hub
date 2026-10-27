@@ -8,8 +8,12 @@ import {
   type SessionStatus,
 } from "../api";
 import { timeAgo } from "../format";
+import { planCounts, type PlanItem } from "../progress";
 import { StatusBadge } from "./StatusBadge";
-import { summarize, truncate } from "./Transcript";
+import { PLAN_LABELS, summarize, truncate } from "./Transcript";
+
+// A card lists at most this many plan steps, around the current one.
+const CARD_PLAN_STEPS = 5;
 
 interface Props {
   sessions: AgentSession[];
@@ -82,9 +86,54 @@ function SessionCard({ session, onSelect }: { session: AgentSession; onSelect: (
         <span className="path">{folderName(session.project_path)}</span>
       </span>
       <span className="session-card-activity">{activity(session)}</span>
+      {session.plan?.length ? <CardPlan plan={session.plan} /> : null}
       {session.running_subagents.length > 0 && <CardSubagents session={session} />}
       <span className="muted small">{timeAgo(lastActive(session))}</span>
     </button>
+  );
+}
+
+/** The current agent's plan: progress, then a window of steps that keeps the current one in view. */
+function CardPlan({ plan }: { plan: PlanItem[] }) {
+  const { done, total } = planCounts(plan);
+  const current = plan.findIndex((item) => item.status !== "completed");
+  // Start one step before the current one, so the last finished step shows too.
+  const start = Math.max(0, Math.min((current === -1 ? total : current) - 1, total - CARD_PLAN_STEPS));
+  const shown = plan.slice(start, start + CARD_PLAN_STEPS);
+  const hidden = total - shown.length;
+  return (
+    <span className="card-plan">
+      <span className="plan-heading">
+        <strong>Plan</strong>
+        <span className="muted small">
+          {done} of {total} done
+        </span>
+        <span
+          className="plan-bar"
+          role="progressbar"
+          aria-label="Plan progress"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={done}
+        >
+          <span style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+        </span>
+      </span>
+      {/* Spans, not a list: the card is a button, which can't hold one. */}
+      <span className="card-plan-steps">
+        {shown.map((item, i) => (
+          <span key={start + i} className={`plan-item ${item.status}`}>
+            <span className="plan-mark" role="img" aria-label={PLAN_LABELS[item.status] ?? item.status} />
+            <span className="card-plan-text">{item.text}</span>
+          </span>
+        ))}
+      </span>
+      {hidden > 0 && (
+        <span className="muted small">
+          {hidden} more {hidden === 1 ? "step" : "steps"}
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -132,6 +132,33 @@ def test_session_lists_running_subagents(db: Session) -> None:
     assert session_read(db, agent_session).running_subagents == []
 
 
+def test_session_shows_current_stints_latest_plan(db: Session) -> None:
+    agent_session = AgentSession(title="t", project_path=".")
+    db.add(agent_session)
+    first = Stint(session_id=agent_session.id, seq=1, agent=AgentKind.CODEX, reason=StintReason.NEW)
+    db.add(first)
+    db.commit()
+    assert session_read(db, agent_session).plan is None
+
+    def plan(stint: Stint, *statuses: str) -> None:
+        items = [{"text": f"step {i + 1}", "status": s} for i, s in enumerate(statuses)]
+        db.add(SessionEvent(session_id=agent_session.id, stint_id=stint.id, agent=stint.agent, type="plan",
+                            payload={"items": items}))
+        db.commit()
+
+    plan(first, "in_progress", "pending")
+    plan(first, "completed", "in_progress")
+    assert [(i.text, i.status) for i in session_read(db, agent_session).plan] == [
+        ("step 1", "completed"), ("step 2", "in_progress")
+    ]
+
+    # After a handoff, the new agent has no plan until it writes one.
+    second = Stint(session_id=agent_session.id, seq=2, agent=AgentKind.CLAUDE, reason=StintReason.MANUAL)
+    db.add(second)
+    db.commit()
+    assert session_read(db, agent_session).plan is None
+
+
 def test_foreign_keys_enforced(db: Session) -> None:
     db.add(SessionEvent(session_id="missing", agent=AgentKind.CLAUDE, type="message"))
     with pytest.raises(IntegrityError):

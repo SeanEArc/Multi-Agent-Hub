@@ -1,4 +1,5 @@
 // Types and calls for the FastAPI backend (see backend/app/api/sessions.py).
+import type { PlanItem } from "./progress";
 
 export type SessionStatus =
   | "ready"
@@ -98,6 +99,8 @@ export interface AgentSession {
   last_event: SessionEvent | null;
   // Subagents started this turn that haven't reported back (only while working).
   running_subagents: RunningSubagent[];
+  // The current agent's latest plan; null until it writes one.
+  plan: PlanItem[] | null;
   created_at: string;
   updated_at: string;
 }

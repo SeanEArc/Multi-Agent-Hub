@@ -922,3 +922,28 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] If the user picks `auto` as the default: change `claude_permission_mode` in `app/config.py`, `backend/.env.example`, both READMEs and `CLAUDE.md`, and move the item out of **Unresolved** in `plan.md`.
 - [ ] **Option 3 (user wants it later):** look for a Codex mode with `update_plan` (`codex app-server` or `mcp-server`), what moving the adapter would cost, and whether the checklist could then be removed for Codex.
 - [ ] Carried over from Session 23: ask the user whether the next phase is 4c or 4d, and mention 4b's history and summaries; the plan in the handoff brief; `README.md` for 4b; the other carried-over items.
+
+---
+
+2026-10-26 23:53 (UTC-05:00)
+
+# Session 25: Dashboard cards now show each session's current plan, on `feature/dashboard-plan`.
+
+## What was done
+
+1. **User's request:** list the plan on every session card in **All sessions**, not only in the open session.
+2. **Backend:** `SessionRead.plan` (`models.current_plan`): the items of the current stint's latest `plan` event, or `None`. It is filled for every status, so finished and idle sessions keep their last plan, and a handoff starts with none (the progress view does the same). New test `test_session_shows_current_stints_latest_plan` in `test_db.py`. **141 passed, 2 skipped.**
+3. **Dashboard card (`CardPlan` in `Dashboard.tsx`):** below the activity line and above the running subagents: "Plan · X of Y done" with the progress bar, then up to 5 steps (`CARD_PLAN_STEPS`) with the same done / in-progress / pending marks as the progress view, each on one line. A longer plan shows a window starting one step before the current one, plus "N more steps". (Showing every step with wrapped text was tried and undone at the user's request.) The card is a `<button>`, so the steps are spans with the `plan-item` classes rather than the `<ul>` from `PlanList`. `PLAN_LABELS` is now exported from `Transcript.tsx`. The frontend type-checks.
+
+## Current state
+
+- **Branch:** `feature/dashboard-plan`, pushed and fast-forwarded into `main` (user asked). The user checked the cards in the browser: "Looks great."
+
+## Next steps
+
+**For the user**
+- [x] Restart the backend and run "Plan on the dashboard cards" in `TODO.md`.
+- [ ] Carried over from Session 24: the `auto` mode test and the rest of `TODO.md`.
+
+**For the agent**
+- [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); ask whether the next phase is 4c or 4d, mentioning 4b's history and summaries.

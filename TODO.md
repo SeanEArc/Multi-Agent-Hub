@@ -10,6 +10,10 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 - [x] **Plan from a checklist, live (Codex and Claude).** Confirmed on 2026-10-26 with both agents, after the instruction was made firmer for Claude: the plan card appears and ticks off as the agent re-posts its `[[PLAN]]` checklist.
 
+- [x] **Plan on the dashboard cards.** Confirmed by the user on 2026-10-26. Restart the backend, then open **All sessions** while a session with a multi-step task is working, and again after it finishes.
+  - Expect: the card shows "Plan · X of Y done" with a bar and up to 5 steps, the current one in bold, updating with the dashboard's 5 s poll. A longer plan shows the steps around the current one and "N more steps". Finished and idle sessions keep their last plan; after a handoff the card has no plan until the new agent writes one.
+  - Why: only checked with tests and the type-checker so far, not in a browser.
+
 - [ ] **Claude running commands in `auto` mode.** Start the backend with `$env:HUB_CLAUDE_PERMISSION_MODE="auto"`, then ask a Claude session in a worktree to run its tests, commit, and push its branch.
   - Expect: the tests and the commit run without "denied: needs approval". Pushing straight to `main` may still be refused by the safety check; note which commands were refused.
   - Why: with the default `acceptEdits`, every shell command is denied headless. `auto` has only been tried with `git status` and `python --version`; this decides whether it becomes the default.
