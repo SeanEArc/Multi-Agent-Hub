@@ -907,14 +907,13 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/checklist-plan`, not committed yet. 140 passed, 2 skipped.
+- **Branch:** `feature/checklist-plan`, committed as `a1c67c9`, pushed, and fast-forwarded into `main` (user asked). 140 passed, 2 skipped; the frontend type-checks.
 - **Plans:** confirmed live with both agents.
 - **Claude permissions:** the backend currently runs with `HUB_CLAUDE_PERMISSION_MODE=auto` set in the user's terminal; the default is still `acceptEdits`.
 
 ## Next steps
 
 **For the user**
-- [ ] Say whether to commit (and push, merge) `feature/checklist-plan`.
 - [ ] Run the "Claude running commands in `auto` mode" test in `TODO.md` (tests, commit, push; note anything refused), then decide whether `auto` becomes the default.
 - [ ] The rest of `TODO.md` (Panel/Split, worktree on a real project, light mode, handoff).
 - [ ] To keep `auto` across restarts before it's the default, add `HUB_CLAUDE_PERMISSION_MODE=auto` to `backend/.env`.
