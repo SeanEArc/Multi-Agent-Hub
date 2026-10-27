@@ -864,17 +864,17 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/dashboard-subagents`, from `main` (`2fac864`). Uncommitted.
+- **Branch:** `feature/dashboard-subagents`, committed as `36ecd18` (rebased onto the user's `2215fe6`, which added `Improve-Agents.md`), pushed, and fast-forwarded into `main`. The user confirmed the dashboard subagents with a real Claude session.
+- **`TODO.md`** (new, repo root): the manual tests for the user, with what to expect and why.
 - **Phase 4b:** dashboard (now with running subagents) and progress view are built. History and summaries are not.
 
 ## Next steps
 
 **For the user**
-- [ ] Restart the backend and try the dashboard while a Claude session runs subagents; then continue the manual test list (Codex plan live, Panel/Split switch, worktree on a real project).
+- [ ] Work through the manual tests in `TODO.md` (Codex plan live, Panel/Split switch, worktree on a real project, and the rest).
 - [ ] Carried over: try a worktree session on a real project (phase 4a's acceptance test); install Rust before phase 4d.
 
 **For the agent**
-- [ ] Commit, push and merge `feature/dashboard-subagents` when the user asks.
 - [ ] Phase 4b slice 3: per-session history (stints, handoffs and turns, easy to review afterwards).
 - [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
 - [ ] Consider putting the current plan into the handoff brief, so the next agent sees which steps are done.
