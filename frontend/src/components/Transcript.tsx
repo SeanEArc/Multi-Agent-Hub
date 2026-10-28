@@ -1,6 +1,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
+import { formatTokens, turnTokens } from "../history";
 import { isSubagent, planCounts, stepsByParent, toolOutcomes, type PlanItem, type ToolOutcomes } from "../progress";
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
   header?: ReactNode;
 }
 
-const REASONS: Record<string, string> = {
+export const REASONS: Record<string, string> = {
   limit: "usage limit",
   manual: "handed off by you",
   delegation: "delegated",
@@ -44,17 +45,14 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
     }
   }
 
+  const tokens = turnTokens(events);
   let lastUsage: SessionEvent | null = null;
-  let turnTokens = 0;
-  // Codex reports the thread's running total; a turn's own tokens are the growth since the last report.
-  let threadTokens = 0;
+  let lastTokens = 0;
   const rows = events.map((event, index) => {
     const p = event.payload;
     if (p.parent_tool_use_id) return null;
     switch (event.type) {
       case "handoff":
-        // A new agent starts a new thread, so Codex's running total starts over.
-        threadTokens = 0;
         lastUsage = null;
         return <HandoffDivider key={event.id} sessionId={sessionId} event={event} />;
       case "handoff_offer":
@@ -70,7 +68,7 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
         );
       case "user_message":
         return (
-          <div key={event.id} className="row user-message">
+          <div key={event.id} id={eventAnchor(event.id)} className="row user-message">
             <span className="prompt-mark">❯</span>
             <span className="pre-wrap">{p.text}</span>
           </div>
@@ -107,31 +105,22 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
             )}
           </ToolRow>
         );
-      case "usage": {
-        const total = tokenTotal(p.usage);
-        // Events saved before the `cumulative` flag existed are Codex totals too.
-        if (p.cumulative ?? event.agent === "codex") {
-          // A smaller total means a new thread started (e.g. the first turn failed before Codex saved it).
-          turnTokens = total >= threadTokens ? total - threadTokens : total;
-          threadTokens = total;
-        } else {
-          turnTokens = total;
-        }
+      case "usage":
         lastUsage = event;
+        lastTokens = tokens.get(event.id) ?? 0;
         return null;
-      }
       case "question":
         return (
           <div key={event.id} className="row turn-end question-end">
             <span>Waiting for your answer</span>
-            <UsageSummary usage={lastUsage} tokens={turnTokens} />
+            <UsageSummary usage={lastUsage} tokens={lastTokens} />
           </div>
         );
       case "completed":
         return (
           <div key={event.id} className="row turn-end">
             <span>✓ Done{p.permission_denials ? ` · ${p.permission_denials} action(s) denied` : ""}</span>
-            <UsageSummary usage={lastUsage} tokens={turnTokens} />
+            <UsageSummary usage={lastUsage} tokens={lastTokens} />
           </div>
         );
       case "limit_reached":
@@ -180,47 +169,63 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
   );
 }
 
+/** The id of a transcript row that starts a turn, so the history can scroll to it. */
+export function eventAnchor(eventId: number): string {
+  return `event-${eventId}`;
+}
+
 function HandoffDivider({ sessionId, event }: { sessionId: string; event: SessionEvent }) {
+  const brief = useBrief(sessionId, event.stint_id);
+  const p = event.payload;
+  return (
+    <div id={eventAnchor(event.id)} className="row handoff">
+      <div className="handoff-line">
+        <span>
+          {agentName(p.from_agent)} → {agentName(p.to_agent)}
+          {p.model ? ` (${p.model})` : ""} · {REASONS[p.reason] ?? p.reason}
+        </span>
+        {brief.button}
+      </div>
+      {brief.panel}
+    </div>
+  );
+}
+
+/** A "View brief" button and the brief it shows, loaded the first time it is opened. */
+export function useBrief(sessionId: string, stintId: number | null): { button: ReactNode; panel: ReactNode } {
   const [brief, setBrief] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const p = event.payload;
 
   async function toggle() {
     setOpen(!open);
-    if (brief === null && event.stint_id !== null) {
+    if (brief === null && stintId !== null) {
       try {
-        setBrief((await api.getStint(sessionId, event.stint_id)).brief ?? "");
+        setBrief((await api.getStint(sessionId, stintId)).brief ?? "");
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     }
   }
 
-  return (
-    <div className="row handoff">
-      <div className="handoff-line">
-        <span>
-          {agentName(p.from_agent)} → {agentName(p.to_agent)}
-          {p.model ? ` (${p.model})` : ""} · {REASONS[p.reason] ?? p.reason}
-        </span>
-        <button className="button subtle" onClick={() => void toggle()} aria-expanded={open}>
-          {open ? "Hide brief" : "View brief"}
-        </button>
+  return {
+    button: (
+      <button className="button subtle" onClick={() => void toggle()} aria-expanded={open}>
+        {open ? "Hide brief" : "View brief"}
+      </button>
+    ),
+    panel: open && (
+      <div className="handoff-brief">
+        {error ? (
+          <span className="muted">{error}</span>
+        ) : brief === null ? (
+          <span className="muted">Loading…</span>
+        ) : (
+          <Markdown>{brief}</Markdown>
+        )}
       </div>
-      {open && (
-        <div className="handoff-brief">
-          {error ? (
-            <span className="muted">{error}</span>
-          ) : brief === null ? (
-            <span className="muted">Loading…</span>
-          ) : (
-            <Markdown>{brief}</Markdown>
-          )}
-        </div>
-      )}
-    </div>
-  );
+    ),
+  };
 }
 
 interface HandoffOfferProps {
@@ -260,7 +265,7 @@ function HandoffOffer({ agent, model, active, onAccept }: HandoffOfferProps) {
   );
 }
 
-function agentName(agent: string): string {
+export function agentName(agent: string): string {
   return AGENT_NAMES[agent as AgentKind] ?? agent;
 }
 
@@ -398,23 +403,6 @@ function UsageSummary({ usage, tokens }: { usage: SessionEvent | null; tokens: n
       ))}
     </span>
   );
-}
-
-/**
- * Every token the model processed. Codex's input_tokens already includes cached input;
- * Claude reports cache writes and reads separately from input_tokens, so they are added.
- */
-function tokenTotal(usage: Record<string, number> | null | undefined): number {
-  return (
-    (usage?.input_tokens ?? 0) +
-    (usage?.cache_creation_input_tokens ?? 0) +
-    (usage?.cache_read_input_tokens ?? 0) +
-    (usage?.output_tokens ?? 0)
-  );
-}
-
-function formatTokens(count: number): string {
-  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
 /** One short line describing a tool call, like Claude Code's `Write(color.txt)`. */

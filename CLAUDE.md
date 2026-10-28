@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-Agent Hub: a personal Windows desktop app that runs Claude Code, Codex and a local Ollama model as parallel agent sessions on different projects, with automatic handoff to the next agent when one hits a usage limit. `plan.md` is the confirmed plan (requirements, tradeoffs, build phases 1–9; phase 6, iPhone access, comes last). `progress.md` holds per-session recaps and the current next steps; read it first to see where work stopped, and append a new recap at the end of each session.
 
-Phases 1–3 are done (Claude and Codex sessions, handoff, React UI in `frontend/`). Phase 4 is split into 4a–4d in `plan.md`: 4a (runner interface, per-session git worktrees) is built; 4b is in progress (dashboard and progress view built; history and summaries not); 4c (style polish) and 4d (Tauri shell) are not started. The Ollama adapter (phase 5) is not built yet. Agents are driven through their official CLIs under the user's own logins; the app must never read or store login tokens.
+Phases 1–3 are done (Claude and Codex sessions, handoff, React UI in `frontend/`). Phase 4 is split into 4a–4d in `plan.md`: 4a (runner interface, per-session git worktrees) is built; 4b is in progress (dashboard, progress view and history built; summaries not); 4c (style polish) and 4d (Tauri shell) are not started. The Ollama adapter (phase 5) is not built yet. Agents are driven through their official CLIs under the user's own logins; the app must never read or store login tokens.
 
 ## Commands
 

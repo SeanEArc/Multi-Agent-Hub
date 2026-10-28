@@ -14,7 +14,7 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Expect: the card shows "Plan · X of Y done" with a bar and up to 5 steps, the current one in bold, updating with the dashboard's 5 s poll. A longer plan shows the steps around the current one and "N more steps". Finished and idle sessions keep their last plan; after a handoff the card has no plan until the new agent writes one.
   - Why: only checked with tests and the type-checker so far, not in a browser.
 
-- [ ] **Claude running commands in `auto` mode.** Start the backend with `$env:HUB_CLAUDE_PERMISSION_MODE="auto"`, then ask a Claude session in a worktree to run its tests, commit, and push its branch.
+- [x] **Claude running commands in `auto` mode.** Passed (user, 2026-10-27). Start the backend with `$env:HUB_CLAUDE_PERMISSION_MODE="auto"`, then ask a Claude session in a worktree to run its tests, commit, and push its branch.
   - Expect: the tests and the commit run without "denied: needs approval". Pushing straight to `main` may still be refused by the safety check; note which commands were refused.
   - Why: with the default `acceptEdits`, every shell command is denied headless. `auto` has only been tried with `git status` and `python --version`; this decides whether it becomes the default.
 
@@ -25,6 +25,10 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 - [ ] **Claude subagents in the session view.** In a Claude session that starts subagents, open the session.
   - Expect: each subagent is listed in the card (or side panel), and clicking it shows its steps. In the transcript, its steps are folded under its row instead of mixed into the conversation.
   - Why: the dashboard was confirmed; the session view's subagent list and the folded transcript rows haven't been checked with real Claude output.
+
+- [ ] **Session history.** Open a session that has had a few turns (ideally one with a handoff) and click **History** in the header.
+  - Expect: totals at the top (agents, turns, tool calls, files edited, tokens, API price for Claude, time span), then one card per agent in order, with why it took over and its **View brief**. Each turn shows how it ended (Done, Asked you, Usage limit, Stopped, Error, Cut off), when, its prompt, and its tool calls, files, plan, cost or tokens. Clicking a prompt shows the full message and the files edited; **Show in transcript** switches back and highlights that turn. Sending a message from History switches to the transcript.
+  - Why: built from the session's events in the browser and checked only with sample data; real sessions may have event orders the sample didn't cover.
 
 - [ ] **Light mode.** Switch Windows (or the browser) to light mode and look over the dashboard and a session.
   - Why: new colors were added for the dashboard and progress view; the screenshots covered light mode with sample data only.

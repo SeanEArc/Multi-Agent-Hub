@@ -105,7 +105,8 @@ export function deriveProgress(
   return { plan, subagents, files: [...files.values()].reverse() };
 }
 
-function editedPaths(tool: string, input: Record<string, any>): string[] {
+/** The files a tool call edited: an edit tool's path, or every file in a Codex patch. */
+export function editedPaths(tool: string, input: Record<string, any>): string[] {
   // Codex reports one Edit per patch, listing every file it changed.
   if (Array.isArray(input.changes)) return input.changes.map((c: any) => c.path).filter(Boolean);
   if (!EDIT_TOOLS.includes(tool)) return [];

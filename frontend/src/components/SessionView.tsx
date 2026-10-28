@@ -4,9 +4,10 @@ import { deriveProgress, toolOutcomes } from "../progress";
 import { useSessionStream } from "../useSessionStream";
 import { Composer } from "./Composer";
 import { HandoffDialog } from "./HandoffDialog";
+import { HistoryView } from "./HistoryView";
 import { ProgressAside, ProgressCard } from "./ProgressPanel";
 import { StatusBadge } from "./StatusBadge";
-import { Transcript } from "./Transcript";
+import { Transcript, eventAnchor } from "./Transcript";
 import { UsageMeters } from "./UsageMeters";
 import { WorktreeDialog } from "./WorktreeDialog";
 
@@ -25,6 +26,9 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
   const stickToBottom = useRef(true);
   const [handingOff, setHandingOff] = useState(false);
   const [showWorktree, setShowWorktree] = useState(false);
+  const [view, setView] = useState<"transcript" | "history">("transcript");
+  // A turn picked in the history, to scroll to once the transcript is back.
+  const [jumpTo, setJumpTo] = useState<number | null>(null);
 
   // Keep the sidebar (and this session's current agent) in step when the live status changes.
   useEffect(() => {
@@ -38,11 +42,29 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
     if (latestStintId && currentStintId && latestStintId > currentStintId) onChanged();
   }, [latestStintId, currentStintId]);
 
-  // Follow new events unless the user scrolled up to read.
+  // Follow new events unless the user scrolled up to read, or show the turn picked in the history.
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [events.length, status]);
+    if (!el) return;
+    if (jumpTo !== null) {
+      const row = document.getElementById(eventAnchor(jumpTo));
+      setJumpTo(null);
+      if (row) {
+        stickToBottom.current = false;
+        // Centered, so the sticky progress card above the transcript doesn't cover it.
+        row.scrollIntoView({ block: "center" });
+        row.classList.add("jump-highlight");
+        setTimeout(() => row.classList.remove("jump-highlight"), 2000);
+        return;
+      }
+    }
+    if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [events.length, status, view, jumpTo]);
+
+  function showView(next: "transcript" | "history") {
+    if (next === "transcript") stickToBottom.current = true;
+    setView(next);
+  }
 
   // The model belongs to the agent working now, not one before a handoff.
   const currentEvents = events.filter((e) => e.stint_id === currentStintId);
@@ -105,6 +127,18 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
           <UsageMeters refreshKey={lastUsageReport?.id} current={session.agent} />
           {!connected && <span className="muted small">Reconnecting…</span>}
           <StatusBadge status={status} />
+          <div className="layout-switch" role="group" aria-label="View">
+            {(["transcript", "history"] as const).map((option) => (
+              <button
+                key={option}
+                aria-pressed={view === option}
+                onClick={() => showView(option)}
+                title={option === "transcript" ? "The conversation" : "Each agent's turns and handoffs, at a glance"}
+              >
+                {option === "transcript" ? "Transcript" : "History"}
+              </button>
+            ))}
+          </div>
           <div className="layout-switch" role="group" aria-label="Progress layout">
             {(["panel", "split"] as const).map((option) => (
               <button
@@ -133,41 +167,57 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
 
       <div className={`session-body ${layout}`}>
         <div className="session-main">
-          <div
-            className="transcript-scroller"
-            ref={scroller}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-            }}
-          >
-            {events.length === 0 && status === "ready" ? (
-              <div className="empty-state">
-                <p>Send a message to start {agentName} in</p>
-                <code>{folder}</code>
-              </div>
-            ) : (
-              <Transcript
-                sessionId={session.id}
+          {view === "history" ? (
+            // Its own element, so it opens at the top rather than at the transcript's scroll position.
+            <div key="history" className="transcript-scroller">
+              <HistoryView
+                session={session}
                 events={events}
                 status={status}
                 projectPath={folder}
-                onAcceptHandoff={async (agent, model) => {
-                  stickToBottom.current = true;
-                  await api.handoff(session.id, { agent, model });
-                  onChanged();
+                onShowInTranscript={(eventId) => {
+                  setView("transcript");
+                  setJumpTo(eventId);
                 }}
-                // In the split layout the card stands in for the side panel on narrow windows.
-                header={<ProgressCard {...progressProps} />}
               />
-            )}
-          </div>
+            </div>
+          ) : (
+            <div
+              className="transcript-scroller"
+              ref={scroller}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+              }}
+            >
+              {events.length === 0 && status === "ready" ? (
+                <div className="empty-state">
+                  <p>Send a message to start {agentName} in</p>
+                  <code>{folder}</code>
+                </div>
+              ) : (
+                <Transcript
+                  sessionId={session.id}
+                  events={events}
+                  status={status}
+                  projectPath={folder}
+                  onAcceptHandoff={async (agent, model) => {
+                    stickToBottom.current = true;
+                    await api.handoff(session.id, { agent, model });
+                    onChanged();
+                  }}
+                  // In the split layout the card stands in for the side panel on narrow windows.
+                  header={<ProgressCard {...progressProps} />}
+                />
+              )}
+            </div>
+          )}
 
           <Composer
             status={status}
             agentName={agentName}
             onSend={async (text) => {
-              stickToBottom.current = true;
+              showView("transcript");
               await api.sendMessage(session.id, text);
               onChanged();
             }}

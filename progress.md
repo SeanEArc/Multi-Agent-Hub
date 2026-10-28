@@ -943,7 +943,43 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 **For the user**
 - [x] Restart the backend and run "Plan on the dashboard cards" in `TODO.md`.
-- [ ] Carried over from Session 24: the `auto` mode test and the rest of `TODO.md`.
+- [x] The `auto` mode test passed (user, 2026-10-27). Whether `auto` becomes the default is still the user's call.
+- [ ] Carried over: the rest of `TODO.md`.
 
 **For the agent**
 - [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); ask whether the next phase is 4c or 4d, mentioning 4b's history and summaries.
+
+---
+
+2026-10-27 15:13 (UTC-05:00)
+
+# Session 26: Built Phase 4b's per-session history (slice 3): a History view with each agent's stint and turns, on `feature/session-history`.
+
+## What was done
+
+1. **Clarified (user asked):** slice 3 (history) had not been built. Slices 1 and 2 (dashboard, progress view) and Sessions 23–25's dashboard additions were done; the history and summaries were still open.
+2. **History view (frontend only, no backend or migration change):**
+   - **Transcript / History** switch in the session header. History replaces the transcript; the composer stays, and sending a message switches back to the transcript.
+   - **Totals:** agents, turns, tool calls, files edited, tokens, API price (Claude only; Codex reports no price) and the time span.
+   - **One card per stint:** agent, model, "current", why it took over (from whom, usage limit or handed off by you), start and end times, and **View brief** for handed-off stints.
+   - **One row per turn:** how it ended (Done, Asked you, Usage limit, Stopped, Error, Cut off, Running), time, prompt (or "Continued from the handoff brief", with the handoff note), duration, tool calls, subagents, files edited, plan "X of Y", cost, tokens and any error message. Clicking the prompt shows the full message and the files; **Show in transcript** switches back, scrolls to the turn (centered, so the sticky plan card can't cover it) and outlines it for 2 s.
+3. **Code:** `history.ts` (`deriveHistory`, `historyTotals`, `turnTokens`) groups events by stint and splits turns at `user_message`/`handoff`; a handoff note (a `user_message` right after the `handoff`) stays in the handoff's turn. `HistoryView.tsx` renders it. `Transcript.tsx` now uses the shared `turnTokens`/`formatTokens`, exports `useBrief` (the View brief button and panel, shared with the history), `REASONS`, `agentName` and `eventAnchor`, and gives user-message and handoff rows `id="event-N"` anchors. `progress.ts` exports `editedPaths`. `format.ts` gained `formatTime` and `formatDuration`.
+4. **Checks:** the frontend type-checks. Screenshots (dark, light, narrow, brief open, jump to first and last turn) against a temporary backend on port 8799 and Vite on 5199, seeded with a Claude → Codex session covering done, question, limit, handoff, stopped and error turns (`seed_history.py` and `shots.py` in the session scratchpad, via Chrome's DevTools protocol). One bug was fixed: History opened at the transcript's scroll position, because React reused the scroller element; it now has its own `key`. Backend untouched, so its tests weren't rerun.
+5. **Docs:** `CLAUDE.md` says history is built; `TODO.md` has a "Session history" test.
+
+## Current state
+
+- **Branch:** `feature/session-history`, not committed yet. It also carries the earlier uncommitted `TODO.md`/`progress.md` edits (the `auto` test passed).
+- **Phase 4b:** dashboard, progress view and history are built. Summaries (slice 4) are not.
+
+## Next steps
+
+**For the user**
+- [ ] Run "Session history" in `TODO.md` on a real session (no backend restart or migration needed; reload the page).
+- [ ] Say whether to commit and merge `feature/session-history`.
+- [ ] Carried over: the rest of `TODO.md`; whether `auto` becomes Claude's default permission mode.
+
+**For the agent**
+- [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
+- [ ] Then ask whether the next phase is 4c or 4d.
+- [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; `README.md` for 4b (dashboard, progress view, history); the other carried-over items.
