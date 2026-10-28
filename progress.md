@@ -969,14 +969,13 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/session-history`, not committed yet. It also carries the earlier uncommitted `TODO.md`/`progress.md` edits (the `auto` test passed).
+- **Branch:** `feature/session-history`, committed as `634aa83` (with the earlier `TODO.md`/`progress.md` edits: the `auto` test passed), pushed, and fast-forwarded into `main` (pushed) at the user's request. The branch is kept.
 - **Phase 4b:** dashboard, progress view and history are built. Summaries (slice 4) are not.
 
 ## Next steps
 
 **For the user**
 - [ ] Run "Session history" in `TODO.md` on a real session (no backend restart or migration needed; reload the page).
-- [ ] Say whether to commit and merge `feature/session-history`.
 - [ ] Carried over: the rest of `TODO.md`; whether `auto` becomes Claude's default permission mode.
 
 **For the agent**
