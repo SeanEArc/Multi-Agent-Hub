@@ -1005,18 +1005,17 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/session-summaries`, committed, not pushed or merged.
-- **Phase 4b:** all four slices built. It is done once the user's "Session history" and "Session summaries" checks pass.
+- **Branch:** `feature/session-summaries`, committed, pushed and fast-forwarded into `main` (pushed) at the user's request. The branch is kept.
+- **Phase 4b:** done (user asked to mark it in `plan.md`). The "Session history" and "Session summaries" checks in `TODO.md` are still open.
 - **Seen, not changed:** at phone width the session header's buttons overflow and the page scrolls sideways (this predates this session; a candidate for 4c).
 
 ## Next steps
 
 **For the user**
 - [ ] Restart the backend (it applies the new migration), then run "Session summaries" and "Session history" in `TODO.md`.
-- [ ] Say whether to push `feature/session-summaries` and fast-forward `main`.
 - [ ] Carried over: the rest of `TODO.md`; whether `auto` becomes Claude's default permission mode.
 
 **For the agent**
-- [ ] Once the user confirms the checks, mark Phase 4b done in `plan.md`, then ask whether the next phase is 4c or 4d.
+- [ ] Ask whether the next phase is 4c or 4d.
 - [ ] 4c candidate: the session header overflowing at narrow widths.
 - [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; the other carried-over items.
