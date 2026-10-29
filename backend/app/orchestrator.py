@@ -29,6 +29,7 @@ from app.handoff import build_brief, git_state, next_in_chain
 from app.models import (
     AgentKind,
     AgentSession,
+    AgentSummary,
     ChainEntry,
     EventRead,
     LimitPolicy,
@@ -37,11 +38,13 @@ from app.models import (
     Stint,
     StintReason,
     WorktreeStatus,
+    current_plan,
     current_stint,
     load_hub_settings,
     session_worktree,
     utcnow,
 )
+from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
 log = logging.getLogger(__name__)
 
@@ -56,10 +59,19 @@ RESTING_STATUS = {
     EventType.ERROR: SessionStatus.FAILED,
 }
 STOP_TIMEOUT = 10.0
+SUMMARY_TIMEOUT = 300.0
 
 
 class SessionNotFound(LookupError):
     pass
+
+
+class SummaryFailed(RuntimeError):
+    pass
+
+
+class _SummaryLimit(Exception):
+    """The agent asked for a summary is out of usage; the next one in the chain is tried."""
 
 
 class SessionBusy(RuntimeError):
@@ -132,6 +144,7 @@ class Orchestrator:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         # Sessions between two agents: the brief is being built, no turn is running.
         self._handing_off: set[str] = set()
+        self._summarizing: set[str] = set()
         self._listeners: dict[str, set[asyncio.Queue[StreamMessage]]] = defaultdict(set)
 
     def is_running(self, session_id: str) -> bool:
@@ -191,6 +204,98 @@ class Orchestrator:
             if db.get(AgentSession, session_id) is None:
                 raise SessionNotFound(session_id)
         await self._handoff(session_id, ChainEntry(agent=agent, model=model), StintReason.MANUAL, note)
+
+    def is_summarizing(self, session_id: str) -> bool:
+        return session_id in self._summarizing
+
+    async def summarize(self, session_id: str) -> AgentSummary:
+        """Have an agent write a summary of the session, in a one-off call outside its conversation.
+
+        The current agent writes it; if it is out of usage or can't run, the next agent in the chain does.
+        It can run during a turn: the call is a separate, read-only process with its own adapter.
+        """
+        if session_id in self._summarizing:
+            raise SessionBusy("A summary is already being written for this session")
+        self._summarizing.add(session_id)
+        try:
+            with Session(self._engine) as db:
+                agent_session = db.get(AgentSession, session_id)
+                if agent_session is None:
+                    raise SessionNotFound(session_id)
+                stints = db.exec(select(Stint).where(Stint.session_id == session_id).order_by(col(Stint.seq))).all()
+                current = stints[-1]
+                events = db.exec(
+                    select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(col(SessionEvent.id))
+                ).all()
+                plan = current_plan(db, current.id)
+                chain = self._chain(db, agent_session)
+                limit_known = _limit_already_reached(db, current)
+                worktree = session_worktree(db, session_id)
+                try:
+                    workdir = session_workdir(db, agent_session)
+                except AgentUnavailable:
+                    workdir = None
+            if workdir is None:
+                # The worktree was removed: summarize from the events, with the agent in the project folder.
+                workdir, git = Path(agent_session.project_path), None
+            else:
+                git = await git_state(workdir, base=worktree.base_commit if worktree else None)
+            prompt = build_summary_prompt(agent_session.title, events, stints, plan, git)
+
+            first = ChainEntry(agent=current.agent, model=current.model)
+            candidates = [e for e in [first, *next_in_chain(chain, current.agent)]
+                          if not (e.agent == current.agent and limit_known)]
+            tried: set[AgentKind] = set()
+            for entry in candidates:
+                if entry.agent in tried:
+                    continue
+                tried.add(entry.agent)
+                stint = Stint(session_id=session_id, seq=0, agent=entry.agent, model=entry.model,
+                              reason=StintReason.MANUAL)
+                try:
+                    adapter = self._adapter_factory(agent_session, stint, workdir)
+                    text, usage = await self._run_summary(adapter, prompt)
+                except (AgentUnavailable, NotImplementedError, _SummaryLimit):
+                    continue
+                with Session(self._engine) as db:
+                    summary = AgentSummary(
+                        session_id=session_id, agent=entry.agent, model=entry.model, text=text,
+                        tokens=total_tokens(usage),
+                        fallback_from=first.agent if entry.agent != first.agent else None,
+                        last_event_id=events[-1].id if events else 0,
+                    )
+                    db.add(summary)
+                    db.commit()
+                    db.refresh(summary)
+                return summary
+            raise AgentUnavailable("No agent in the handoff chain can write the summary: each is out of usage or unavailable.")
+        finally:
+            self._summarizing.discard(session_id)
+
+    async def _run_summary(self, adapter: AgentAdapter, prompt: str) -> tuple[str, dict[str, Any] | None]:
+        """The summary text and token usage. Raises _SummaryLimit if the agent is out of usage."""
+        events = adapter.summarize(prompt, SUMMARY_INSTRUCTIONS)
+        if adapter.kind in self.simulate_limit:
+            events = _simulated_limit(events)
+        text, usage = "", None
+        try:
+            async with asyncio.timeout(SUMMARY_TIMEOUT), aclosing(events):
+                async for event in events:
+                    match event.type:
+                        case EventType.MESSAGE | EventType.COMPLETED | EventType.QUESTION:
+                            text = event.data.get("text") or text
+                        case EventType.USAGE:
+                            usage = event.data.get("usage")
+                        case EventType.LIMIT_REACHED:
+                            raise _SummaryLimit()
+                        case EventType.ERROR:
+                            raise SummaryFailed(event.data.get("message") or "The agent failed to write the summary")
+        except TimeoutError:
+            await adapter.stop()
+            raise SummaryFailed("The agent took too long to write the summary") from None
+        if not text.strip():
+            raise SummaryFailed("The agent returned an empty summary")
+        return text.strip(), usage
 
     async def stop(self, session_id: str) -> bool:
         """Stop the running turn and wait until its final status is saved. False if none was running."""
@@ -305,9 +410,8 @@ class Orchestrator:
             if agent_session is None:
                 return
             stint = current_stint(db, session_id)
-            defaults = load_hub_settings(db)
-            chain = [ChainEntry.model_validate(e) for e in agent_session.chain] if agent_session.chain else defaults.default_chain
-            policy = agent_session.limit_policy or defaults.limit_policy
+            chain = self._chain(db, agent_session)
+            policy = agent_session.limit_policy or load_hub_settings(db).limit_policy
             limited = _limited_agents(db, session_id)
             candidate = next(
                 (e for e in next_in_chain(chain, stint.agent) if e.agent not in limited and self._can_run(agent_session, e)),
@@ -327,6 +431,12 @@ class Orchestrator:
                 await self._handoff(session_id, candidate, StintReason.LIMIT)
             except Exception:
                 log.exception("Automatic handoff failed for session %s", session_id)  # _handoff saved the error
+
+    @staticmethod
+    def _chain(db: Session, agent_session: AgentSession) -> list[ChainEntry]:
+        if agent_session.chain:
+            return [ChainEntry.model_validate(e) for e in agent_session.chain]
+        return load_hub_settings(db).default_chain
 
     def _can_run(self, agent_session: AgentSession, entry: ChainEntry) -> bool:
         try:

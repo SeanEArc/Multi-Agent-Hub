@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AgentSession, SessionEvent, SessionStatus } from "../api";
 import { formatDuration, formatTime } from "../format";
 import { deriveHistory, formatTokens, historyTotals, type StintHistory, type Turn, type TurnOutcome } from "../history";
+import { SummaryPanel } from "./SummaryPanel";
 import { REASONS, agentName, relativeTo, truncate, useBrief } from "./Transcript";
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   projectPath: string;
   // Switches to the transcript, scrolled to the event that started the turn.
   onShowInTranscript: (eventId: number) => void;
+  // A new summary was written.
+  onChanged: () => void;
 }
 
 const OUTCOMES: Record<TurnOutcome, string> = {
@@ -23,8 +26,8 @@ const OUTCOMES: Record<TurnOutcome, string> = {
   cut_off: "Cut off",
 };
 
-/** The session's stints, handoffs and turns, newest stint last, for reviewing after the fact. */
-export function HistoryView({ session, events, status, projectPath, onShowInTranscript }: Props) {
+/** The session's summary, then its stints, handoffs and turns, newest stint last, for reviewing after the fact. */
+export function HistoryView({ session, events, status, projectPath, onShowInTranscript, onChanged }: Props) {
   const history = deriveHistory(events, session.stints, status === "working");
   const totals = historyTotals(history);
   const started = session.stints[0]?.started_at ?? session.created_at;
@@ -32,6 +35,7 @@ export function HistoryView({ session, events, status, projectPath, onShowInTran
 
   return (
     <div className="history">
+      <SummaryPanel session={session} events={events} history={history} onWritten={onChanged} />
       <div className="history-totals">
         <Stat label="Agents" value={String(history.length)} />
         <Stat label="Turns" value={String(totals.turns)} />

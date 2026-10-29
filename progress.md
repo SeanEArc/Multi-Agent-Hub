@@ -982,3 +982,41 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Phase 4b slice 4: a hub-built summary kept current, and "Re-summarize" written by the session's current agent in a one-off call, with the chain as fallback. Proposed default for its cost: shown on the summary, like a turn's cost or tokens.
 - [ ] Then ask whether the next phase is 4c or 4d.
 - [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; `README.md` for 4b (dashboard, progress view, history); the other carried-over items.
+
+---
+
+2026-10-29 12:15 (UTC-05:00)
+
+# Session 27: Built Phase 4b's summaries (slice 4), which completes 4b, on `feature/session-summaries`.
+
+## What was done
+
+1. **Decided with the user:** a written summary's usage is shown in **tokens** (Codex reports no price); it sits at the top of the History view with its first line on each dashboard card; it is marked **outdated** once a new turn starts. Recorded in `plan.md`.
+2. **Backend:**
+   - New `summaries` table (`AgentSummary`) and migration `d5f2ecc04d7f` (a new table only; the usual false `events.stint_id` FK change was removed).
+   - `AgentAdapter.summarize(prompt, instructions)`: a one-off, read-only call that never resumes or joins the session. Claude: `-p --no-session-persistence --tools "" --system-prompt <instructions>` (no tools, a short system prompt, so fewer tokens). Codex: `exec --json --ephemeral` with `sandbox_mode="read-only"` and the instructions as `developer_instructions`. Both flags were checked against Claude Code 2.1.312 and codex-cli 0.164.0 `--help`, and by new live tests.
+   - `app/summary.py`: `SUMMARY_INSTRUCTIONS` (a one-sentence first line, then Goal, Done, Now, Next, under 250 words) and `build_summary_prompt` (task, later messages, agents in order, current plan, the agents' latest messages, how the last turn ended, files, commands, git status, diff stat and a diff cut to 12k). `handoff.py` now shares `files_and_commands` and `clip` with it.
+   - `Orchestrator.summarize`: builds a fresh adapter (so it can run during a turn), tries the current agent and then the chain on a usage limit (including `HUB_SIMULATE_LIMIT`) or `AgentUnavailable`; any other error is a 502; 5-minute timeout. A removed worktree means no git, with the agent in the project folder. `_chain` is shared with `_after_limit`.
+   - API: `GET /sessions/{id}/summary` (git status and diff stat for the live summary, the latest written summary, `summarizing`) and `POST /sessions/{id}/summary` (waits until it is written). `SessionRead` gained `task` (the first user message, clipped) and `summary` (with `headline` and `outdated`).
+   - Tests: `test_summary.py` (6 tests: one-off flags and no new events, outdated after the next turn, fallback to Codex with its tokens, 400 when no agent can, 502 on a crash, the prompt's contents, headline and token sums). The fake Claude accepts a call with no session id. Live: `test_summarize_is_one_off_*` in both live files, passed against the real CLIs. **147 passed, 4 skipped** (the live ones).
+3. **Frontend:** `SummaryPanel.tsx` at the top of History: **Task**, **Latest request**, **Plan** (X of Y, current step), **Last turn** (who, how it ended, when, and its last message), **Changes** (files edited, the branch's diff total, uncommitted files), refreshed whenever a turn starts or ends; then the written summary (who wrote it, model, time, tokens, the fallback note, **Outdated**) as markdown, with **Summarize / Re-summarize** ("Writing…" meanwhile, and it picks up a summary still being written after you leave and come back). Dashboard cards show the summary's first line ("Outdated ·" when stale) or "Task · …" until there is one. The frontend type-checks.
+4. **Checked in a browser** against a temporary backend (port 8799) and Vite (port 5299; an old Vite from Session 26 still holds 5199) with seeded data: the panel, an outdated summary, the narrow layout, and the dashboard line. **A real Re-summarize by Codex** wrote a good summary (17.4k tokens) and cleared "outdated". One bug was fixed: the Last turn quote showed a message from an earlier turn when the last turn had none.
+5. **Docs:** `README.md` features now cover the dashboard, progress view, history and summaries (the carried-over 4b README item); `CLAUDE.md` describes summaries; `TODO.md` has a "Session summaries" test.
+
+## Current state
+
+- **Branch:** `feature/session-summaries`, committed, not pushed or merged.
+- **Phase 4b:** all four slices built. It is done once the user's "Session history" and "Session summaries" checks pass.
+- **Seen, not changed:** at phone width the session header's buttons overflow and the page scrolls sideways (this predates this session; a candidate for 4c).
+
+## Next steps
+
+**For the user**
+- [ ] Restart the backend (it applies the new migration), then run "Session summaries" and "Session history" in `TODO.md`.
+- [ ] Say whether to push `feature/session-summaries` and fast-forward `main`.
+- [ ] Carried over: the rest of `TODO.md`; whether `auto` becomes Claude's default permission mode.
+
+**For the agent**
+- [ ] Once the user confirms the checks, mark Phase 4b done in `plan.md`, then ask whether the next phase is 4c or 4d.
+- [ ] 4c candidate: the session header overflowing at narrow widths.
+- [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; the other carried-over items.

@@ -90,6 +90,59 @@ def build_brief(
     user_messages = [e.payload.get("text", "") for e in events if e.type == EventType.USER_MESSAGE]
     previous = [e for e in events if e.stint_id == previous_stint_id]
     agent_messages = [e.payload.get("text", "") for e in previous if e.type == EventType.MESSAGE]
+    files, commands = files_and_commands(events)
+
+    sections = [
+        f"# Handoff from {AGENT_NAMES[from_agent]}\n\n"
+        f"You are {AGENT_NAMES[to_agent]}, taking over a task in this project from another coding agent, "
+        f"{AGENT_NAMES[from_agent]}, because {REASON_TEXT.get(reason, 'the session moved to you')}. "
+        "You cannot see its conversation; this brief, written by Multi-Agent Hub from the session's "
+        "history, is all you get. Check the current files before changing them, don't redo finished "
+        "work, and continue from where it stopped."
+    ]
+    if user_messages:
+        sections.append("## The task\n\n" + clip(user_messages[0], MAX_MESSAGE))
+    later = user_messages[1:][-LATER_MESSAGES:]
+    if later:
+        sections.append("## Later messages from the user, oldest first\n\n" + "\n\n".join(
+            f"- {clip(m, MAX_MESSAGE)}" for m in later
+        ))
+    if agent_messages:
+        sections.append(f"## Last messages from {AGENT_NAMES[from_agent]}, oldest first\n\n" + "\n\n---\n\n".join(
+            clip(m, MAX_MESSAGE) for m in agent_messages[-LAST_AGENT_MESSAGES:]
+        ))
+    interrupted = _interrupted_message(previous)
+    if interrupted:
+        sections.append(
+            f"## Unfinished turn\n\n{AGENT_NAMES[from_agent]} was cut off before finishing its reply to:\n\n"
+            + clip(interrupted, MAX_MESSAGE)
+        )
+    if files:
+        sections.append("## Files edited in this session\n\n" + "\n".join(f"- {f}" for f in files))
+    if commands:
+        sections.append(f"## Last commands run (up to {LAST_COMMANDS})\n\n" + "\n".join(
+            f"- `{clip(c, 300)}`" for c in commands[-LAST_COMMANDS:]
+        ))
+
+    closing = (
+        "## What to do now\n\n" + note.strip()
+        if note and note.strip()
+        else "## What to do now\n\nContinue the task from where the previous agent stopped."
+    )
+    head = "\n\n".join(sections)
+    git_section = _git_section(git, MAX_BRIEF - len(head) - len(closing) - 200)
+    return clip("\n\n".join([head, git_section, closing]), MAX_BRIEF)
+
+
+def next_in_chain(chain: Sequence[ChainEntry], current: AgentKind) -> list[ChainEntry]:
+    """Agents to try after `current`, in order. An agent not in the chain is followed by the whole chain."""
+    agents = [entry.agent for entry in chain]
+    after = chain[agents.index(current) + 1:] if current in agents else chain
+    return [entry for entry in after if entry.agent != current]
+
+
+def files_and_commands(events: Sequence[SessionEvent]) -> tuple[list[str], list[str]]:
+    """The files the agents edited (each once, in order) and the commands they ran."""
     files: dict[str, None] = {}  # ordered set
     commands: list[str] = []
     for event in events:
@@ -101,54 +154,7 @@ def build_brief(
                 files[path] = None
         elif name in COMMAND_TOOLS and tool_input.get("command"):
             commands.append(str(tool_input["command"]))
-
-    sections = [
-        f"# Handoff from {AGENT_NAMES[from_agent]}\n\n"
-        f"You are {AGENT_NAMES[to_agent]}, taking over a task in this project from another coding agent, "
-        f"{AGENT_NAMES[from_agent]}, because {REASON_TEXT.get(reason, 'the session moved to you')}. "
-        "You cannot see its conversation; this brief, written by Multi-Agent Hub from the session's "
-        "history, is all you get. Check the current files before changing them, don't redo finished "
-        "work, and continue from where it stopped."
-    ]
-    if user_messages:
-        sections.append("## The task\n\n" + _clip(user_messages[0], MAX_MESSAGE))
-    later = user_messages[1:][-LATER_MESSAGES:]
-    if later:
-        sections.append("## Later messages from the user, oldest first\n\n" + "\n\n".join(
-            f"- {_clip(m, MAX_MESSAGE)}" for m in later
-        ))
-    if agent_messages:
-        sections.append(f"## Last messages from {AGENT_NAMES[from_agent]}, oldest first\n\n" + "\n\n---\n\n".join(
-            _clip(m, MAX_MESSAGE) for m in agent_messages[-LAST_AGENT_MESSAGES:]
-        ))
-    interrupted = _interrupted_message(previous)
-    if interrupted:
-        sections.append(
-            f"## Unfinished turn\n\n{AGENT_NAMES[from_agent]} was cut off before finishing its reply to:\n\n"
-            + _clip(interrupted, MAX_MESSAGE)
-        )
-    if files:
-        sections.append("## Files edited in this session\n\n" + "\n".join(f"- {f}" for f in files))
-    if commands:
-        sections.append(f"## Last commands run (up to {LAST_COMMANDS})\n\n" + "\n".join(
-            f"- `{_clip(c, 300)}`" for c in commands[-LAST_COMMANDS:]
-        ))
-
-    closing = (
-        "## What to do now\n\n" + note.strip()
-        if note and note.strip()
-        else "## What to do now\n\nContinue the task from where the previous agent stopped."
-    )
-    head = "\n\n".join(sections)
-    git_section = _git_section(git, MAX_BRIEF - len(head) - len(closing) - 200)
-    return _clip("\n\n".join([head, git_section, closing]), MAX_BRIEF)
-
-
-def next_in_chain(chain: Sequence[ChainEntry], current: AgentKind) -> list[ChainEntry]:
-    """Agents to try after `current`, in order. An agent not in the chain is followed by the whole chain."""
-    agents = [entry.agent for entry in chain]
-    after = chain[agents.index(current) + 1:] if current in agents else chain
-    return [entry for entry in after if entry.agent != current]
+    return list(files), commands
 
 
 def _edited_paths(tool_input: dict) -> list[str]:
@@ -189,5 +195,5 @@ def _git_section(git: GitState | None, budget: int) -> str:
     return "\n\n".join(parts)
 
 
-def _clip(text: str, limit: int) -> str:
+def clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + " ... (cut off)"

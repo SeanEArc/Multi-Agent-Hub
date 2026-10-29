@@ -101,8 +101,36 @@ export interface AgentSession {
   running_subagents: RunningSubagent[];
   // The current agent's latest plan; null until it writes one.
   plan: PlanItem[] | null;
+  // The user's first message (clipped); null before the session starts.
+  task: string | null;
+  // The latest summary an agent wrote.
+  summary: AgentSummary | null;
   created_at: string;
   updated_at: string;
+}
+
+/** A summary an agent wrote on request, in a one-off call outside the session's conversation. */
+export interface AgentSummary {
+  id: number;
+  agent: AgentKind;
+  model: string | null;
+  text: string;
+  // Its first line, for the dashboard.
+  headline: string;
+  tokens: number | null;
+  // The agent asked first, when it was out of usage or unavailable and the next in the chain wrote it.
+  fallback_from: AgentKind | null;
+  created_at: string;
+  // A turn started after it was written.
+  outdated: boolean;
+}
+
+/** What the summary panel needs besides the events. */
+export interface SessionSummary {
+  // null when the folder isn't a git repository or the worktree was removed.
+  git: { status: string; diff_stat: string } | null;
+  summary: AgentSummary | null;
+  summarizing: boolean;
 }
 
 /** Where the session's agents work: its worktree (plus the project's subfolder), or the project folder. */
@@ -231,6 +259,9 @@ export const api = {
   removeWorktree: (id: string, body: { commit?: boolean; discard?: boolean } = {}) =>
     request<AgentSession>(`/sessions/${id}/worktree/remove`, { method: "POST", body: JSON.stringify(body) }),
   getStint: (id: string, stintId: number) => request<StintDetail>(`/sessions/${id}/stints/${stintId}`),
+  getSummary: (id: string) => request<SessionSummary>(`/sessions/${id}/summary`),
+  // Waits until the agent has written it (up to a few minutes).
+  writeSummary: (id: string) => request<AgentSummary>(`/sessions/${id}/summary`, { method: "POST" }),
   getUsage: () => request<Partial<Record<AgentKind, AgentUsage>>>("/usage"),
   getSettings: () => request<HubSettings>("/settings"),
   putSettings: (body: HubSettings) =>

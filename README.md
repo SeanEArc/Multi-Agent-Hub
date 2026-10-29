@@ -14,7 +14,10 @@ The agents run under your own CLI logins and subscriptions. The hub never reads 
 - **Questions from agents.** When an agent needs your answer, the session moves to *waiting for input* until you reply.
 - **Usage meters.** Each agent's plan usage windows, plus cost (Claude) or token counts (Codex) per turn.
 - **Git worktrees per session.** Sessions in a git repository work in their own worktree on their own `hub/...` branch, so parallel agents never touch each other's files or your checkout. Removing a worktree keeps the branch for you to merge.
-- **History.** Every event, handoff and brief is stored in SQLite, with a divider in the transcript at each handoff.
+- **Dashboard.** Every session at a glance, the ones waiting on you first: current agent and model, status, branch, last activity, its plan's progress, running subagents and a one-line summary.
+- **Progress view.** The agent's plan as a checklist with a progress bar, its running subagents and the files it changed, in a card above the transcript or a side panel (switchable). Agents write the plan as a `[[PLAN]]` checklist, since neither CLI offers its plan tool headless.
+- **History.** Every event, handoff and brief is stored in SQLite. A per-session History view lists each agent's stint and turns (how each ended, tool calls, files, tokens) and jumps to any turn in the transcript.
+- **Summaries.** The History view opens with a live summary the hub builds from the events and git at no usage cost (task, latest request, plan step, last turn, changes). **Re-summarize** asks the session's current agent for a short written summary in a separate, read-only call that stays out of the session's conversation; if that agent is out of usage, the next one in the chain writes it. It shows the tokens it used and is marked outdated once a new turn starts.
 - **Local-only API.** The backend binds to loopback only and requires a per-install bearer token on every route.
 
 ## How it works

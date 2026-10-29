@@ -8,25 +8,39 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, col, select
 
 from app.db import get_session
+from app.handoff import git_state
 from app.models import (
     AgentSession,
     EventRead,
+    GitSummary,
     HandoffCreate,
     MessageCreate,
     SessionCreate,
     SessionEvent,
     SessionRead,
+    SessionSummary,
     Stint,
     StintDetail,
     StintReason,
+    SummaryRead,
     Worktree,
     WorktreeRemove,
     WorktreeStatus,
+    latest_summary,
     session_read,
     session_worktree,
+    summary_read,
     utcnow,
 )
-from app.orchestrator import AgentUnavailable, Orchestrator, SessionBusy, SessionNotFound, StreamMessage
+from app.orchestrator import (
+    AgentUnavailable,
+    Orchestrator,
+    SessionBusy,
+    SessionNotFound,
+    StreamMessage,
+    SummaryFailed,
+    session_workdir,
+)
 from app.worktrees import WorktreeError, commit_all, create_worktree, remove_worktree, repo_info, worktree_changes
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -131,6 +145,40 @@ async def hand_off(session_id: str, body: HandoffCreate, db: DbSession, orchestr
     except AgentUnavailable as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
     return session_read(db, _get_or_404(db, session_id))
+
+
+@router.get("/{session_id}/summary", response_model=SessionSummary)
+async def get_summary(session_id: str, db: DbSession, orchestrator: Orch) -> SessionSummary:
+    """Git state for the hub's live summary, the latest agent-written summary, and whether one is being written."""
+    agent_session = _get_or_404(db, session_id)
+    worktree = session_worktree(db, session_id)
+    try:
+        workdir = session_workdir(db, agent_session)
+    except AgentUnavailable:
+        git = None  # the worktree was removed
+    else:
+        git = await git_state(workdir, base=worktree.base_commit if worktree else None)
+    return SessionSummary(
+        git=GitSummary(status=git.status, diff_stat=git.diff_stat) if git else None,
+        summary=latest_summary(db, session_id),
+        summarizing=orchestrator.is_summarizing(session_id),
+    )
+
+
+@router.post("/{session_id}/summary", response_model=SummaryRead, status_code=status.HTTP_201_CREATED)
+async def write_summary(session_id: str, db: DbSession, orchestrator: Orch) -> SummaryRead:
+    """Have the current agent (or the next in the chain) write a summary. Waits until it is written."""
+    try:
+        summary = await orchestrator.summarize(session_id)
+    except SessionNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from None
+    except SessionBusy as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    except AgentUnavailable as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
+    except SummaryFailed as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
+    return summary_read(db, summary)
 
 
 @router.post("/{session_id}/stop", response_model=SessionRead)

@@ -43,3 +43,19 @@ def test_question_then_reply(project: Path) -> None:
     second = asyncio.run(run(adapter.send_reply("blue")))
     assert second[-1].type is EventType.COMPLETED, second[-1]
     assert "blue" in (project / "color.txt").read_text().lower()
+
+
+def test_summarize_is_one_off_and_read_only(project: Path) -> None:
+    adapter = CodexAdapter(project)
+
+    async def run(events):
+        return [event async for event in events]
+
+    events = asyncio.run(run(adapter.summarize(
+        "Summarize this session.\n\n## The task\n\nAdd a README.md describing the project.",
+        "You write one-sentence summaries. Don't run commands or change files.",
+    )))
+    assert events[-1].type is EventType.COMPLETED, events[-1]
+    assert events[-1].data["text"].strip()
+    assert any(e.type is EventType.USAGE and e.data.get("usage") for e in events)
+    assert list(project.iterdir()) == []

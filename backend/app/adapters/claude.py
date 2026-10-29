@@ -76,6 +76,20 @@ class ClaudeAdapter(CliAdapter):
             raise RuntimeError("No task started; use start_task")
         return self._run(["--resume", self._session_id], reply)
 
+    def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
+        # No tools, not saved, and a short system prompt in place of Claude Code's own (fewer tokens).
+        args = [
+            "-p",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--no-session-persistence",
+            "--tools", "",
+            "--system-prompt", instructions,
+        ]
+        if self.model:
+            args += ["--model", self.model]
+        return self._stream(args, prompt, TurnParser())
+
     def _run(self, session_args: list[str], prompt: str) -> AsyncGenerator[AgentEvent]:
         args = [
             "-p",

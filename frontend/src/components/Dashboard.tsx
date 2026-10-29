@@ -85,11 +85,32 @@ function SessionCard({ session, onSelect }: { session: AgentSession; onSelect: (
         )}
         <span className="path">{folderName(session.project_path)}</span>
       </span>
+      <CardSummary session={session} />
       <span className="session-card-activity">{activity(session)}</span>
       {session.plan?.length ? <CardPlan plan={session.plan} /> : null}
       {session.running_subagents.length > 0 && <CardSubagents session={session} />}
       <span className="muted small">{timeAgo(lastActive(session))}</span>
     </button>
+  );
+}
+
+/** What the session is about: the written summary's first line, or the task until there is one. */
+function CardSummary({ session }: { session: AgentSession }) {
+  const summary = session.summary;
+  if (summary?.headline) {
+    return (
+      <span className="session-card-summary" title={summary.outdated ? "Written before the latest turn" : undefined}>
+        {summary.outdated && <span className="muted">Outdated · </span>}
+        {summary.headline}
+      </span>
+    );
+  }
+  if (!session.task) return null;
+  return (
+    <span className="session-card-summary">
+      <span className="muted">Task · </span>
+      {firstLine(session.task)}
+    </span>
   );
 }
 

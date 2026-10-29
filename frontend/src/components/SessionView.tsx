@@ -133,7 +133,7 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
                 key={option}
                 aria-pressed={view === option}
                 onClick={() => showView(option)}
-                title={option === "transcript" ? "The conversation" : "Each agent's turns and handoffs, at a glance"}
+                title={option === "transcript" ? "The conversation" : "A summary, then each agent's turns and handoffs"}
               >
                 {option === "transcript" ? "Transcript" : "History"}
               </button>
@@ -179,6 +179,7 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
                   setView("transcript");
                   setJumpTo(eventId);
                 }}
+                onChanged={onChanged}
               />
             </div>
           ) : (

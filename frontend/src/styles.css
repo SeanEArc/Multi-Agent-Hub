@@ -1137,6 +1137,14 @@ textarea:focus,
   min-width: 0;
 }
 
+.session-card-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .session-card-activity {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -1741,6 +1749,90 @@ textarea:focus,
 .history-files {
   margin: 4px 0;
   padding-left: 18px;
+}
+
+/* --- Summary: the hub's live facts and the latest written summary ------------------------- */
+
+.summary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.summary-facts {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.summary-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 1px;
+}
+
+.summary-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-quote {
+  display: block;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.summary-written {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.summary-text {
+  font-size: 13.5px;
+}
+
+.summary-outdated {
+  color: var(--warn);
+}
+
+.summary-error {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .summary-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .summary-facts dd {
+    margin-bottom: 6px;
+  }
 }
 
 .jump-highlight {

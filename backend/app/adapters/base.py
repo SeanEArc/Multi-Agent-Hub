@@ -53,6 +53,13 @@ class AgentAdapter(ABC):
     def send_reply(self, reply: str) -> AsyncGenerator[AgentEvent]:
         """Answer the agent's question (or continue the task) and stream the resulting events."""
 
+    def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
+        """A one-off, read-only call outside the session's conversation, which it neither resumes nor joins.
+
+        `instructions` replace the agent's usual headless prompt. Used for the session summary.
+        """
+        raise NotImplementedError(f"The {self.kind} agent can't write summaries")
+
     @abstractmethod
     async def stop(self) -> None:
         """Stop the running turn, including any child processes."""

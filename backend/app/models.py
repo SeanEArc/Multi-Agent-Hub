@@ -140,6 +140,25 @@ class Worktree(SQLModel, table=True):
     removed_at: datetime | None = None
 
 
+class AgentSummary(SQLModel, table=True):
+    """A written summary of the session, by an agent in a one-off call outside the session's conversation."""
+
+    __tablename__ = "summaries"
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: str = Field(foreign_key="sessions.id", ondelete="CASCADE", index=True)
+    agent: AgentKind = Field(sa_column=enum_column(AgentKind, nullable=False))
+    model: str | None = None
+    text: str
+    # Every token the call used (input, cache and output), or None if the agent didn't report usage.
+    tokens: int | None = None
+    # The agent asked first when it couldn't write it (out of usage or unavailable), so the chain's next one did.
+    fallback_from: AgentKind | None = Field(default=None, sa_column=enum_column(AgentKind, nullable=True))
+    # The session's latest event when it was written; a turn started after it makes the summary outdated.
+    last_event_id: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 def session_worktree(db: Session, session_id: str) -> Worktree | None:
     """The worktree the whole session works in, if it has one."""
     return db.exec(
@@ -242,8 +261,39 @@ class SessionRead(SQLModel):
     running_subagents: list["SubagentRead"] = []
     # The current stint's latest plan (None until its agent writes one).
     plan: list["PlanItemRead"] | None = None
+    # The user's first message, which says what the session is for (clipped).
+    task: str | None = None
+    # The latest agent-written summary.
+    summary: "SummaryRead | None" = None
     created_at: datetime
     updated_at: datetime
+
+
+class SummaryRead(SQLModel):
+    id: int
+    agent: AgentKind
+    model: str | None
+    text: str
+    # The summary's first line, for the dashboard.
+    headline: str
+    tokens: int | None
+    fallback_from: AgentKind | None
+    created_at: datetime
+    # A turn started after it was written.
+    outdated: bool
+
+
+class GitSummary(SQLModel):
+    status: str  # `git status --short`
+    diff_stat: str  # `git diff --stat` against the branch's base (or HEAD)
+
+
+class SessionSummary(SQLModel):
+    """What the summary panel shows besides the events: git, the latest written summary, and whether one is being written."""
+
+    git: GitSummary | None
+    summary: SummaryRead | None
+    summarizing: bool
 
 
 class PlanItemRead(SQLModel):
@@ -342,6 +392,48 @@ def current_plan(db: Session, stint_id: int) -> list[PlanItemRead] | None:
     return [PlanItemRead.model_validate(item) for item in items] if items else None
 
 
+TASK_PREVIEW = 300
+
+
+def session_task(db: Session, session_id: str) -> str | None:
+    """The user's first message, clipped."""
+    first = db.exec(
+        select(SessionEvent)
+        .where(SessionEvent.session_id == session_id, SessionEvent.type == "user_message")
+        .order_by(col(SessionEvent.id))
+    ).first()
+    text = ((first.payload or {}).get("text") or "").strip() if first else ""
+    return (text[:TASK_PREVIEW] + "…" if len(text) > TASK_PREVIEW else text) or None
+
+
+def summary_read(db: Session, summary: AgentSummary) -> SummaryRead:
+    # A turn starts with a user message or a handoff.
+    later_turn = db.exec(
+        select(SessionEvent.id).where(
+            SessionEvent.session_id == summary.session_id,
+            col(SessionEvent.id) > summary.last_event_id,
+            col(SessionEvent.type).in_(["user_message", "handoff"]),
+        )
+    ).first()
+    return SummaryRead(**summary.model_dump(), headline=summary_headline(summary.text), outdated=later_turn is not None)
+
+
+def summary_headline(text: str) -> str:
+    """The first line with text, without markdown heading or emphasis marks."""
+    for line in text.splitlines():
+        line = line.replace("**", "").strip().lstrip("#>-* ").strip()
+        if line:
+            return line
+    return ""
+
+
+def latest_summary(db: Session, session_id: str) -> SummaryRead | None:
+    summary = db.exec(
+        select(AgentSummary).where(AgentSummary.session_id == session_id).order_by(col(AgentSummary.id).desc())
+    ).first()
+    return summary_read(db, summary) if summary else None
+
+
 def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
     stints = db.exec(select(Stint).where(Stint.session_id == agent_session.id).order_by(col(Stint.seq))).all()
     current = stints[-1]
@@ -363,6 +455,8 @@ def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
             running_subagents(db, current.id) if agent_session.status == SessionStatus.WORKING else []
         ),
         plan=current_plan(db, current.id),
+        task=session_task(db, agent_session.id),
+        summary=latest_summary(db, agent_session.id),
     )
 
 
@@ -427,6 +521,6 @@ class EventRead(SQLModel):
     created_at: datetime
 
 
-# last_event and last_step refer to EventRead, defined after them.
+# last_event and last_step refer to EventRead, defined after them (and summary to SummaryRead).
 SessionRead.model_rebuild()
 SubagentRead.model_rebuild()

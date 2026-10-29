@@ -16,7 +16,12 @@ def emit(event: dict) -> None:
 
 mode, args = sys.argv[1], sys.argv[2:]
 prompt = sys.stdin.read()
-session_id = args[args.index("--session-id") + 1] if "--session-id" in args else args[args.index("--resume") + 1]
+if "--session-id" in args:
+    session_id = args[args.index("--session-id") + 1]
+elif "--resume" in args:
+    session_id = args[args.index("--resume") + 1]
+else:  # a one-off call that isn't saved (--no-session-persistence)
+    session_id = "00000000-0000-4000-8000-000000000000"
 
 emit({"type": "system", "subtype": "init", "session_id": session_id, "model": "fake", "permissionMode": "acceptEdits"})
 if mode == "crash":

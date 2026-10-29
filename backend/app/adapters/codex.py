@@ -123,13 +123,19 @@ class CodexAdapter(CliAdapter):
             ["exec", "resume", "--json", *self._options(), self._session_id, "-"], reply, TurnParser()
         )
 
-    def _options(self) -> list[str]:
+    def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
+        # Read-only and not saved: no session file, so no thread to resume and no usage meter update.
+        return self._stream(
+            ["exec", "--json", "--ephemeral", *self._options("read-only", instructions), "-"], prompt, TurnParser()
+        )
+
+    def _options(self, sandbox: str | None = None, instructions: str = HEADLESS_PROMPT) -> list[str]:
         options = [
             # The user picked the folder in the hub; Codex's own git-repo guard would only block non-git folders.
             "--skip-git-repo-check",
-            "-c", f"sandbox_mode={json.dumps(self.sandbox)}",
+            "-c", f"sandbox_mode={json.dumps(sandbox or self.sandbox)}",
             "-c", 'approval_policy="never"',
-            "-c", f"developer_instructions={json.dumps(HEADLESS_PROMPT)}",
+            "-c", f"developer_instructions={json.dumps(instructions)}",
         ]
         if self.model:
             options += ["--model", self.model]
