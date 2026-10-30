@@ -167,6 +167,10 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 **Phase 4c: Claude Code and Codex style polish**
 - Bring the UI closer to the look and feel of Claude Code and Codex (transcript, tool rows, composer, colors), including smaller carried-over items such as tables in the transcript.
+- Reference look (decided 2026-10-30): keep the current blend of Claude Code and Codex and refine it, rather than switching to one tool's style.
+- Edits as diffs (decided 2026-10-30): both places. Inline in the transcript, so each change shows where it happened in the conversation, and in the side panel's **Files changed** as a per-file history of edits with timestamps. Claude's edit events carry the old and new text, so its diffs come straight from the events. Codex's `file_change` events carry only the path and kind (codex-cli 0.164.0), so for Codex the hub has to capture the diff itself when the change is reported (for example `git diff` of that file against the last snapshot); to be worked out in 4c-2.
+- Planned slices: 4c-1 fixes with no design calls (tables, task lists and strikethrough via `remark-gfm`; readable Codex edit rows instead of raw JSON; a session header that fits narrow windows); 4c-2 transcript and tool rows (diffs, command rows with exit status and an output preview, turn-end rows); 4c-3 composer, per-agent accent colors and typography; 4c-4 a final pass over light mode, narrow widths and the dashboard. Each visual slice is shown to the user as before/after screenshots before the next one starts.
+- Syntax highlighting (decided 2026-10-30): highlight.js through `rehype-highlight`, for code blocks in agent messages, briefs and summaries, with a light and a dark theme; command output stays plain. Chosen over Shiki (closest to VS Code but the most code) and Prism because it plugs into the existing markdown renderer next to `remark-gfm` and includes a `diff` language. Built in 4c-1, since it is the same one-line plugin change as `remark-gfm`.
 - Acceptance: the user signs off on the look.
 
 **Phase 4d: Tauri desktop shell**
