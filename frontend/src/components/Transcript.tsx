@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
-import Markdown from "react-markdown";
+import { MarkdownText } from "./MarkdownText";
 import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
 import { formatTokens, turnTokens } from "../history";
 import { isSubagent, planCounts, stepsByParent, toolOutcomes, type PlanItem, type ToolOutcomes } from "../progress";
@@ -76,7 +76,7 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
       case "message":
         return (
           <div key={event.id} className="row assistant-message">
-            <Markdown>{p.text}</Markdown>
+            <MarkdownText>{p.text}</MarkdownText>
           </div>
         );
       case "plan":
@@ -221,7 +221,7 @@ export function useBrief(sessionId: string, stintId: number | null): { button: R
         ) : brief === null ? (
           <span className="muted">Loading…</span>
         ) : (
-          <Markdown>{brief}</Markdown>
+          <MarkdownText>{brief}</MarkdownText>
         )}
       </div>
     ),
@@ -318,7 +318,7 @@ export function SubagentSteps(props: { steps: SessionEvent[]; outcomes: ToolOutc
       {steps.map((event) =>
         event.type === "message" ? (
           <div key={event.id} className="row assistant-message">
-            <Markdown>{event.payload.text}</Markdown>
+            <MarkdownText>{event.payload.text}</MarkdownText>
           </div>
         ) : (
           <ToolRow
@@ -407,10 +407,24 @@ function UsageSummary({ usage, tokens }: { usage: SessionEvent | null; tokens: n
 
 /** One short line describing a tool call, like Claude Code's `Write(color.txt)`. */
 export function summarize(input: Record<string, any>, projectPath: string): string {
+  if (Array.isArray(input.changes)) return truncate(fileChanges(input.changes, projectPath), 120);
   const value =
     input.command ?? input.file_path ?? input.path ?? input.pattern ?? input.url ?? input.query ?? input.description;
   const text = typeof value === "string" ? relativeTo(projectPath, value) : JSON.stringify(input);
   return truncate(text.replace(/\s+/g, " "), 120);
+}
+
+const CHANGE_KINDS: Record<string, string> = { add: "new", delete: "deleted" };
+
+/** Codex's file_change: each file relative to the project, marked when it was added or deleted. */
+function fileChanges(changes: { path?: string; kind?: string }[], projectPath: string): string {
+  const files = changes
+    .filter((c) => c.path)
+    .map((c) => {
+      const kind = CHANGE_KINDS[c.kind ?? ""];
+      return `${relativeTo(projectPath, c.path!)}${kind ? ` (${kind})` : ""}`;
+    });
+  return files.join(", ") || "(no files)";
 }
 
 /** Shows paths inside the project relative to it; Windows paths compare case-insensitively. */

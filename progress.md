@@ -1019,3 +1019,35 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Ask whether the next phase is 4c or 4d.
 - [ ] 4c candidate: the session header overflowing at narrow widths.
 - [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; the other carried-over items.
+
+---
+
+2026-10-30 (UTC-05:00)
+
+# Session 28: Planned Phase 4c with the user and built slice 4c-1 (markdown, highlighting, Codex edit rows, narrow header), on `feature/style-polish`.
+
+## What was done
+
+1. **Phase 4c decided with the user, recorded in `plan.md`:** keep the current blend of Claude Code and Codex; show edits as diffs in both places (inline in the transcript, and a per-file edit history with timestamps in the side panel's **Files changed**); syntax highlighting with highlight.js through `rehype-highlight` (over Shiki and Prism); four slices (4c-1 fixes, 4c-2 transcript and tool rows, 4c-3 composer, colors and typography, 4c-4 final pass), with screenshots after each visual slice. Noted for 4c-2: Codex's `file_change` events carry only paths and kinds, so the hub has to capture Codex diffs itself. Committed as `f3b2d7e` on the new branch `feature/style-polish` and pushed (user asked).
+2. **4c-1:**
+   - `MarkdownText.tsx`: one shared, memoized renderer with `remark-gfm` (tables, task lists, strikethrough) and `rehype-highlight` (fenced blocks that name their language; no auto-detection). Used for agent messages, subagent messages, briefs and written summaries.
+   - Highlight colors are `--hl-*` theme variables in `styles.css` for dark and light (no highlight.js stylesheet), plus `diff` additions and deletions in green and red. Tables scroll sideways when wide; task-list checkboxes undo the global `input` rule's `width: 100%`.
+   - Codex edit rows: `summarize` lists `changes` relative to the project and marks added and deleted files (`src\theme.ts, src\useTheme.ts (new)`) instead of the raw JSON or the joined absolute `path`.
+   - Session header: the title keeps at least 260 px, and the actions wrap below it instead of running off the side (no sideways scroll at 420 px).
+3. **Checks:** the frontend type-checks and builds; the bundle is 601 kB (185 kB gzipped), with Vite's 500 kB warning, mostly highlight.js's common languages (fine for a local app). Screenshots in dark and light, at 900 and 420 px, against a temporary backend (8799) and Vite (5299) with seeded data. One bug was fixed along the way: task-list checkboxes sat on their own line.
+4. **Docs:** `plan.md` (4c decisions and status), `CLAUDE.md`, `TODO.md` (a 4c-1 test).
+
+## Current state
+
+- **Branch:** `feature/style-polish`; 4c-1 committed, not pushed.
+- **Phase 4c:** 4c-1 built; 4c-2 to 4c-4 not started.
+
+## Next steps
+
+**For the user**
+- [ ] Look over 4c-1 (the "Tables, task lists and code colors" test in `TODO.md`), and say whether to push.
+- [ ] Carried over: the "Session summaries" and "Session history" checks; the rest of `TODO.md`; whether `auto` becomes Claude's default permission mode.
+
+**For the agent**
+- [ ] 4c-2: inline diffs for edits (Claude from the event's old and new text; Codex captured by the hub when `file_change` is reported), the per-file edit history with timestamps in **Files changed**, command rows with exit status and an output preview, tidier turn-end rows. Show before/after screenshots.
+- [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; the other carried-over items.

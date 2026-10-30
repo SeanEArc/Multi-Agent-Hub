@@ -42,6 +42,13 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Expect: the new agent picks up the task, and the plan card starts fresh for it instead of showing the previous agent's plan.
   - Why: the progress view reads the plan from the current agent's events only; this checks that it switches cleanly at a handoff.
 
+## Phase 4c: style polish
+
+- [ ] **Tables, task lists and code colors (4c-1).** Reload the page and ask an agent for something that answers with a markdown table, a checklist and code (for example "compare two ways to do X in a table, then show the code").
+  - Expect: a bordered table (scrolling sideways if it's wide), checkboxes inline with their items, ~~strikethrough~~ in gray, and colored code in blocks that name a language (`ts`, `python`, `diff` with red/green lines). Blocks without a language stay plain. Check light mode too.
+  - Also: a Codex edit row reads like `Edit src\theme.ts, src\useTheme.ts (new)`, not JSON; and at a narrow window width the session header's buttons wrap onto a second line instead of running off the side.
+  - Why: checked only with sample data in screenshots.
+
 ## Phase 4a: worktrees
 
 - [ ] **Worktree on a real project.** Create a session on one of your own git projects with **Work in a separate git worktree** checked, and ask the agent for a small change.

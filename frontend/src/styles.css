@@ -14,6 +14,14 @@
   --danger: #e06c64;
   --info: #7aa7e0;
   --code-bg: #141312;
+  /* Syntax highlighting (highlight.js tokens). */
+  --hl-comment: #8a857e;
+  --hl-keyword: #e5937a;
+  --hl-string: #a5c97f;
+  --hl-number: #d7b26a;
+  --hl-title: #8fb8e8;
+  --hl-type: #c9a2e0;
+  --hl-attr: #7cc4c0;
   --radius: 10px;
   --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
   --sans: system-ui, "Segoe UI", -apple-system, sans-serif;
@@ -35,6 +43,13 @@
     --danger: #c0423a;
     --info: #3a6db0;
     --code-bg: #f2f0ec;
+    --hl-comment: #7a756e;
+    --hl-keyword: #b04a2b;
+    --hl-string: #3f7a1f;
+    --hl-number: #94620c;
+    --hl-title: #2b5f9e;
+    --hl-type: #7d3fa3;
+    --hl-attr: #1f7a74;
   }
 }
 
@@ -322,14 +337,17 @@ textarea:focus,
 
 .session-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px 16px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
 }
 
+/* The title keeps at least this much room; past that, the actions wrap below it. */
 .session-heading {
+  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -366,9 +384,12 @@ textarea:focus,
 
 .session-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  flex: none;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .usage-meter {
@@ -488,6 +509,129 @@ textarea:focus,
 
 .assistant-message pre code {
   padding: 0;
+}
+
+/* GitHub-flavored markdown in agent messages, briefs and summaries (remark-gfm). */
+:is(.assistant-message, .handoff-brief) table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+:is(.assistant-message, .handoff-brief) :is(th, td) {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+:is(.assistant-message, .handoff-brief) th {
+  background: var(--panel-raised);
+  font-weight: 600;
+}
+
+:is(.assistant-message, .handoff-brief) tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+}
+
+:is(.assistant-message, .handoff-brief) li.task-list-item {
+  list-style: none;
+}
+
+:is(.assistant-message, .handoff-brief) .contains-task-list {
+  padding-left: 18px;
+}
+
+/* Undo the form-field defaults that the global `input` rule gives these checkboxes. */
+:is(.assistant-message, .handoff-brief) .task-list-item input {
+  width: auto;
+  padding: 0;
+  margin: 0 6px 0 -18px;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+
+:is(.assistant-message, .handoff-brief) del {
+  color: var(--muted);
+}
+
+/* highlight.js token colors (rehype-highlight), from the theme so they follow light and dark. */
+.hljs-comment,
+.hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--hl-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-template-string,
+.hljs-meta .hljs-string {
+  color: var(--hl-string);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable.constant_ {
+  color: var(--hl-number);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--hl-title);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--hl-type);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: var(--hl-attr);
+}
+
+.hljs-meta,
+.hljs-tag,
+.hljs-name {
+  color: var(--muted);
+}
+
+.hljs-addition {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.hljs-deletion {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
 }
 
 .tool {
@@ -957,8 +1101,12 @@ textarea:focus,
   }
 
   .session-header {
-    flex-wrap: wrap;
     padding: 10px 16px;
+  }
+
+  .session-actions {
+    justify-content: flex-start;
+    gap: 8px;
   }
 
   .usage-meters {

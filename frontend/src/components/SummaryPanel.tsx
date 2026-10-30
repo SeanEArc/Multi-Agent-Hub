@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Markdown from "react-markdown";
+import { MarkdownText } from "./MarkdownText";
 import { api, type AgentSession, type SessionEvent, type SessionSummary } from "../api";
 import { formatTime } from "../format";
 import { formatTokens, type StintHistory, type TurnOutcome } from "../history";
@@ -163,7 +163,7 @@ export function SummaryPanel({ session, events, history, onWritten }: Props) {
             </div>
           )}
           <div className="assistant-message summary-text">
-            <Markdown>{summary.text}</Markdown>
+            <MarkdownText>{summary.text}</MarkdownText>
           </div>
         </div>
       )}
