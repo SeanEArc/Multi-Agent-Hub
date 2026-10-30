@@ -1039,13 +1039,13 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/style-polish`; 4c-1 committed, not pushed.
-- **Phase 4c:** 4c-1 built; 4c-2 to 4c-4 not started.
+- **Branch:** `feature/style-polish`, pushed and fast-forwarded into `main` (pushed) at the user's request. The branch is kept for 4c-2.
+- **Phase 4c:** 4c-1 built; the user looked over its screenshots ("Looks good so far", 2026-10-30). 4c-2 to 4c-4 not started.
 
 ## Next steps
 
 **For the user**
-- [ ] Look over 4c-1 (the "Tables, task lists and code colors" test in `TODO.md`), and say whether to push.
+- [ ] Try 4c-1 with real agents (the "Tables, task lists and code colors" test in `TODO.md`).
 - [ ] Carried over: the "Session summaries" and "Session history" checks; the rest of `TODO.md`; whether `auto` becomes Claude's default permission mode.
 
 **For the agent**
