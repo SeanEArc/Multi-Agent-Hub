@@ -1056,7 +1056,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 2026-11-02 (UTC-05:00)
 
-# Session 29: Made the project folder optional, so a session can be a plain chat for quick questions, on `main` (uncommitted).
+# Session 29: Made the project folder optional, so a session can be a plain chat for quick questions, on `feature/chat-sessions`, merged into `main`.
 
 ## What was done
 
@@ -1071,13 +1071,13 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/chat-sessions`, committed and pushed at the user's request (not merged into `main`).
+- **Branch:** `feature/chat-sessions`, committed, pushed and fast-forwarded into `main` (pushed) at the user's request. The branch is kept.
 
 ## Next steps
 
 **For the user**
 - [ ] Phase 4b's **Light mode** check and 4c-1's **Tables, task lists and code colors** in `TODO.md`.
-- [ ] Say whether to merge `feature/chat-sessions` into `main`, and whether to mark Phase 4a done in `plan.md` now that its acceptance test passed.
+- [ ] Say whether to mark Phase 4a done in `plan.md` now that its acceptance test passed.
 
 **For the agent**
 - [ ] Possible follow-ups if wanted: a one-click "New chat" button that skips the dialog; a lighter headless prompt for chats (the plan-checklist instruction is unneeded there).
