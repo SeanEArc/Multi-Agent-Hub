@@ -1067,7 +1067,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 5. **Docs:** `CLAUDE.md` (Chats), `TODO.md` (a "Quick question with no folder" check).
 6. **User testing, two fixes:** the dialog still blocked submit because `FolderPicker`'s input had its own `required` (removed); a `project_path: Input should be a valid string` error came from a backend started before the change (a restart fixed it). The user then confirmed a chat works and that deleting it deletes its folder. The delete confirmation said "Files in the project folder are not touched" for chats too; it now says the chat folder is deleted.
 
-7. **Manual checks confirmed by the user (2026-11-02):** every Phase 4b item in `TODO.md` except **Light mode**, and Phase 4a's **Worktree on a real project**. Ticked in `TODO.md`.
+7. **Manual checks confirmed by the user (2026-11-02):** every Phase 4b item in `TODO.md` except **Light mode**, and Phase 4a's **Worktree on a real project**. Ticked in `TODO.md`. **Phase 4a marked done** in `plan.md` and `CLAUDE.md` (user asked).
 
 ## Current state
 
@@ -1077,7 +1077,6 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 **For the user**
 - [ ] Phase 4b's **Light mode** check and 4c-1's **Tables, task lists and code colors** in `TODO.md`.
-- [ ] Say whether to mark Phase 4a done in `plan.md` now that its acceptance test passed.
 
 **For the agent**
 - [ ] Possible follow-ups if wanted: a one-click "New chat" button that skips the dialog; a lighter headless prompt for chats (the plan-checklist instruction is unneeded there).

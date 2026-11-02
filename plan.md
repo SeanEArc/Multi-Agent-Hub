@@ -151,7 +151,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance (whole phase): two or more sessions run in parallel without file conflicts, and each session's history and summary are viewable.
 - Tradeoffs: worktrees are not a sandbox (containers come in phase 9); the subagent display decision may need a design iteration.
 
-**Phase 4a: Runner interface and git worktrees** (built 2026-10-26, Session 20; awaiting the user's test with a real project)
+**Phase 4a: Runner interface and git worktrees** (built 2026-10-26, Session 20; done 2026-11-02 after the user's test with a real project)
 - Runner interface: every agent launch goes through one small interface that starts a CLI in a folder, sends the prompt, streams the output and kills it. Only the host runner (today's behavior) ships here; phase 9 adds a Docker runner behind the same interface, so the orchestrator, handoff, worktrees and UI don't change.
 - Git worktrees per session: on by default for git repositories, with an opt-out per session; all in one hub folder (`%LOCALAPPDATA%\MultiAgentHub\worktrees`); each session works on its own `hub/...` branch. Removing a worktree deletes the folder and keeps the branch for the user to merge; uncommitted changes must first be committed to the branch or discarded. The handoff brief diffs against the branch's base commit.
 - The worktree handling can create, track and remove a worktree for any stint, not only for a whole session, because phase 8 reuses it per stint (the `stint_id` column exists; phase 8 sets it).
