@@ -1051,3 +1051,35 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the agent**
 - [ ] 4c-2: inline diffs for edits (Claude from the event's old and new text; Codex captured by the hub when `file_change` is reported), the per-file edit history with timestamps in **Files changed**, command rows with exit status and an output preview, tidier turn-end rows. Show before/after screenshots.
 - [ ] Carried over from Session 24: make `auto` the default if the user picks it; option 3 (a Codex mode with `update_plan`); the plan in the handoff brief; the other carried-over items.
+
+---
+
+2026-11-02 (UTC-05:00)
+
+# Session 29: Made the project folder optional, so a session can be a plain chat for quick questions, on `main` (uncommitted).
+
+## What was done
+
+1. **User asked** to use the hub as a chat bot: the project folder becomes optional, for quick questions like in Claude, Codex or Gemini.
+2. **Backend:** `SessionCreate.project_path` is optional. Without it the session is a chat: new `sessions.chat` column (migration `95160a18dfff`, plain `ADD COLUMN`; the usual false `events.stint_id` FK change removed), and the hub makes an empty folder `HUB_CHATS_DIR/<session id>` (new setting, default `%LOCALAPPDATA%\MultiAgentHub\chats`, outside any repository so no stray `CLAUDE.md` is loaded) stored as `project_path`. A real folder per chat is needed because both CLIs resume a conversation only from the folder it started in; it also means handoff, summaries and the orchestrator needed no changes. No worktree for chats; deleting the session deletes its folder. `create_app(chats_dir=)` for tests.
+3. **Tests:** `test_chat_runs_in_its_own_folder` and `test_project_session_is_not_a_chat` in `test_worktrees.py`. **149 passed, 4 skipped.** The migration was also applied to a copy of the real `hub.db`: all rows kept, existing sessions `chat = 0`.
+4. **Frontend:** **Project folder** and **Title** are optional in the New session dialog (with no folder the title defaults to the first line of the first message, else "Chat"); hints and placeholder change for a chat. Dashboard, sidebar and session header show "Chat" instead of a folder; chats are left out of the recent-folders shortcuts. Type-checks; not yet looked at in a browser.
+5. **Docs:** `CLAUDE.md` (Chats), `TODO.md` (a "Quick question with no folder" check).
+6. **User testing, two fixes:** the dialog still blocked submit because `FolderPicker`'s input had its own `required` (removed); a `project_path: Input should be a valid string` error came from a backend started before the change (a restart fixed it). The user then confirmed a chat works and that deleting it deletes its folder. The delete confirmation said "Files in the project folder are not touched" for chats too; it now says the chat folder is deleted.
+
+7. **Manual checks confirmed by the user (2026-11-02):** every Phase 4b item in `TODO.md` except **Light mode**, and Phase 4a's **Worktree on a real project**. Ticked in `TODO.md`.
+
+## Current state
+
+- **Branch:** `feature/chat-sessions`, committed and pushed at the user's request (not merged into `main`).
+
+## Next steps
+
+**For the user**
+- [ ] Phase 4b's **Light mode** check and 4c-1's **Tables, task lists and code colors** in `TODO.md`.
+- [ ] Say whether to merge `feature/chat-sessions` into `main`, and whether to mark Phase 4a done in `plan.md` now that its acceptance test passed.
+
+**For the agent**
+- [ ] Possible follow-ups if wanted: a one-click "New chat" button that skips the dialog; a lighter headless prompt for chats (the plan-checklist instruction is unneeded there).
+- [ ] Carried over from Session 28: 4c-2 and the rest.
+

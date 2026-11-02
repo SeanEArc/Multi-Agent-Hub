@@ -85,9 +85,11 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
   }, [reportedModel, session.reported_model]);
 
   async function remove() {
-    const files = worktree?.status === "active"
-      ? `Its worktree folder is removed too; the branch ${worktree.branch} is kept.`
-      : "Files in the project folder are not touched.";
+    const files = session.chat
+      ? "Its chat folder and any files the agent made there are deleted too."
+      : worktree?.status === "active"
+        ? `Its worktree folder is removed too; the branch ${worktree.branch} is kept.`
+        : "Files in the project folder are not touched.";
     if (!confirm(`Delete "${session.title}" and its history? ${files}`)) return;
     try {
       await api.deleteSession(session.id);
@@ -119,7 +121,7 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
               </button>
             )}
             <span className="path" title={folder}>
-              {session.project_path}
+              {session.chat ? "Chat, no project folder" : session.project_path}
             </span>
           </div>
         </div>

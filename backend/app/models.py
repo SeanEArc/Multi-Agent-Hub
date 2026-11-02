@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import field_validator
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import UniqueConstraint, func
+from sqlalchemy import UniqueConstraint, false, func
 from sqlmodel import JSON, Column, Field, Session, SQLModel, col, select
 
 
@@ -79,13 +79,16 @@ class ChainEntry(SQLModel):
 
 
 class AgentSession(SQLModel, table=True):
-    """A task in a project folder. The agents working on it are its stints, one after another."""
+    """A task in a project folder, or a chat with no project. The agents working on it are its stints, one after another."""
 
     __tablename__ = "sessions"
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex, primary_key=True)
     title: str
+    # Where the agents run. For a chat, an empty folder the hub made for it (see `chat`).
     project_path: str
+    # Created without a project folder: the agents run in a folder of the hub's own, deleted with the session.
+    chat: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
     status: SessionStatus = Field(
         default=SessionStatus.READY, sa_column=enum_column(SessionStatus, nullable=False)
     )
@@ -175,7 +178,8 @@ def current_stint(db: Session, session_id: str) -> Stint | None:
 
 class SessionCreate(SQLModel):
     title: str
-    project_path: str
+    # None for a chat: the hub makes an empty folder for the agents to run in.
+    project_path: str | None = None
     agent: AgentKind = AgentKind.CLAUDE
     model: str | None = None
     chain: list[ChainEntry] | None = None
@@ -185,7 +189,9 @@ class SessionCreate(SQLModel):
 
     @field_validator("project_path")
     @classmethod
-    def project_path_must_exist(cls, value: str) -> str:
+    def project_path_must_exist(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
         path = Path(value).expanduser()
         if not path.is_dir():
             raise ValueError("must be an existing directory")
@@ -243,6 +249,7 @@ class SessionRead(SQLModel):
     id: str
     title: str
     project_path: str
+    chat: bool
     status: SessionStatus
     # The current stint's agent, model and native session id.
     agent: AgentKind

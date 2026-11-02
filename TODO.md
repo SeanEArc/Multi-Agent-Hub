@@ -18,19 +18,19 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Expect: the tests and the commit run without "denied: needs approval". Pushing straight to `main` may still be refused by the safety check; note which commands were refused.
   - Why: with the default `acceptEdits`, every shell command is denied headless. `auto` has only been tried with `git status` and `python --version`; this decides whether it becomes the default.
 
-- [ ] **Panel / Split switch.** In any session, click **Split**, then **Panel**.
+- [x] **Panel / Split switch.** (passed 2026-11-02) In any session, click **Split**, then **Panel**.
   - Expect: Split shows a side panel with the plan, subagents and **Files changed** (with edit counts). Below about 960 px wide, the side panel gives way to the card. The choice is still set after reloading the page, and matches the setting in **Settings**. **Hide** collapses the card.
   - Why: the layout is saved as a hub setting through the API; this checks that saving, reloading and the narrow-window fallback work in a real browser.
 
-- [ ] **Claude subagents in the session view.** In a Claude session that starts subagents, open the session.
+- [x] **Claude subagents in the session view.** (passed 2026-11-02) In a Claude session that starts subagents, open the session.
   - Expect: each subagent is listed in the card (or side panel), and clicking it shows its steps. In the transcript, its steps are folded under its row instead of mixed into the conversation.
   - Why: the dashboard was confirmed; the session view's subagent list and the folded transcript rows haven't been checked with real Claude output.
 
-- [ ] **Session history.** Open a session that has had a few turns (ideally one with a handoff) and click **History** in the header.
+- [x] **Session history.** (passed 2026-11-02) Open a session that has had a few turns (ideally one with a handoff) and click **History** in the header.
   - Expect: totals at the top (agents, turns, tool calls, files edited, tokens, API price for Claude, time span), then one card per agent in order, with why it took over and its **View brief**. Each turn shows how it ended (Done, Asked you, Usage limit, Stopped, Error, Cut off), when, its prompt, and its tool calls, files, plan, cost or tokens. Clicking a prompt shows the full message and the files edited; **Show in transcript** switches back and highlights that turn. Sending a message from History switches to the transcript.
   - Why: built from the session's events in the browser and checked only with sample data; real sessions may have event orders the sample didn't cover.
 
-- [ ] **Session summaries.** Restart the backend (it applies a new database migration on start), open a session that has had a few turns, and click **History**.
+- [x] **Session summaries.** (passed 2026-11-02) Restart the backend (it applies a new database migration on start), open a session that has had a few turns, and click **History**.
   - Expect: a **Summary** card at the top with the task, the latest request (if you sent more than one), the plan step, how the last turn ended and the agent's last message in it, and the changes (files edited, the branch's diff total, uncommitted files). Click **Re-summarize**: it shows "Writing…" for a few seconds to a minute, then a short written summary with who wrote it, when, and the tokens it used. Nothing new appears in the transcript, and the agent's own conversation isn't touched (the next turn still resumes it). **All sessions** shows the summary's first line on the card. Send another message: the summary is marked **Outdated**, on the card too.
   - Also try: Re-summarize while a turn is running (it works alongside), and with `$env:HUB_SIMULATE_LIMIT="claude"` on a Claude session (Codex should write it, noting Claude was out of usage).
   - Why: the one-off call (`claude --tools "" --no-session-persistence`, `codex exec --ephemeral` read-only) passed the live adapter tests and one real Codex summary on sample data; not yet on a real session.
@@ -38,7 +38,7 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 - [ ] **Light mode.** Switch Windows (or the browser) to light mode and look over the dashboard and a session.
   - Why: new colors were added for the dashboard and progress view; the screenshots covered light mode with sample data only.
 
-- [ ] **Handoff still works.** In a session, click **Hand off** and pick another agent.
+- [x] **Handoff still works.** (passed 2026-11-02) In a session, click **Hand off** and pick another agent.
   - Expect: the new agent picks up the task, and the plan card starts fresh for it instead of showing the previous agent's plan.
   - Why: the progress view reads the plan from the current agent's events only; this checks that it switches cleanly at a handoff.
 
@@ -49,9 +49,15 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Also: a Codex edit row reads like `Edit src\theme.ts, src\useTheme.ts (new)`, not JSON; and at a narrow window width the session header's buttons wrap onto a second line instead of running off the side.
   - Why: checked only with sample data in screenshots.
 
+## Chats (no project folder)
+
+- [x] **Quick question with no folder.** (passed 2026-11-02) Restart the backend (it applies a migration), click **New session**, leave **Project folder** and **Title** empty, type a question as the first message and create it.
+  - Expect: the session is titled after your question, shows "Chat" instead of a folder, and the agent answers. A follow-up continues the same conversation. Deleting the session removes its folder under `%LOCALAPPDATA%\MultiAgentHub\chats`.
+  - Why: checked by tests with the fake CLIs only, not with real Claude or Codex.
+
 ## Phase 4a: worktrees
 
-- [ ] **Worktree on a real project.** Create a session on one of your own git projects with **Work in a separate git worktree** checked, and ask the agent for a small change.
+- [x] **Worktree on a real project.** (passed 2026-11-02) Create a session on one of your own git projects with **Work in a separate git worktree** checked, and ask the agent for a small change.
   - Expect: your original project folder is unchanged, and the change is on the session's `hub/...` branch. Click the branch chip and choose **Commit and remove**: the worktree folder is removed and the branch is kept.
   - Why: this is Phase 4a's acceptance test. It has only run against temporary test repos, and Phase 4a isn't marked done in `plan.md` until it passes on a real project.
 

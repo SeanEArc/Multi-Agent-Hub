@@ -81,7 +81,10 @@ export interface Worktree {
 export interface AgentSession {
   id: string;
   title: string;
+  // Where the agents run. For a chat, an empty folder the hub made for it.
   project_path: string;
+  // Created without a project folder.
+  chat: boolean;
   // The current stint's agent, model and native session id.
   agent: AgentKind;
   model: string | null;
@@ -179,7 +182,8 @@ export interface SessionEvent {
 
 export interface NewSession {
   title: string;
-  project_path: string;
+  // null for a chat with no project.
+  project_path: string | null;
   agent: AgentKind;
   model: string | null;
   chain: ChainEntry[] | null;

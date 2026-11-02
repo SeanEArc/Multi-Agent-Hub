@@ -1,4 +1,5 @@
 import json
+import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated
@@ -63,14 +64,23 @@ def _get_or_404(db: Session, session_id: str) -> AgentSession:
 
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
 async def create_session(body: SessionCreate, db: DbSession, request: Request) -> SessionRead:
-    """Create a session. In a git repository it gets its own worktree and branch unless `use_worktree` is false."""
+    """Create a session. In a git repository it gets its own worktree and branch unless `use_worktree` is false.
+
+    With no `project_path` it is a chat: the agents run in an empty folder the hub makes for it.
+    """
     agent_session = AgentSession(
         title=body.title,
-        project_path=body.project_path,
+        project_path=body.project_path or "",
+        chat=body.project_path is None,
         chain=[entry.model_dump(mode="json") for entry in body.chain] if body.chain else None,
         limit_policy=body.limit_policy,
     )
-    repo = await repo_info(Path(body.project_path)) if body.use_worktree else None
+    if agent_session.chat:
+        # A folder per chat, kept for its lifetime: the CLIs resume a conversation only from the folder it began in.
+        chat_dir = Path(request.app.state.chats_dir) / agent_session.id
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        agent_session.project_path = str(chat_dir.resolve())
+    repo = await repo_info(Path(agent_session.project_path)) if body.use_worktree and not agent_session.chat else None
     if repo is not None:
         try:
             created = await create_worktree(request.app.state.worktrees_dir, repo, agent_session.id, body.title)
@@ -108,7 +118,10 @@ def get_stint(session_id: str, stint_id: int, db: DbSession) -> Stint:
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(session_id: str, db: DbSession, orchestrator: Orch) -> None:
-    """Delete the session and its history. Its worktree is removed too (branch kept), but only if it is clean."""
+    """Delete the session and its history. Its worktree is removed too (branch kept), but only if it is clean.
+
+    A chat's folder belongs to the hub and is deleted with it.
+    """
     agent_session = _get_or_404(db, session_id)
     await orchestrator.forget(session_id)
     worktree = session_worktree(db, session_id)
@@ -117,6 +130,8 @@ async def delete_session(session_id: str, db: DbSession, orchestrator: Orch) -> 
     # The session's events are removed by the database (ON DELETE CASCADE).
     db.delete(agent_session)
     db.commit()
+    if agent_session.chat:
+        shutil.rmtree(agent_session.project_path, ignore_errors=True)
 
 
 @router.post("/{session_id}/messages", response_model=SessionRead, status_code=status.HTTP_202_ACCEPTED)

@@ -225,3 +225,24 @@ def test_folder_git_info(client: TestClient, repo: Path, tmp_path: Path) -> None
     plain = tmp_path / "plain"
     plain.mkdir()
     assert client.get("/api/folders/git", params={"path": str(plain)}).json()["is_repo"] is False
+
+
+def test_chat_runs_in_its_own_folder(client: TestClient) -> None:
+    """A session with no project folder is a chat: the hub makes an empty folder for it and deletes it after."""
+    body = client.post("/api/sessions", json={"title": "Quick question"}).json()
+    assert body["chat"] is True and body["worktree"] is None
+    folder = Path(body["project_path"])
+    assert folder.is_dir() and not any(folder.iterdir())
+    assert agent_cwd(client, body["id"]) == folder.resolve()
+    # A follow-up resumes in the same folder.
+    assert agent_cwd(client, body["id"]) == folder.resolve()
+
+    assert client.delete(f"/api/sessions/{body['id']}").status_code == 204
+    assert not folder.exists()
+
+
+def test_project_session_is_not_a_chat(client: TestClient, tmp_path: Path) -> None:
+    body = client.post("/api/sessions", json={"title": "x", "project_path": str(tmp_path)}).json()
+    assert body["chat"] is False
+    assert client.delete(f"/api/sessions/{body['id']}").status_code == 204
+    assert tmp_path.exists()

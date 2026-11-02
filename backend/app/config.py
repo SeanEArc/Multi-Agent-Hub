@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Sessions' git worktrees, one folder each. Keep it outside any repository: Claude Code reads the
     # CLAUDE.md files in every folder above the one it runs in.
     worktrees_dir: Path = APP_DATA_DIR / "worktrees"
+    # Chats (sessions with no project folder) run in an empty folder here, one each. Outside any repository
+    # for the same reason as worktrees_dir.
+    chats_dir: Path = APP_DATA_DIR / "chats"
     # Full path to the native codex.exe, if it isn't found on PATH or inside the npm install.
     codex_path: str | None = None
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was

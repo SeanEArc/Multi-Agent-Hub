@@ -62,6 +62,7 @@ def engine() -> Engine:
 @pytest.fixture
 def client(engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
     worktrees = tmp_path_factory.mktemp("worktrees")
-    app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=worktrees)
+    chats = tmp_path_factory.mktemp("chats")
+    app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=worktrees, chats_dir=chats)
     with make_client(app) as test_client:
         yield test_client

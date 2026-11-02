@@ -19,8 +19,9 @@ def create_app(
     adapter_factory: AdapterFactory = default_adapter_factory,
     token: str | None = None,
     worktrees_dir: Path | None = None,
+    chats_dir: Path | None = None,
 ) -> FastAPI:
-    """Tests pass `token` and `worktrees_dir`; otherwise they come from the settings."""
+    """Tests pass `token`, `worktrees_dir` and `chats_dir`; otherwise they come from the settings."""
     settings = get_settings()
     engine = engine or make_engine(settings.database_url)
     orchestrator = Orchestrator(engine, adapter_factory, simulate_limit=set(settings.simulate_limit))
@@ -38,6 +39,7 @@ def create_app(
     app.state.engine = engine
     app.state.orchestrator = orchestrator
     app.state.worktrees_dir = worktrees_dir or settings.worktrees_dir
+    app.state.chats_dir = chats_dir or settings.chats_dir
 
     app.add_middleware(
         CORSMiddleware,

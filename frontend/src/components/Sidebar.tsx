@@ -37,7 +37,7 @@ export function Sidebar({ sessions, selectedId, onSelect, onNew, onSettings }: P
             <span className="session-item-text">
               <span className="session-item-title">{session.title}</span>
               <span className="session-item-meta">
-                {agentLabel(session)} · {folderName(session.project_path)}
+                {agentLabel(session)} · {session.chat ? "Chat" : folderName(session.project_path)}
               </span>
             </span>
           </button>

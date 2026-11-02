@@ -60,7 +60,6 @@ export function FolderPicker({ value, onChange, recent }: Props) {
           id="project-path"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          required
           placeholder="C:\Users\you\projects\my-app"
           spellCheck={false}
         />

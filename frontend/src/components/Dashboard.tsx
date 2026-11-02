@@ -83,7 +83,7 @@ function SessionCard({ session, onSelect }: { session: AgentSession; onSelect: (
         {worktree && (
           <span className={`chip mono${worktree.status === "removed" ? " removed" : ""}`}>⑂ {worktree.branch}</span>
         )}
-        <span className="path">{folderName(session.project_path)}</span>
+        <span className="path">{session.chat ? "Chat" : folderName(session.project_path)}</span>
       </span>
       <CardSummary session={session} />
       <span className="session-card-activity">{activity(session)}</span>

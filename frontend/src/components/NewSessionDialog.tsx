@@ -50,6 +50,7 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   }, [projectPath]);
 
   const canUseWorktree = !!git?.is_repo && git.has_commits;
+  const isChat = !projectPath.trim();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -58,8 +59,8 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
     try {
       await onCreate(
         {
-          title: title.trim(),
-          project_path: projectPath.trim(),
+          title: title.trim() || chatTitle(firstMessage),
+          project_path: projectPath.trim() || null,
           agent,
           model: model || null,
           chain,
@@ -81,13 +82,25 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
 
         <label>
           Title
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus placeholder="Fix login bug" />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required={!isChat}
+            autoFocus
+            placeholder={isChat ? "Optional: taken from your first message" : "Fix login bug"}
+          />
         </label>
 
         <div className="field">
-          <label htmlFor="project-path">Project folder</label>
+          <label htmlFor="project-path">
+            Project folder <span className="hint">(optional)</span>
+          </label>
           <FolderPicker value={projectPath} onChange={setProjectPath} recent={recentProjects} />
-          <span className="hint">Type or paste a path, or browse to the folder. The agent can edit files in it.</span>
+          <span className="hint">
+            {isChat
+              ? "Leave it empty to just chat. The agent works in an empty folder of its own, deleted with the session."
+              : "Type or paste a path, or browse to the folder. The agent can edit files in it."}
+          </span>
         </div>
 
         {git?.is_repo && (
@@ -188,7 +201,7 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
             value={firstMessage}
             onChange={(e) => setFirstMessage(e.target.value)}
             rows={4}
-            placeholder="Describe the task. You can also send it later."
+            placeholder={isChat ? "Ask anything. You can also send it later." : "Describe the task. You can also send it later."}
           />
         </label>
 
@@ -205,4 +218,11 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
       </form>
     </dialog>
   );
+}
+
+/** A chat's title when none is given: the start of its first message. */
+function chatTitle(firstMessage: string): string {
+  const line = firstMessage.trim().split("\n")[0];
+  if (!line) return "Chat";
+  return line.length > 60 ? `${line.slice(0, 57)}…` : line;
 }
