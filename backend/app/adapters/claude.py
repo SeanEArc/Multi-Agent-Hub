@@ -21,6 +21,7 @@ from typing import Any
 
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, split_plan
+from app.adapters.diffs import claude_diffs
 from app.adapters.runner import Runner
 from app.models import AgentKind
 
@@ -194,7 +195,8 @@ class TurnParser:
         return events
 
     def _tool_results(self, raw: dict[str, Any]) -> list[AgentEvent]:
-        return [
+        blocks = [block for block in _content_blocks(raw) if block.get("type") == "tool_result"]
+        events = [
             AgentEvent(
                 EventType.TOOL_RESULT,
                 {
@@ -204,9 +206,12 @@ class TurnParser:
                     "parent_tool_use_id": raw.get("parent_tool_use_id"),
                 },
             )
-            for block in _content_blocks(raw)
-            if block.get("type") == "tool_result"
+            for block in blocks
         ]
+        # `tool_use_result` describes the message's one tool result; an edit's has the structured patch.
+        if len(events) == 1 and (diffs := claude_diffs(raw.get("tool_use_result"))):
+            events[0].data["diffs"] = diffs
+        return events
 
     def _rate_limit(self, raw: dict[str, Any]) -> list[AgentEvent]:
         info = raw.get("rate_limit_info") or {}

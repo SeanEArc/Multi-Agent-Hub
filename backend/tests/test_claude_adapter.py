@@ -64,6 +64,28 @@ def test_parses_a_tool_turn() -> None:
     assert events[0].raw is not None
 
 
+def test_edit_result_carries_its_diff() -> None:
+    patch = [{"oldStart": 3, "oldLines": 2, "newStart": 3, "newLines": 2, "lines": [" a", "-b", "+B"]}]
+    events = parse(
+        {"type": "user", "parent_tool_use_id": None,
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+         "tool_use_result": {"filePath": "C:\\repo\\x.py", "oldString": "b", "newString": "B", "structuredPatch": patch}},
+        {"type": "user", "parent_tool_use_id": None,
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}]},
+         "tool_use_result": {"type": "create", "filePath": "C:\\repo\\new.txt", "content": "one\ntwo\n",
+                             "structuredPatch": []}},
+        {"type": "user", "parent_tool_use_id": None,
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "t3", "content": "done"}]},
+         "tool_use_result": {"stdout": "done", "stderr": ""}},
+    )
+    edit, create, command = (e.data for e in events)
+    assert edit["diffs"] == [{"path": "C:\\repo\\x.py", "kind": "update", "diff": "@@ -3,2 +3,2 @@\n a\n-b\n+B",
+                              "base": None, "truncated": False}]
+    assert create["diffs"][0]["kind"] == "add"
+    assert create["diffs"][0]["diff"] == "@@ -0,0 +1,2 @@\n+one\n+two"
+    assert "diffs" not in command
+
+
 def test_todo_write_becomes_a_plan_event() -> None:
     todos = [{"content": "Read the model", "status": "completed", "activeForm": "Reading the model"},
              {"content": "Write tests", "status": "in_progress", "activeForm": "Writing tests"}]

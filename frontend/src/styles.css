@@ -728,18 +728,227 @@ textarea:focus,
   word-break: break-word;
 }
 
-.turn-end {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 4px 10px;
-  border-bottom: 1px dashed var(--border);
-  font-size: 12.5px;
+.tool-exit {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* Under a tool row, lined up with its name. */
+.tool-preview,
+.tool-output-preview {
+  margin: 2px 0 4px 22px;
+}
+
+.tool-output-preview {
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+
+.tool-output-preview.failed {
+  border-left-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+
+.tool-output-preview pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-output-more {
+  font-size: 11.5px;
+  font-style: italic;
+}
+
+.diff-stat {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.diff-stat-add {
   color: var(--ok);
 }
 
-.turn-end.question-end {
+.diff-stat-del {
+  color: var(--danger);
+}
+
+.diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+  /* Code fonts draw -> and != as single symbols, which a diff should show as typed. */
+  font-variant-ligatures: none;
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 11.5px;
+}
+
+.diff-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-kind {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.diff-kind.add {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+
+.diff-kind.delete {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.diff-body {
+  max-height: 480px;
+  overflow: auto;
+}
+
+.diff-line {
+  display: grid;
+  /* Old and new line numbers, the +/− mark, then the text. Wide lines wrap rather than scroll. */
+  grid-template-columns: minmax(3ch, max-content) minmax(3ch, max-content) 2ch 1fr;
+  line-height: 1.5;
+}
+
+.diff-no {
+  padding: 0 6px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  opacity: 0.7;
+}
+
+.diff-mark {
+  text-align: center;
+  user-select: none;
+}
+
+.diff-text {
+  padding-right: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line.add {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+
+.diff-line.add .diff-mark {
+  color: var(--ok);
+}
+
+.diff-line.del {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+
+.diff-line.del .diff-mark {
+  color: var(--danger);
+}
+
+.diff-gap {
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--panel);
+  line-height: 1.4;
+  user-select: none;
+}
+
+.diff-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* A file's header that opens and closes its diff. */
+.diff-toggle {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diff-toggle:hover {
+  background: var(--panel-raised);
+}
+
+.diff-toggle .diff-stat {
+  margin-left: auto;
+}
+
+.diff.closed .diff-header {
+  border-bottom: 0;
+}
+
+.turn-end {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 2px;
+  padding: 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.turn-end-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.turn-end-mark {
+  font-weight: 700;
+}
+
+.turn-end.done .turn-end-mark {
+  color: var(--ok);
+}
+
+.turn-end.question .turn-end-label {
   color: var(--warn);
+}
+
+.turn-end.stopped .turn-end-mark {
+  color: var(--muted);
 }
 
 .notice {
@@ -1687,17 +1896,88 @@ textarea:focus,
   font-size: 12px;
 }
 
-.progress-files li {
+.file-history-summary {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-history-summary:hover {
+  background: var(--panel-raised);
+}
+
+.file-history-summary .muted {
+  flex: none;
 }
 
 .progress-file-path {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-edits {
+  list-style: none;
+  margin: 4px 0 8px 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-edit-meta {
+  display: flex;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+}
+
+.file-edit-label {
+  display: inline-flex;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-family: var(--sans);
+}
+
+.file-edit-label time {
+  flex: none;
+}
+
+.file-edit-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The side panel is narrow: smaller diffs, and no separate old line number column. */
+.file-edits .diff {
+  font-size: 11px;
+}
+
+.file-edits .diff-line,
+.diff.new-file .diff-line {
+  grid-template-columns: 0 minmax(3ch, max-content) 2ch 1fr;
+}
+
+.file-edits .diff-no:first-child,
+.diff.new-file .diff-no:first-child {
+  visibility: hidden;
+  padding: 0;
 }
 
 .progress-aside .subagent-summary {

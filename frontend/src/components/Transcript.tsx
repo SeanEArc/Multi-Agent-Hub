@@ -1,8 +1,18 @@
 import { Fragment, useState, type ReactNode } from "react";
+import { DiffStat, DiffView, startsOpen } from "./DiffView";
 import { MarkdownText } from "./MarkdownText";
 import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
+import { COMMAND_TOOLS, commandOutcome, editDiffs, isEditTool } from "../diffs";
 import { formatTokens, turnTokens } from "../history";
-import { isSubagent, planCounts, stepsByParent, toolOutcomes, type PlanItem, type ToolOutcomes } from "../progress";
+import {
+  editedPaths,
+  isSubagent,
+  planCounts,
+  stepsByParent,
+  toolOutcomes,
+  type PlanItem,
+  type ToolOutcomes,
+} from "../progress";
 
 interface Props {
   sessionId: string;
@@ -48,9 +58,14 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
   const tokens = turnTokens(events);
   let lastUsage: SessionEvent | null = null;
   let lastTokens = 0;
+  // Files the current turn edited, for its turn-end row.
+  let turnFiles = new Set<string>();
   const rows = events.map((event, index) => {
     const p = event.payload;
+    if (event.type === "tool_use") for (const path of editedPaths(p.name, p.input ?? {})) turnFiles.add(path);
     if (p.parent_tool_use_id) return null;
+    const files = turnFiles.size;
+    if (TURN_ENDS.includes(event.type)) turnFiles = new Set();
     switch (event.type) {
       case "handoff":
         lastUsage = null;
@@ -111,18 +126,23 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
         return null;
       case "question":
         return (
-          <div key={event.id} className="row turn-end question-end">
-            <span>Waiting for your answer</span>
+          <TurnEnd key={event.id} outcome="question" label="Waiting for your answer" files={files}>
             <UsageSummary usage={lastUsage} tokens={lastTokens} />
-          </div>
+          </TurnEnd>
         );
-      case "completed":
+      case "completed": {
+        const denials = p.permission_denials;
         return (
-          <div key={event.id} className="row turn-end">
-            <span>✓ Done{p.permission_denials ? ` · ${p.permission_denials} action(s) denied` : ""}</span>
+          <TurnEnd
+            key={event.id}
+            outcome="done"
+            label={`Done${denials ? ` · ${denials} action${denials === 1 ? "" : "s"} denied` : ""}`}
+            files={files}
+          >
             <UsageSummary usage={lastUsage} tokens={lastTokens} />
-          </div>
+          </TurnEnd>
         );
+      }
       case "limit_reached":
         return (
           <div key={event.id} className="row notice warning">
@@ -140,9 +160,7 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
         );
       case "error":
         return p.stopped ? (
-          <div key={event.id} className="row turn-end">
-            <span>■ Stopped</span>
-          </div>
+          <TurnEnd key={event.id} outcome="stopped" label="Stopped" files={files} />
         ) : (
           <div key={event.id} className="row notice error">
             <strong>Error:</strong> {p.message || p.subtype || "Something went wrong"}
@@ -348,8 +366,21 @@ interface ToolRowProps {
 }
 
 export function ToolRow({ name, input, projectPath, result, denied, pending, children }: ToolRowProps) {
-  const [open, setOpen] = useState(false);
-  const state = denied ? "denied" : result?.payload.is_error ? "failed" : result ? "done" : pending ? "running" : "done";
+  const failed = !!result?.payload.is_error;
+  const state = denied ? "denied" : failed ? "failed" : result ? "done" : pending ? "running" : "done";
+  const edit = isEditTool(name, input ?? {});
+  const diffs = edit ? editDiffs(name, input ?? {}, result) : [];
+  // An edit that was refused or failed changed nothing, so its diff is only shown on request.
+  const showDiff = edit && !denied && !failed && diffs.some((d) => d.diff !== null);
+  // A one-file edit opens with its row, small ones by default; a patch to several files is open,
+  // with a dropdown per file.
+  const multiFile = showDiff && diffs.length > 1;
+  // null until the user clicks: the default follows the diff, which can arrive after the row.
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? (showDiff && (multiFile || startsOpen(diffs)));
+  const setOpen = (value: boolean) => setToggled(value);
+  const outcome = COMMAND_TOOLS.includes(name) && result ? commandOutcome(result) : null;
+  const resultText = result && <ResultText content={result.payload.content} />;
 
   return (
     <div className="row tool">
@@ -357,24 +388,102 @@ export function ToolRow({ name, input, projectPath, result, denied, pending, chi
         <span className={`tool-dot tool-${state}`} aria-hidden="true" />
         <span className="tool-name">{name}</span>
         <span className="tool-arg">{summarize(input, projectPath)}</span>
+        {showDiff && <DiffStat diffs={diffs} />}
+        {outcome && outcome.exitCode !== 0 && !denied && (
+          <span className="tool-exit">{outcome.exitCode === null ? "failed" : `exit ${outcome.exitCode}`}</span>
+        )}
         {denied && <span className="tool-flag">denied: needs approval</span>}
         <span className="tool-toggle" aria-hidden="true">
           {open ? "▾" : "▸"}
         </span>
       </button>
-      {open && (
+      {showDiff && open && (
+        <div className="tool-preview">
+          <DiffView diffs={diffs} projectPath={projectPath} collapsible={multiFile} showPaths={multiFile} />
+        </div>
+      )}
+      {outcome && !open && !denied && outcome.output && (
+        <OutputPreview output={outcome.output} failed={outcome.exitCode !== 0} />
+      )}
+      {/* A successful edit's diff above is all there is to show, unless it started a subagent. */}
+      {open && (!showDiff || children) && (
         <div className="tool-body">
-          <div className="tool-label">Input</div>
-          <pre className="tool-detail">{JSON.stringify(input, null, 2)}</pre>
-          {result && (
+          {outcome && !denied ? (
             <>
-              <div className="tool-label">Result</div>
-              <pre className="tool-detail">{truncate(result.payload.content || "(empty)", 4000)}</pre>
+              <div className="tool-label">Command</div>
+              <pre className="tool-detail">{input.command}</pre>
+              <div className="tool-label">Output{outcome.exitCode !== null ? ` · exit code ${outcome.exitCode}` : ""}</div>
+              <pre className="tool-detail">{truncate(outcome.output || "(no output)", 20000)}</pre>
+            </>
+          ) : edit ? (
+            <>
+              {!showDiff && <DiffView diffs={diffs} projectPath={projectPath} />}
+              {/* The diff says what a successful edit did; the result text only matters when it didn't. */}
+              {!showDiff && resultText}
+            </>
+          ) : (
+            <>
+              <div className="tool-label">Input</div>
+              <pre className="tool-detail">{JSON.stringify(input, null, 2)}</pre>
+              {resultText}
             </>
           )}
           {children}
         </div>
       )}
+    </div>
+  );
+}
+
+function ResultText({ content }: { content: string }) {
+  return (
+    <>
+      <div className="tool-label">Result</div>
+      <pre className="tool-detail">{truncate(content || "(empty)", 4000)}</pre>
+    </>
+  );
+}
+
+const PREVIEW_LINES = 4;
+
+/**
+ * A few lines of a command's output under its row: the start, and for a failed command also
+ * the end, since an error can be at either.
+ */
+function OutputPreview({ output, failed }: { output: string; failed: boolean }) {
+  const lines = output.split("\n").map((line) => truncate(line, 300));
+  const head = lines.length <= PREVIEW_LINES ? lines : lines.slice(0, failed ? PREVIEW_LINES / 2 : PREVIEW_LINES - 1);
+  const tail = failed && lines.length > PREVIEW_LINES ? lines.slice(-PREVIEW_LINES / 2) : [];
+  const more = lines.length - head.length - tail.length;
+  return (
+    <div className={`tool-output-preview${failed ? " failed" : ""}`}>
+      <pre>{head.join("\n")}</pre>
+      {more > 0 && <div className="tool-output-more">… {more} more line{more === 1 ? "" : "s"}</div>}
+      {tail.length > 0 && <pre>{tail.join("\n")}</pre>}
+    </div>
+  );
+}
+
+type TurnOutcome = "done" | "question" | "stopped";
+const TURN_END_MARKS: Record<TurnOutcome, string> = { done: "✓", question: "?", stopped: "■" };
+
+/** The line that closes a turn: how it ended and how many files it edited, then its usage. */
+function TurnEnd(props: { outcome: TurnOutcome; label: string; files: number; children?: ReactNode }) {
+  const { outcome, label, files, children } = props;
+  return (
+    <div className={`row turn-end ${outcome}`}>
+      <span className="turn-end-label">
+        <span className="turn-end-mark" aria-hidden="true">
+          {TURN_END_MARKS[outcome]}
+        </span>
+        <span>{label}</span>
+        {files > 0 && (
+          <span className="muted">
+            · {files} file{files === 1 ? "" : "s"} edited
+          </span>
+        )}
+      </span>
+      {children}
     </div>
   );
 }

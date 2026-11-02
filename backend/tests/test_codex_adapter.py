@@ -92,6 +92,15 @@ def test_blocked_command_is_a_failed_tool_result() -> None:
     assert use.type is EventType.TOOL_USE
     assert result.type is EventType.TOOL_RESULT
     assert result.data["is_error"] is True
+    assert result.data["exit_code"] == 1
+
+
+def test_single_quoted_powershell_command_is_unwrapped() -> None:
+    item = {"id": "item_1", "type": "command_execution", "command": POWERSHELL + "'echo ''hi'' there'",
+            "aggregated_output": "", "exit_code": 0, "status": "completed"}
+    use, result = parse({"type": "item.completed", "item": item})
+    assert use.data["input"]["command"] == "echo 'hi' there"
+    assert result.data["exit_code"] == 0
 
 
 def test_file_change() -> None:
@@ -105,6 +114,8 @@ def test_file_change() -> None:
     assert events[0].data["name"] == "Edit"
     assert events[0].data["input"]["path"] == "C:\\repo\\hello.txt"
     assert events[1].data["content"] == "update: C:\\repo\\hello.txt"
+    # The adapter swaps these for diffs.
+    assert events[1].data["changes"] == change["changes"]
 
 
 def test_tool_ids_differ_between_turns() -> None:
@@ -309,9 +320,17 @@ def test_question_turn(tmp_path: Path) -> None:
 
 
 def test_tool_turn(tmp_path: Path) -> None:
-    types = [e.type for e in collect(fake_adapter("tools", tmp_path).start_task("hi"))]
+    events = collect(fake_adapter("tools", tmp_path).start_task("hi"))
+    types = [e.type for e in events]
     assert types.count(EventType.TOOL_USE) == 2
     assert types.count(EventType.TOOL_RESULT) == 2
+    command, patch = [e.data for e in events if e.type is EventType.TOOL_RESULT]
+    assert command["exit_code"] == 0
+    # The hub reads the patched file to work out the diff Codex doesn't report.
+    assert "changes" not in patch
+    assert patch["diffs"] == [
+        {"path": "hello.txt", "kind": "add", "diff": "@@ -0,0 +1 @@\n+hello", "base": None, "truncated": False}
+    ]
 
 
 def test_limit_turn_has_no_extra_exit_error(tmp_path: Path) -> None:

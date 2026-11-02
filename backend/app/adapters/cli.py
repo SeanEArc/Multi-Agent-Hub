@@ -83,8 +83,8 @@ class CliAdapter(AgentAdapter):
             self._stopping = True
             await self._proc.kill()
 
-    def _on_event(self, event: AgentEvent) -> None:
-        """Hook for adapters that learn state (such as the session id) from the stream."""
+    async def _on_event(self, event: AgentEvent) -> None:
+        """Hook for adapters that learn state (such as the session id) from the stream, or add to an event."""
 
     async def _after_turn(self) -> list[AgentEvent]:
         """Hook for extra events once a turn has ended, such as state the CLI only writes to disk."""
@@ -104,7 +104,7 @@ class CliAdapter(AgentAdapter):
 
             async for line in proc.lines():
                 for event in parser.feed(line):
-                    self._on_event(event)
+                    await self._on_event(event)
                     yield event
             returncode = await proc.wait()
             stderr = (await stderr_task).decode("utf-8", "replace").strip()

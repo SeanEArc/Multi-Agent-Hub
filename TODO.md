@@ -48,6 +48,11 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Expect: a bordered table (scrolling sideways if it's wide), checkboxes inline with their items, ~~strikethrough~~ in gray, and colored code in blocks that name a language (`ts`, `python`, `diff` with red/green lines). Blocks without a language stay plain. Check light mode too.
   - Also: a Codex edit row reads like `Edit src\theme.ts, src\useTheme.ts (new)`, not JSON; and at a narrow window width the session header's buttons wrap onto a second line instead of running off the side.
   - Why: checked only with sample data in screenshots.
+- [ ] **Codex diffs (4c-2).** Restart the backend, start a Codex session on a git project and ask for a small edit to an existing file and a new file (for example "add type hints to one function and create `todo.md`"). Then ask for a second edit to the same file.
+  - Expect: each Codex **Edit** row shows its diff under it, with line numbers and `+N −M` on the row. A diff that changes more than 20 lines starts closed and opens on click; a smaller one starts open. The second edit's diff shows only that edit, not both. **Files changed** in the Split layout lists the file with 2 edits; opening it shows each edit's time, agent and diff.
+  - Why: the hub works out Codex's diffs by reading the files right after each patch. This was tested with a fake Codex and the real snapshot code, but not with the live CLI.
+- [ ] **Claude diffs and command rows (4c-2).** In a Claude session, ask for an edit to an existing file and for a command that fails (for example "run `git log` on a branch that doesn't exist").
+  - Expect: the Edit row shows the real diff with line numbers. A failed command shows a red `exit 128` (or whatever the code is) and the first and last lines of its output under the row. A successful command shows its first lines. The turn's last row reads like `✓ Done · 1 file edited`.
 
 ## Chats (no project folder)
 

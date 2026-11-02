@@ -1,5 +1,6 @@
 // What a session is working on, derived from its events: the agent's plan, its subagents and the files it changed.
 import type { SessionEvent } from "./api";
+import { editDiffs, type FileDiff } from "./diffs";
 
 export type PlanStatus = "pending" | "in_progress" | "completed";
 
@@ -19,7 +20,15 @@ export interface Subagent {
 
 export interface FileTouched {
   path: string;
-  edits: number;
+  // Oldest first.
+  edits: FileEdit[];
+}
+
+/** One edit to a file: the tool call, its result, and the file's part of the diff. */
+export interface FileEdit {
+  event: SessionEvent;
+  result?: SessionEvent;
+  diff: FileDiff | null;
 }
 
 /** Each tool call's result, and the calls refused for lack of approval, by tool call id. */
@@ -80,9 +89,13 @@ export function deriveProgress(
     if (event.type === "plan" && event.stint_id === currentStintId) plan = p.items ?? [];
     if (event.type === "user_message" || event.type === "handoff") turnStart = index;
     if (event.type === "tool_use") {
+      const result = outcomes.results.get(p.tool_use_id);
+      // A refused or failed edit changed nothing.
+      if (outcomes.denied.has(p.tool_use_id) || result?.payload.is_error) return;
+      const diffs = editDiffs(p.name, p.input ?? {}, result);
       for (const path of editedPaths(p.name, p.input ?? {})) {
-        const entry = files.get(path) ?? { path, edits: 0 };
-        entry.edits += 1;
+        const entry = files.get(path) ?? { path, edits: [] };
+        entry.edits.push({ event, result, diff: diffs.find((d) => d.path === path) ?? null });
         // Re-inserting moves the file to the end, so the most recent edit is last.
         files.delete(path);
         files.set(path, entry);

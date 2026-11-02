@@ -21,6 +21,14 @@ export function formatTime(value: string): string {
   return parseTime(value).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 }
 
+/** The time of day for today's moments ("14:05"), otherwise the date and time. */
+export function formatClock(value: string, now = new Date()): string {
+  const date = parseTime(value);
+  return date.toDateString() === now.toDateString()
+    ? date.toLocaleTimeString(undefined, { timeStyle: "short" })
+    : formatTime(value);
+}
+
 /** The time between two moments: "42s", "7 min", "2 h 5 min", "3 days". */
 export function formatDuration(from: string, to: string): string {
   const seconds = Math.max(0, (parseTime(to).getTime() - parseTime(from).getTime()) / 1000);

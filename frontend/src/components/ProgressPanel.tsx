@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { planCounts, type PlanItem, type Progress, type Subagent, type ToolOutcomes } from "../progress";
-import { PlanList, SubagentSteps, relativeTo } from "./Transcript";
+import { DiffStat, DiffView } from "./DiffView";
+import { formatClock, formatTime } from "../format";
+import { planCounts, type FileEdit, type FileTouched, type PlanItem, type Progress, type Subagent, type ToolOutcomes } from "../progress";
+import { PlanList, SubagentSteps, agentName, relativeTo } from "./Transcript";
 
 interface Props {
   progress: Progress;
@@ -75,12 +77,7 @@ export function ProgressAside({ progress, outcomes, projectPath, running }: Prop
         {files.length ? (
           <ul className="progress-files">
             {files.map((file) => (
-              <li key={file.path} title={file.path}>
-                <span className="progress-file-path">{relativeTo(projectPath, file.path)}</span>
-                <span className="muted">
-                  {file.edits} edit{file.edits === 1 ? "" : "s"}
-                </span>
-              </li>
+              <FileHistory key={file.path} file={file} projectPath={projectPath} />
             ))}
           </ul>
         ) : (
@@ -88,6 +85,60 @@ export function ProgressAside({ progress, outcomes, projectPath, running }: Prop
         )}
       </section>
     </aside>
+  );
+}
+
+/** A file the session changed; opens into each edit with its time, agent and diff. */
+function FileHistory({ file, projectPath }: { file: FileTouched; projectPath: string }) {
+  const [open, setOpen] = useState(false);
+  const diffs = file.edits.flatMap((e) => (e.diff ? [e.diff] : []));
+  const count = file.edits.length;
+  return (
+    <li className="file-history">
+      <button className="file-history-summary" onClick={() => setOpen(!open)} aria-expanded={open} title={file.path}>
+        <span className="tool-toggle" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+        <span className="progress-file-path">{relativeTo(projectPath, file.path)}</span>
+        <DiffStat diffs={diffs} />
+        <span className="muted">
+          {count} edit{count === 1 ? "" : "s"}
+        </span>
+      </button>
+      {open && (
+        <ol className="file-edits">
+          {file.edits.map((edit, i) => (
+            <li key={`${edit.event.id}-${i}`}>
+              {edit.diff ? (
+                // Each edit is a dropdown, open when it's small.
+                <DiffView
+                  diffs={[edit.diff]}
+                  projectPath={projectPath}
+                  collapsible
+                  label={<EditLabel edit={edit} />}
+                />
+              ) : (
+                <div className="file-edit-meta muted">
+                  <EditLabel edit={edit} />
+                  <span>no diff recorded</span>
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
+function EditLabel({ edit }: { edit: FileEdit }) {
+  return (
+    <span className="file-edit-label">
+      <time dateTime={edit.event.created_at} title={formatTime(edit.event.created_at)}>
+        {formatClock(edit.event.created_at)}
+      </time>
+      <span>{agentName(edit.event.agent)}</span>
+    </span>
   );
 }
 

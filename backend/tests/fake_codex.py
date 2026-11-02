@@ -2,12 +2,13 @@
 
 Modes: ok, question, tools, limit, crash, hang. Echoes its args and stdin prompt back
 in the final agent message so tests can check what the adapter sent. Event shapes
-follow codex-cli 0.164.0.
+follow codex-cli 0.164.0. `tools` writes hello.txt in its cwd, like a real patch.
 """
 
 import json
 import sys
 import time
+from pathlib import Path
 
 
 def emit(event: dict) -> None:
@@ -41,8 +42,9 @@ if mode == "tools":
                "aggregated_output": "", "exit_code": None, "status": "in_progress"}
     emit({"type": "item.started", "item": command})
     emit({"type": "item.completed", "item": {**command, "aggregated_output": "?? hello.txt\n", "exit_code": 0, "status": "completed"}})
+    Path("hello.txt").write_text("hello\n")
     emit({"type": "item.completed", "item": {"id": "item_2", "type": "file_change", "status": "completed",
-                                             "changes": [{"path": "hello.txt", "kind": "update"}]}})
+                                             "changes": [{"path": "hello.txt", "kind": "add"}]}})
 
 text = json.dumps({"args": args, "prompt": prompt})
 if mode == "question":

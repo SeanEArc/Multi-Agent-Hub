@@ -1082,3 +1082,41 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Possible follow-ups if wanted: a one-click "New chat" button that skips the dialog; a lighter headless prompt for chats (the plan-checklist instruction is unneeded there).
 - [ ] Carried over from Session 28: 4c-2 and the rest.
 
+---
+
+2026-11-02 (UTC-05:00)
+
+# Session 30: Built slice 4c-2 (edit diffs, command rows, turn-end rows, per-file edit history), on `feature/style-polish`.
+
+## What was done
+
+1. **Branch:** `feature/style-polish` fast-forwarded to `main` (it was behind by the chat sessions work).
+2. **How Codex diffs are captured (the open question from 4c-1).** Checked the real data first: Codex sends `item.started` for a `file_change` but applies the patch at once, so reading the file then would race it. The patch text is in Codex's session file, but only inside its code-mode `exec` tool input (a JS snippet calling `tools.apply_patch`), which is too fragile to parse. Chosen instead: the adapter reads each patched file right after `item.completed` and diffs it against the copy it kept after that file's previous patch, or against `HEAD` the first time. This works in non-git folders after the first edit, needs no Codex internals, and keeps diffs in the event. Limits: snapshots are in memory, so after a backend restart a file's first diff is against the last commit again; edits Codex makes through shell commands (it renamed a function with a Python one-liner in the "Plan Folder Test" session) are not `file_change` items and get no diff.
+3. **Backend** (`app/adapters/diffs.py`, new): every edit's `TOOL_RESULT` now carries `diffs: [{path, kind, diff, base, truncated}]` (unified hunks, capped at 40k characters; None for binary, files over 1 MB, or an update with no earlier copy). Claude's come from `structuredPatch` in the stream's `tool_use_result` (real line numbers), or a created file's content. `CliAdapter._on_event` is now async so `CodexAdapter` can read the files off the event loop. Codex command results now carry `exit_code`.
+4. **Bug fix:** Codex Shell rows showed the whole `powershell.exe -Command '…'` wrapper, because the unwrap regex only knew the double-quoted form; it now handles single quotes too (with `''` inside).
+5. **Frontend:**
+   - `diffs.ts`: an edit's diffs from the result, or for events saved before this, rebuilt from Claude's old and new text (no line numbers). Command outcome: Codex's `exit_code`, or Claude's from the `Exit code N` line its failed results start with.
+   - `DiffView.tsx`: per-file diffs with old and new line numbers, added and removed lines in green and red, gaps between hunks, "new"/"deleted" badges. Diffs are dropdowns (user asked): open when the edit adds and removes 20 lines or fewer, closed when it changes more (`OPEN_DIFF_LINES`). A one-file edit uses its row's ▸ toggle; a patch to several files gets a dropdown per file; each edit in **Files changed** is one too. Ligatures are turned off so `->` shows as typed. A new file hides its empty old-number column.
+   - Transcript: edit rows show their diff inline and `+N −M` on the row (a refused or failed edit shows its diff only when opened). Command rows show a red `exit N` when it isn't 0, and up to 4 lines of output under the row: the first lines, or for a failure the first 2 and last 2. Opening one shows the full command and output instead of JSON. Turn-end rows: a mark (✓, ?, ■), the label, "· N files edited", then usage, over a solid divider.
+   - **Files changed** (Split layout): each file opens into its edits, oldest first, each with the time, agent, `+/−` and its diff. Refused or failed edits are no longer counted.
+6. **Tests:** `test_diffs.py` (hunks, structured patch, truncation, first edit against the commit then against the previous edit, a deleted file from a subfolder session, a relative path, binary and unknown files) and new cases in the Claude and Codex adapter tests; fake Codex's `tools` mode now writes its file. **158 passed, 4 skipped.** The frontend type-checks and builds (same 500 kB warning as before).
+7. **Screenshots** (before and after, dark, light, 1280 and 420 px) against a temporary backend (8799) and Vite (5299) on a copy of the real `hub.db`. Claude's old edits in that copy were given real diffs by re-parsing their stored raw events. A real Codex turn to check the capture end to end was blocked as usage on the user's account, so a "Codex diff demo" session was seeded with diffs from the real `FileSnapshots` code on a temp repo. Fixes made from the screenshots: dropped a "since last commit" label that showed on almost every first edit; ligatures off; the failed-command preview showed only the tail and hid the error.
+
+## Current state
+
+- **Branch:** `feature/style-polish`, not committed yet.
+- **Phase 4c:** 4c-1 and 4c-2 built; 4c-2's screenshots are waiting on the user's review. 4c-3 and 4c-4 not started.
+
+## Next steps
+
+**For the user**
+- [ ] Look over the 4c-2 screenshots.
+- [ ] The new **Codex diffs** and **Claude diffs and command rows** checks in `TODO.md` (restart the backend first). The Codex one is the first live test of the capture.
+- [ ] Carried over: Phase 4b's **Light mode** and 4c-1's **Tables, task lists and code colors**.
+
+**For the agent**
+- [ ] Commit 4c-2 when the user is happy with it.
+- [ ] 4c-3: composer, per-agent accent colors and typography, with before/after screenshots.
+- [ ] Optional: backfill diffs into the real database's older Claude events from their raw events (what was done to the screenshot copy), if the user wants old sessions to show line numbers.
+- [ ] Carried over from Session 29: a one-click "New chat" button; a lighter headless prompt for chats.
+

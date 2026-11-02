@@ -39,6 +39,7 @@ from typing import Any
 
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, plan_items, split_plan
+from app.adapters.diffs import FileSnapshots
 from app.adapters.runner import Runner
 from app.models import AgentKind
 
@@ -51,8 +52,11 @@ NPM_NATIVE_BINARIES = [
     Path("node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"),
     Path("node_modules/@openai/codex/node_modules/@openai/codex-win32-arm64/vendor/aarch64-pc-windows-msvc/bin/codex.exe"),
 ]
-# Codex runs commands through PowerShell; show the command itself, not the wrapper.
-POWERSHELL_WRAPPER = re.compile(r'^"?[^"]*powershell(?:\.exe)?"? -Command "(.*)"$', re.IGNORECASE | re.DOTALL)
+# Codex runs commands through PowerShell; show the command itself, not the wrapper. The command
+# is double-quoted, or single-quoted with each ' inside written as ''.
+POWERSHELL_WRAPPER = re.compile(
+    r"""^"?[^"]*powershell(?:\.exe)?"? -Command (?:"(?P<double>.*)"|'(?P<single>.*)')$""", re.IGNORECASE | re.DOTALL
+)
 TOOL_NAMES = {
     "command_execution": "Shell",
     "file_change": "Edit",
@@ -106,6 +110,7 @@ class CodexAdapter(CliAdapter):
         self.sandbox = sandbox
         self.codex_home = codex_home or Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
         self._session_id = native_session_id
+        self._snapshots = FileSnapshots(self.cwd)
 
     @property
     def native_session_id(self) -> str | None:
@@ -141,9 +146,12 @@ class CodexAdapter(CliAdapter):
             options += ["--model", self.model]
         return options
 
-    def _on_event(self, event: AgentEvent) -> None:
+    async def _on_event(self, event: AgentEvent) -> None:
         if event.type is EventType.STARTED and event.data.get("session_id"):
             self._session_id = event.data["session_id"]
+        # A patch reports only its files, so the hub reads them right after it was applied to work out the diff.
+        if event.type is EventType.TOOL_RESULT and "changes" in event.data:
+            event.data["diffs"] = await asyncio.to_thread(self._snapshots.capture, event.data.pop("changes"))
 
     async def _after_turn(self) -> list[AgentEvent]:
         if self._session_id is None:
@@ -335,11 +343,15 @@ class TurnParser:
     def _tool_result(self, item: dict[str, Any]) -> AgentEvent:
         kind = item.get("type")
         failed = item.get("status") == "failed"
+        extra: dict[str, Any] = {}
         if kind == "command_execution":
             failed = failed or item.get("exit_code") not in (0, None)
             content = item.get("aggregated_output") or ""
+            extra["exit_code"] = item.get("exit_code")
         elif kind == "file_change":
             content = "\n".join(f"{c.get('kind')}: {c.get('path')}" for c in item.get("changes") or [])
+            # Replaced by `diffs` in CodexAdapter._on_event.
+            extra["changes"] = item.get("changes") or []
         elif kind == "mcp_tool_call":
             failed = failed or bool(item.get("error"))
             content = json.dumps(item.get("error") or item.get("result"), ensure_ascii=False)
@@ -347,7 +359,13 @@ class TurnParser:
             content = ""
         return AgentEvent(
             EventType.TOOL_RESULT,
-            {"tool_use_id": self._tool_id(item), "is_error": failed, "content": content, "parent_tool_use_id": None},
+            {
+                "tool_use_id": self._tool_id(item),
+                "is_error": failed,
+                "content": content,
+                "parent_tool_use_id": None,
+                **extra,
+            },
         )
 
     def _tool_id(self, item: dict[str, Any]) -> str:
@@ -385,4 +403,6 @@ class TurnParser:
 
 def _unwrap_shell(command: str) -> str:
     match = POWERSHELL_WRAPPER.match(command)
-    return match.group(1) if match else command
+    if not match:
+        return command
+    return match["double"] if match["double"] is not None else match["single"].replace("''", "'")
