@@ -1104,18 +1104,16 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/style-polish`, not committed yet.
-- **Phase 4c:** 4c-1 and 4c-2 built; 4c-2's screenshots are waiting on the user's review. 4c-3 and 4c-4 not started.
+- **Branch:** `feature/style-polish`, committed as `757a4bb`, pushed and fast-forwarded into `main` (pushed) at the user's request. The branch is kept for 4c-3.
+- **Phase 4c:** 4c-1 and 4c-2 built and merged. 4c-3 and 4c-4 not started.
 
 ## Next steps
 
 **For the user**
-- [ ] Look over the 4c-2 screenshots.
 - [ ] The new **Codex diffs** and **Claude diffs and command rows** checks in `TODO.md` (restart the backend first). The Codex one is the first live test of the capture.
 - [ ] Carried over: Phase 4b's **Light mode** and 4c-1's **Tables, task lists and code colors**.
 
 **For the agent**
-- [ ] Commit 4c-2 when the user is happy with it.
 - [ ] 4c-3: composer, per-agent accent colors and typography, with before/after screenshots.
 - [ ] Optional: backfill diffs into the real database's older Claude events from their raw events (what was done to the screenshot copy), if the user wants old sessions to show line numbers.
 - [ ] Carried over from Session 29: a one-click "New chat" button; a lighter headless prompt for chats.
