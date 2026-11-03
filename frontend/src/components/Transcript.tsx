@@ -1,4 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
+import { AgentName, agentClass } from "./AgentBadge";
 import { DiffStat, DiffView, startsOpen } from "./DiffView";
 import { MarkdownText } from "./MarkdownText";
 import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
@@ -83,7 +84,8 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
         );
       case "user_message":
         return (
-          <div key={event.id} id={eventAnchor(event.id)} className="row user-message">
+          // Marked in the color of the agent it was sent to.
+          <div key={event.id} id={eventAnchor(event.id)} className={`row user-message ${agentClass(event.agent)}`}>
             <span className="prompt-mark">❯</span>
             <span className="pre-wrap">{p.text}</span>
           </div>
@@ -196,11 +198,14 @@ function HandoffDivider({ sessionId, event }: { sessionId: string; event: Sessio
   const brief = useBrief(sessionId, event.stint_id);
   const p = event.payload;
   return (
-    <div id={eventAnchor(event.id)} className="row handoff">
+    // The line takes the color of the agent that takes over.
+    <div id={eventAnchor(event.id)} className={`row handoff ${agentClass(p.to_agent)}`}>
       <div className="handoff-line">
         <span>
-          {agentName(p.from_agent)} → {agentName(p.to_agent)}
-          {p.model ? ` (${p.model})` : ""} · {REASONS[p.reason] ?? p.reason}
+          <AgentName agent={p.from_agent} /> → <AgentName agent={p.to_agent} />
+          <span className="muted">
+            {p.model ? ` (${p.model})` : ""} · {REASONS[p.reason] ?? p.reason}
+          </span>
         </span>
         {brief.button}
       </div>

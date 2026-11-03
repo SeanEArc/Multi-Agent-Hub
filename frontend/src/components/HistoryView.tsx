@@ -3,6 +3,7 @@ import type { AgentSession, SessionEvent, SessionStatus } from "../api";
 import { formatDuration, formatTime } from "../format";
 import { deriveHistory, formatTokens, historyTotals, type StintHistory, type Turn, type TurnOutcome } from "../history";
 import { SummaryPanel } from "./SummaryPanel";
+import { AgentName } from "./AgentBadge";
 import { REASONS, agentName, relativeTo, truncate, useBrief } from "./Transcript";
 
 interface Props {
@@ -102,7 +103,7 @@ function StintCard({ sessionId, item, number, current, projectPath, onShowInTran
         <div>
           <h2>
             <span className="history-stint-number">{number}</span>
-            {agentName(stint.agent)}
+            <AgentName agent={stint.agent} />
             {model && <span className="chip">{model}</span>}
             {current && <span className="chip">current</span>}
           </h2>

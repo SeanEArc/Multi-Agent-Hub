@@ -1118,3 +1118,35 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Optional: backfill diffs into the real database's older Claude events from their raw events (what was done to the screenshot copy), if the user wants old sessions to show line numbers.
 - [ ] Carried over from Session 29: a one-click "New chat" button; a lighter headless prompt for chats.
 
+---
+
+2026-11-02 (UTC-05:00)
+
+# Session 31: Built slices 4c-3 (agent colors, composer, typography) and 4c-4 (final pass over light mode, narrow windows and the dashboard), on `feature/style-polish`.
+
+## What was done
+
+1. **User asked** to build out the rest of Phase 4c. Both slices were built in one go, with before and after screenshots.
+2. **4c-3, per-agent colors:** theme tokens `--agent-claude` (orange, the old accent), `--agent-codex` (violet) and `--agent-ollama` (neutral gray), for dark and light. An `agent-<kind>` class sets `--agent` for everything inside it (`AgentBadge.tsx`: `agentClass`, `AgentChip`, `AgentName`). Colored: the agent chip in the session header and on dashboard cards (a dot plus a tinted border), the agent's name in the sidebar and in History headings, handoff lines (each name in its color, the divider in the new agent's), usage bars, the spinner, plan bars and the current-step mark, and each user message's ❯ (the agent it was sent to).
+3. **4c-3, composer:** grows with its text up to 280 px and then scrolls; a footer naming the agent (in its color) and model; a focus ring and **Send** in the agent's color; amber while the agent waits on an answer, focused or not (it used to lose the amber on autofocus).
+4. **4c-3, typography:** markdown headings sized for a conversation (18/16/14 px, they used the browser's defaults), paragraph and list spacing, muted list markers, quotes with a left bar, a thin rule for `---`, links in the info color with a soft underline, inline code at 0.88em; message line height 1.6.
+5. **4c-4, fixes from screenshots of the dashboard, History, the New session and Hand off dialogs, dark and light, 1280 and 420 px:** a removed worktree's branch name ran past its dashboard card (now ends in "…"); at narrow widths the composer hides the keyboard hint so the model name fits, with **Send** on the right. Everything else looked right in light mode, which covers Phase 4b's **Light mode** check in screenshots.
+6. **Checks:** the frontend type-checks and builds. Backend untouched. Screenshots used the scratch copy of `hub.db` plus a seeded "Style sample" session (markdown, a Claude → Codex handoff, a question).
+
+## Current state
+
+- **Branch:** `feature/style-polish`, not committed yet.
+- **Phase 4c:** all four slices built; waiting on the user's sign-off and the live checks in `TODO.md`.
+
+## Next steps
+
+**For the user**
+- [ ] Look over the 4c-3 and 4c-4 screenshots and sign off on the look (Phase 4c's acceptance).
+- [ ] The live checks in `TODO.md`: **Codex diffs**, **Claude diffs and command rows**, **Tables, task lists and code colors**, and **Light mode** with real sessions.
+- [ ] Install Rust before Phase 4d.
+
+**For the agent**
+- [ ] Commit 4c-3 and 4c-4 when the user says so; after sign-off, mark Phase 4c done in `plan.md` and `CLAUDE.md`.
+- [ ] Phase 4d: the Tauri desktop shell.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+

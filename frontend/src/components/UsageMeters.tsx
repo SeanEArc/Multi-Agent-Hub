@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AGENT_NAMES, api, type AgentKind, type AgentUsage } from "../api";
+import { agentClass } from "./AgentBadge";
 
 const POLL_MS = 60000;
 const LABELS: Record<string, string> = { five_hour: "5h", seven_day: "7d" };
@@ -60,7 +61,7 @@ function UsageMeter({ agent, usage }: { agent: AgentKind; usage: AgentUsage }) {
   ].join("\n");
 
   return (
-    <span className={`usage-meter${usage.status === "rejected" ? " limit" : ""}`} title={title}>
+    <span className={`usage-meter ${agentClass(agent)}${usage.status === "rejected" ? " limit" : ""}`} title={title}>
       <span className="usage-agent">
         {name}
         {usage.plan_type ? ` ${usage.plan_type}` : ""}

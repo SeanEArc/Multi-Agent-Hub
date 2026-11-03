@@ -1,6 +1,6 @@
 import {
   AGENT_NAMES,
-  agentLabel,
+  sessionModel,
   workdir,
   type AgentKind,
   type AgentSession,
@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { timeAgo } from "../format";
 import { planCounts, type PlanItem } from "../progress";
+import { AgentChip, agentClass } from "./AgentBadge";
 import { StatusBadge } from "./StatusBadge";
 import { PLAN_LABELS, summarize, truncate } from "./Transcript";
 
@@ -73,13 +74,15 @@ export function Dashboard({ sessions, onSelect, onNew }: Props) {
 function SessionCard({ session, onSelect }: { session: AgentSession; onSelect: () => void }) {
   const worktree = session.worktree;
   return (
-    <button className={`session-card status-${session.status}`} onClick={onSelect}>
+    <button className={`session-card status-${session.status} ${agentClass(session.agent)}`} onClick={onSelect}>
       <span className="session-card-top">
         <span className="session-card-title">{session.title}</span>
         <StatusBadge status={session.status} />
       </span>
       <span className="session-card-meta">
-        <span className="chip">{agentLabel(session)}</span>
+        <AgentChip agent={session.agent} short>
+          <span className="muted"> ({sessionModel(session)})</span>
+        </AgentChip>
         {worktree && (
           <span className={`chip mono${worktree.status === "removed" ? " removed" : ""}`}>⑂ {worktree.branch}</span>
         )}

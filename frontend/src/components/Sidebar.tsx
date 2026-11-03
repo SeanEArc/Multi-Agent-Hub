@@ -1,4 +1,5 @@
-import { agentLabel, type AgentSession } from "../api";
+import { sessionModel, type AgentSession } from "../api";
+import { AgentName } from "./AgentBadge";
 import { folderName } from "./Dashboard";
 import { StatusDot } from "./StatusBadge";
 
@@ -37,7 +38,8 @@ export function Sidebar({ sessions, selectedId, onSelect, onNew, onSettings }: P
             <span className="session-item-text">
               <span className="session-item-title">{session.title}</span>
               <span className="session-item-meta">
-                {agentLabel(session)} · {session.chat ? "Chat" : folderName(session.project_path)}
+                <AgentName agent={session.agent} short /> ({sessionModel(session)}) ·{" "}
+                {session.chat ? "Chat" : folderName(session.project_path)}
               </span>
             </span>
           </button>

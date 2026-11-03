@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AGENT_NAMES, ApiError, api, workdir, type AgentSession, type ProgressLayout, type SessionEvent } from "../api";
 import { deriveProgress, toolOutcomes } from "../progress";
 import { useSessionStream } from "../useSessionStream";
+import { AgentChip, agentClass } from "./AgentBadge";
 import { Composer } from "./Composer";
 import { HandoffDialog } from "./HandoffDialog";
 import { HistoryView } from "./HistoryView";
@@ -72,6 +73,7 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
   const reportedModel: string | undefined = reported?.payload.model ?? undefined;
   const lastUsageReport = lastOf(events, "rate_limit", "limit_reached");
   const agentName = AGENT_NAMES[session.agent];
+  const model = reportedModel ?? session.reported_model ?? session.model ?? "default model";
   const busy = status === "working" || status === "handing_off";
   const folder = workdir(session);
   const worktree = session.worktree;
@@ -104,13 +106,14 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
   }
 
   return (
-    <section className="session-view">
+    // The current agent's color (--agent) tints the composer, the spinner and the prompt marks.
+    <section className={`session-view ${agentClass(session.agent)}`}>
       <header className="session-header">
         <div className="session-heading">
           <h1>{session.title}</h1>
           <div className="session-meta">
-            <span className="chip">{agentName}</span>
-            <span className="chip">{reportedModel ?? session.reported_model ?? session.model ?? "default model"}</span>
+            <AgentChip agent={session.agent} />
+            <span className="chip">{model}</span>
             {worktree && (
               <button
                 className={`chip chip-button${worktree.status === "removed" ? " removed" : ""}`}
@@ -218,7 +221,8 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
 
           <Composer
             status={status}
-            agentName={agentName}
+            agent={session.agent}
+            model={model}
             onSend={async (text) => {
               showView("transcript");
               await api.sendMessage(session.id, text);

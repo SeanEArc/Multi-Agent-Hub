@@ -17,7 +17,7 @@ export const AGENT_NAMES: Record<AgentKind, string> = {
   ollama: "Local model",
 };
 
-const SHORT_NAMES: Record<AgentKind, string> = {
+export const SHORT_NAMES: Record<AgentKind, string> = {
   claude: "Claude",
   codex: "Codex",
   ollama: "Local model",
@@ -25,7 +25,12 @@ const SHORT_NAMES: Record<AgentKind, string> = {
 
 /** "Claude (opus)" or "Codex (gpt-6.1-sol)": the current agent and the model it uses. */
 export function agentLabel(session: AgentSession): string {
-  return `${SHORT_NAMES[session.agent]} (${session.reported_model ?? session.model ?? "default"})`;
+  return `${SHORT_NAMES[session.agent]} (${sessionModel(session)})`;
+}
+
+/** The model the session's agent runs: the one it reported, the one asked for, or "default". */
+export function sessionModel(session: AgentSession): string {
+  return session.reported_model ?? session.model ?? "default";
 }
 
 // Agents the backend can run; the local model arrives in phase 5.
