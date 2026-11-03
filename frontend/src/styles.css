@@ -1,4 +1,5 @@
-/* Dark by default (Claude Code's terminal feel); light when the system asks for it. */
+/* Dark by default (Claude Code's terminal feel); light when <html data-theme="light"> (theme.ts sets it
+   from the sidebar's switch, following the system unless the user picks one). */
 :root {
   color-scheme: dark;
   --bg: #1a1918;
@@ -32,33 +33,31 @@
   --sans: system-ui, "Segoe UI", -apple-system, sans-serif;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #faf9f7;
-    --panel: #f2f0ec;
-    --panel-raised: #ffffff;
-    --border: #dedad4;
-    --text: #1f1e1c;
-    --muted: #6d6964;
-    --accent: #c2603f;
-    --accent-text: #ffffff;
-    --ok: #3d8b41;
-    --warn: #a86f12;
-    --danger: #c0423a;
-    --info: #3a6db0;
-    --code-bg: #f2f0ec;
-    --hl-comment: #7a756e;
-    --hl-keyword: #b04a2b;
-    --hl-string: #3f7a1f;
-    --hl-number: #94620c;
-    --hl-title: #2b5f9e;
-    --hl-type: #7d3fa3;
-    --hl-attr: #1f7a74;
-    --agent-claude: #c2603f;
-    --agent-codex: #5b4cc4;
-    --agent-ollama: #66615b;
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #faf9f7;
+  --panel: #f2f0ec;
+  --panel-raised: #ffffff;
+  --border: #dedad4;
+  --text: #1f1e1c;
+  --muted: #6d6964;
+  --accent: #c2603f;
+  --accent-text: #ffffff;
+  --ok: #3d8b41;
+  --warn: #a86f12;
+  --danger: #c0423a;
+  --info: #3a6db0;
+  --code-bg: #f2f0ec;
+  --hl-comment: #7a756e;
+  --hl-keyword: #b04a2b;
+  --hl-string: #3f7a1f;
+  --hl-number: #94620c;
+  --hl-title: #2b5f9e;
+  --hl-type: #7d3fa3;
+  --hl-attr: #1f7a74;
+  --agent-claude: #c2603f;
+  --agent-codex: #5b4cc4;
+  --agent-ollama: #66615b;
 }
 
 /* Sets --agent for an element and everything inside it. */
@@ -1227,6 +1226,10 @@ textarea:focus,
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.dialog .field > .layout-switch {
+  align-self: flex-start;
 }
 
 /* --- Folder picker ------------------------------------------------------------------------ */

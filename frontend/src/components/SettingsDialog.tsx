@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type HubSettings, type LimitPolicy, type ProgressLayout } from "../api";
+import { useTheme } from "../theme";
 import { ChainEditor, POLICY_LABELS } from "./ChainEditor";
 
 interface Props {
@@ -12,6 +13,7 @@ export function SettingsDialog({ onClose }: Props) {
   const [settings, setSettings] = useState<HubSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useTheme();
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -36,6 +38,17 @@ export function SettingsDialog({ onClose }: Props) {
     <dialog ref={dialog} className="dialog" onClose={onClose}>
       <form onSubmit={submit}>
         <h2>Settings</h2>
+        <div className="field">
+          <span>Theme</span>
+          <div className="layout-switch" role="group" aria-label="Theme">
+            {(["system", "light", "dark"] as const).map((option) => (
+              <button key={option} type="button" aria-pressed={theme === option} onClick={() => setTheme(option)}>
+                {option === "system" ? "System" : option === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
+          </div>
+          <span className="hint">System follows the Windows light or dark setting. Applies right away, in this browser.</span>
+        </div>
         {settings ? (
           <>
             <div className="field">
