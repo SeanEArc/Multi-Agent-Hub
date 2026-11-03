@@ -1180,3 +1180,27 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Phase 4d: the Tauri desktop shell.
 - [ ] Phase 10 (after phase 8): design styles and layouts, starting with mock-ups to choose which to offer.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+---
+
+2026-11-02 (UTC-05:00)
+
+# Session 33: Marked Phase 4c done after the user's sign-off.
+
+## What was done
+
+1. **User signed off** on the 4c look, which is the phase's acceptance. Marked Phase 4c done in `plan.md` and `CLAUDE.md`.
+
+## Current state
+
+- **Phase 4c:** done. **Next phase:** 4d, the Tauri desktop shell.
+
+## Next steps
+
+**For the user**
+- [ ] Install Rust (rustup with the MSVC toolchain) before Phase 4d.
+- [ ] Still open in `TODO.md`, when convenient: **Codex diffs**, **Claude diffs and command rows**, **Tables, task lists and code colors**, and **Light mode** with real sessions.
+
+**For the agent**
+- [ ] Phase 4d: the Tauri desktop shell.
+- [ ] Phase 10 (after phase 8): design styles and layouts, starting with mock-ups.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
