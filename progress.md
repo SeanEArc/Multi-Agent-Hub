@@ -1150,3 +1150,33 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Phase 4d: the Tauri desktop shell.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
 
+---
+
+2026-11-02 (UTC-05:00)
+
+# Session 32: Added a light/dark theme switch to Settings and planned Phase 10 (design styles and layouts).
+
+## What was done
+
+1. **User asked** where to switch to light mode. There was no switch: light mode only followed the Windows setting (`prefers-color-scheme`).
+2. **Theme switch:** a **System / Light / Dark** switch, first in the Settings dialog (it was in the sidebar footer first; moved at the user's request). `frontend/src/theme.ts` (`useTheme`, `applyTheme`, `readTheme`) sets `data-theme` on `<html>`, follows Windows live while on System, and remembers a Light or Dark choice in `localStorage` (`hub.theme`). It applies at once, separate from Save and Cancel. `main.tsx` applies the saved theme before the first render. `styles.css`: the light tokens moved from the media query to `:root[data-theme="light"]`.
+3. **Phase 10 planned:** the user wants several design styles and layouts to choose from. Decided to make it its own phase rather than part of 4c, because phases 5, 7 and 8 still add screens and each layout would have to be reworked for them. Placed after phase 8 and before phase 6, so the iPhone client can build on the layout structure. Added to `plan.md` (phase entry, build order, decision) and `CLAUDE.md`.
+4. **Checks:** the frontend type-checks and builds. Not looked at in a browser by the agent.
+
+## Current state
+
+- **Branch:** `feature/style-polish`, committed as `ab4e7a8`, pushed and fast-forwarded into `main` (pushed). The branch is kept.
+- **Phase 4c:** all four slices plus the theme switch built and merged; waiting on the user's sign-off and the live checks in `TODO.md`.
+
+## Next steps
+
+**For the user**
+- [ ] Try the theme switch in Settings, look over the 4c screenshots and sign off on the look (Phase 4c's acceptance).
+- [ ] The live checks in `TODO.md`: **Codex diffs**, **Claude diffs and command rows**, **Tables, task lists and code colors**, and **Light mode** (now from Settings).
+- [ ] Install Rust before Phase 4d.
+
+**For the agent**
+- [ ] After the user's sign-off, mark Phase 4c done in `plan.md` and `CLAUDE.md`.
+- [ ] Phase 4d: the Tauri desktop shell.
+- [ ] Phase 10 (after phase 8): design styles and layouts, starting with mock-ups to choose which to offer.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

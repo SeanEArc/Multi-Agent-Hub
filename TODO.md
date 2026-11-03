@@ -35,7 +35,7 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Also try: Re-summarize while a turn is running (it works alongside), and with `$env:HUB_SIMULATE_LIMIT="claude"` on a Claude session (Codex should write it, noting Claude was out of usage).
   - Why: the one-off call (`claude --tools "" --no-session-persistence`, `codex exec --ephemeral` read-only) passed the live adapter tests and one real Codex summary on sample data; not yet on a real session.
 
-- [ ] **Light mode.** Switch Windows (or the browser) to light mode and look over the dashboard and a session.
+- [ ] **Light mode.** Pick **Light** under Theme in Settings (or leave it on System and switch Windows) and look over the dashboard and a session.
   - Why: new colors were added for the dashboard and progress view; the screenshots covered light mode with sample data only.
 
 - [x] **Handoff still works.** (passed 2026-11-02) In a session, click **Hand off** and pick another agent.
