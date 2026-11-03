@@ -1135,8 +1135,8 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 ## Current state
 
-- **Branch:** `feature/style-polish`, not committed yet.
-- **Phase 4c:** all four slices built; waiting on the user's sign-off and the live checks in `TODO.md`.
+- **Branch:** `feature/style-polish`, committed as `d3911ae`, pushed and fast-forwarded into `main` (pushed) at the user's request. The branch is kept.
+- **Phase 4c:** all four slices built and merged; waiting on the user's sign-off and the live checks in `TODO.md`.
 
 ## Next steps
 
@@ -1146,7 +1146,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Install Rust before Phase 4d.
 
 **For the agent**
-- [ ] Commit 4c-3 and 4c-4 when the user says so; after sign-off, mark Phase 4c done in `plan.md` and `CLAUDE.md`.
+- [ ] After the user's sign-off, mark Phase 4c done in `plan.md` and `CLAUDE.md`.
 - [ ] Phase 4d: the Tauri desktop shell.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
 
