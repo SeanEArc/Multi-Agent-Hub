@@ -2,6 +2,22 @@
 
 Working name: `multi-agent-hub`. Status: confirmed by the user in the planning interview. Platform: Windows desktop, personal use only.
 
+## Roadmap
+
+Phases are listed in build order. The numbers are stable labels, not the order: phases 7 to 10 were added after phase 6, and numbers are kept so existing references stay valid.
+
+| Order | Phase | Status |
+|---|---|---|
+| 1 | 1 to 3: Claude, Codex, handoff | Done |
+| 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
+| 3 | 4d: Tauri shell | Next |
+| 4 | 5: Local model | Not started |
+| 5 | 7: Delegation | Not started, open questions settled |
+| 6 | 9: Docker isolation | Not started |
+| 7 | 8: Parallel split | Not started |
+| 8 | 10: Design styles and layouts | Not started |
+| 9 | 6: iPhone access, including Tailscale | Not started |
+
 ## 1. Purpose and requirements
 
 **Problem.** Using Claude Code, ChatGPT/Codex and local models means switching between separate apps, with no shared view of what each agent is doing, and work stops when a subscription runs out of usage.
@@ -198,19 +214,6 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Attempt limit (decided 2026-11-05): a cap on how much a sub-task can use, so a struggling delegate doesn't waste usage. Proposed defaults, adjustable in Settings: at most 5 turns per delegate stint, and at most 2 re-delegations of the same sub-task. When a cap is hit, the delegate stops and a partial report goes back to the parent with the cap named under "where the agents struggled"; the parent then asks the user rather than delegating again.
 - Tradeoffs: each agent sees a brief, not the other's full reasoning; delegating costs extra turns on both agents.
 
-**Phase 8: Parallel split (minimal)** (added 2026-10-25; a first version, developed further later)
-- Goal: several agents work on parts of one task at the same time, then their work is combined and the original agent continues.
-- In scope:
-  - **Trigger:** a Split action (button or slash command) where the user lists the sub-tasks and assigns an agent to each, for example `/split claude: build the settings page | codex: add the settings API`.
-  - **Running:** each sub-task becomes a child stint of the current stint and runs at the same time as the others, in its own git worktree and branch created from the session's current state. Each child gets the handoff brief plus its sub-task. Questions from a child reach the user as usual, labelled with that child.
-  - **Progress:** the session view lists the children with their agent, sub-task and status, and each child's transcript can be opened.
-  - **Combining:** when all children have finished, the hub merges their branches back into the session one at a time. A clean merge continues automatically; a conflict stops and is shown to the user, and nothing is resolved automatically.
-  - **Return:** the parent stint resumes with a combined report (per child: sub-task, final message, files changed, merge result), and the original agent gives the user an overview and continues.
-- Exclusions (later development): the agent proposing or planning the split itself; automatic conflict resolution; sub-tasks that depend on each other; children splitting again; a live side-by-side view; limits on how many agents run at once.
-- Dependencies: phase 4a (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
-- Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
-- Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
-
 **Phase 9: Container isolation (Docker)** (added 2026-10-25; numbered 9 so existing phase numbers stay valid; planned after phase 4 and before phase 6)
 - Goal: agents run inside Docker containers, so a misbehaving or prompt-injected agent can reach only its session's files, not the rest of the user's PC.
 - In scope:
@@ -225,6 +228,19 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance: a Claude session and a Codex session each run in their own container, complete a task in the project, can't read a file planted outside the mounted folder, and hand off to each other as before.
 - Open: whether Codex's ChatGPT sign-in works inside a container (device-code or browser flow); Claude Code's official dev container setup as a starting point; image size and start-up time; how the Codex and Claude permission settings change inside a container (their own sandboxes may be redundant there).
 - Tradeoffs: real isolation, at the cost of Docker Desktop's memory and start-up time, a second login per agent, per-project images, and slower file access unless projects live in WSL.
+
+**Phase 8: Parallel split (minimal)** (added 2026-10-25; a first version, developed further later)
+- Goal: several agents work on parts of one task at the same time, then their work is combined and the original agent continues.
+- In scope:
+  - **Trigger:** a Split action (button or slash command) where the user lists the sub-tasks and assigns an agent to each, for example `/split claude: build the settings page | codex: add the settings API`.
+  - **Running:** each sub-task becomes a child stint of the current stint and runs at the same time as the others, in its own git worktree and branch created from the session's current state. Each child gets the handoff brief plus its sub-task. Questions from a child reach the user as usual, labelled with that child.
+  - **Progress:** the session view lists the children with their agent, sub-task and status, and each child's transcript can be opened.
+  - **Combining:** when all children have finished, the hub merges their branches back into the session one at a time. A clean merge continues automatically; a conflict stops and is shown to the user, and nothing is resolved automatically.
+  - **Return:** the parent stint resumes with a combined report (per child: sub-task, final message, files changed, merge result), and the original agent gives the user an overview and continues.
+- Exclusions (later development): the agent proposing or planning the split itself; automatic conflict resolution; sub-tasks that depend on each other; children splitting again; a live side-by-side view; limits on how many agents run at once.
+- Dependencies: phase 4a (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
+- Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
+- Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
 
 **Phase 10: Design styles and layouts** (added 2026-11-02; numbered 10 so existing phase numbers stay valid; planned after phase 8 and before phase 6)
 - Goal: the user can switch the app between several visual styles and layouts in Settings, keeping today's look as the default.

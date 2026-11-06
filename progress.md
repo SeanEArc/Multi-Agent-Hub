@@ -1225,3 +1225,25 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Break Phase 7 into slices (like 4a to 4d) and start the first.
 - [ ] Later: Phase 4d once Rust is installed; Phase 10 after phase 8.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-06 (UTC-05:00)
+
+# Session 35: Rust installed, back to Phase 4d next, and added a roadmap to plan.md.
+
+## What was done
+
+1. **User installed Rust,** so Phase 4d (Tauri) is next again, ahead of Phase 7, replacing the choice in Session 34. Checked: Rust 1.99.1 on the stable MSVC toolchain, the C++ build tools (Visual Studio Community 2022) and WebView2. `rustc` and `cargo` are in `%USERPROFILE%\.cargo\bin`, not yet on PATH in terminals opened before the install.
+2. **Plan order:** added a Roadmap table at the top of `plan.md` and moved Phase 9 above Phase 8 to match the build order. Phase numbers are unchanged, because they are used throughout the code and these recaps.
+
+## Next steps
+
+**For the user**
+- [ ] Confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+- [ ] When back at the PC, open the Phase 4d app from its desktop shortcut (the acceptance check).
+
+**For the agent**
+- [ ] Phase 4d on `feature/tauri-shell`: shell, token, sidecar (PyInstaller), app data move, installer and shortcut.
+- [ ] Then Phase 5, 7, 9, 8, 10, 6, per the roadmap.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
