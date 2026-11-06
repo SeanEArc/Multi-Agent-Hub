@@ -1204,3 +1204,24 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Phase 4d: the Tauri desktop shell.
 - [ ] Phase 10 (after phase 8): design styles and layouts, starting with mock-ups.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-05 (UTC-05:00)
+
+# Session 34: Settled Phase 7's open questions (delegate limits, return report, attempt limit) and chose it to go before 4d.
+
+## What was done
+
+1. **User chose** to put Phase 4d (Tauri) aside for now; nothing else depends on it. Phase 7 (delegation) is next.
+2. **Decided and recorded in `plan.md`:** a delegate that hits its usage limit returns a partial report, and the parent passes the unfinished steps to the next agent in the chain (skipping the parent and agents already limited); the return report lists what was completed, what each agent did, next steps and where the agents struggled; an attempt limit caps turns per delegate (default 5) and re-delegations per sub-task (default 2), adjustable in Settings.
+
+## Next steps
+
+**For the user**
+- [ ] Confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Break Phase 7 into slices (like 4a to 4d) and start the first.
+- [ ] Later: Phase 4d once Rust is installed; Phase 10 after phase 8.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

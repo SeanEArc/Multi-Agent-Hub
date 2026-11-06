@@ -193,7 +193,9 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Exclusions: running several delegates at the same time (phase 8).
 - Dependencies: phase 3; phase 5 only if the local model is a delegate.
 - Acceptance: in a Codex session the user delegates a task to Claude, Claude completes it, and the session returns to Codex, which summarizes what Claude did and changed and continues.
-- Open: what happens when the delegate hits its limit (return a partial report, or move along the chain); exactly what the return report lists.
+- Delegate hits its limit (decided 2026-11-05): the delegate stops and the hub returns a **partial report** to the parent agent. The parent then writes the missing information and unfinished steps as a new sub-task, and the hub delegates it to the next agent in the chain, skipping the parent and any agent that hit its limit earlier in the run (as `_limited_agents` does for handoff). Example: Codex delegates to Claude, Claude runs out of usage partway through, Codex passes the unfinished steps to the next in line, such as the local model. If no agent is left, the parent gets the partial report and continues itself or tells the user. The same rule applies to each child in phase 8, where one parent can have several delegates.
+- Return report (decided 2026-11-05), full or partial: a summary of what was completed; what each agent did (one entry per delegate stint, so a re-delegated sub-task lists every agent that worked on it); next steps (the unfinished steps, empty when done); and where the agents struggled (failed commands, errors, steps retried, the attempt limit being hit). Files changed (from git) and commands run stay in it as supporting detail.
+- Attempt limit (decided 2026-11-05): a cap on how much a sub-task can use, so a struggling delegate doesn't waste usage. Proposed defaults, adjustable in Settings: at most 5 turns per delegate stint, and at most 2 re-delegations of the same sub-task. When a cap is hit, the delegate stops and a partial report goes back to the parent with the cap named under "where the agents struggled"; the parent then asks the user rather than delegating again.
 - Tradeoffs: each agent sees a brief, not the other's full reasoning; delegating costs extra turns on both agents.
 
 **Phase 8: Parallel split (minimal)** (added 2026-10-25; a first version, developed further later)
@@ -283,5 +285,6 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Windows Codex sign-in billing report: checked 2026-10-25 with ChatGPT login and no API key set; no API charges appeared.
 - Whether limit nearing can be detected before the error.
 - How the parallel split develops after its minimal version (phase 8): agent-proposed splits, conflict handling, dependent sub-tasks, and the live view.
+- Phase 7's limit handling, return report and attempt limit (decided 2026-11-05): a delegate that hits its limit returns a partial report, and the parent passes the unfinished steps to the next agent in the chain; the report lists what was completed, what each agent did, next steps and where the agents struggled; turns per delegate and re-delegations per sub-task are capped (defaults 5 and 2, open to change).
 - Placement of phase 7 relative to phase 5 (both depend only on phase 3). Phase 8 comes after phases 4 and 7.
 - Phase 9 details: Codex's ChatGPT sign-in inside a container, the default image's contents, and whether projects move into WSL for file speed.
