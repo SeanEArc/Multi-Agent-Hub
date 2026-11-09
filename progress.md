@@ -1277,3 +1277,31 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Phase 5 (local model: Ollama adapter, model choice, last in the default chain); then 7, 9, 8, 10, 6, per the roadmap.
 - [ ] Possible later: code-sign the installer (removes the SmartScreen warning) and in-app updates.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-09 (UTC-05:00)
+
+# Session 37: Merged and pushed Phase 4d; revised Phase 5's scope (local models work like Claude and Codex, with no subscription).
+
+## What was done
+
+1. **Phase 4d merged:** committed as `f6ec60f` on `feature/tauri-shell`, fast-forwarded into `main`, and pushed both (the push also carried the unpushed roadmap commit `7bc040f`).
+2. **Old data copy:** the new database had everything plus the user's session in the app (15 sessions, 1,346 events). Deleting `backend\data` was blocked by the permission system, so it is still there for the user to delete.
+3. **Phase 5 scope revised in `plan.md`** (user decisions): any local model the user installs must work the same way as Claude and Codex, as a coding agent in project sessions and as a chatbot in chats, and must not depend on a Claude or ChatGPT subscription. The acceptance check now covers a chat, a simple coding task and a handoff from Codex.
+4. **Checked:** Ollama is not installed. codex-cli 0.164.0 has `--oss --local-provider ollama|lmstudio`; with an empty `CODEX_HOME` (no sign-in), `codex exec --oss` skipped login and only stopped because no Ollama server was running, so the Codex route appears to need no subscription (to confirm with a running server).
+5. **Open in the plan:** the engine (A: Codex CLI with `--oss`, reusing the Codex adapter; B: the hub's own agent loop with a small tool set) and the runtimes (Ollama, LM Studio, any OpenAI-compatible server). Nine setup helpers (detection, model list, test button, downloads, model suggestions, setup guide, context-size fix, custom server, health indicator) are listed in the plan and on hold.
+
+## Next steps
+
+**For the user**
+- [ ] Delete the old copy: `Remove-Item -Recurse -Force backend\data` (from the repo folder).
+- [ ] Choose Phase 5's engine (Codex CLI with `--oss`, or the hub's own agent loop) and the runtimes to support.
+- [ ] Install a local runtime (for example Ollama or LM Studio) and one model, to test against.
+- [ ] Confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Once the engine is chosen: confirm the no-sign-in behavior against a running local server, break Phase 5 into slices and start the first.
+- [ ] Later: the setup helpers on hold in `plan.md`; then phases 7, 9, 8, 10, 6, per the roadmap.
+- [ ] Possible later: code-sign the installer and in-app updates.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

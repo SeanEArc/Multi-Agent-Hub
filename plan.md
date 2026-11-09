@@ -11,7 +11,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5: Local model | Next |
+| 4 | 5: Local model | Next, scope revised; engine and runtimes open |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -71,7 +71,7 @@ No out-of-scope item was kept against a challenge. All deferrals are the user's 
 | UI | React + TypeScript | User-supplied table, accepted |
 | Agent adapters | One interface per agent: start task, send reply, stream events, report limit error, stop | User choice |
 | Claude control | Approach A: run the official `claude` CLI headless as a child process and read its streamed events | User choice |
-| Local models | Ollama, behind an adapter | User-supplied table, accepted |
+| Local models | Any local model the user installs, behind an adapter, with no subscription needed; engine (Codex CLI with `--oss` or the hub's own agent loop) and runtimes (Ollama, LM Studio, OpenAI-compatible) open, see phase 5 | User-supplied table (Ollama); revised 2026-11-09 |
 | Storage | SQLite: tasks, settings, logs, history | User-supplied table, accepted |
 | Isolation | Git worktrees per session or agent (phase 4); Docker containers per session (phase 9) | User-supplied table, accepted; containers added 2026-10-25 |
 
@@ -203,13 +203,19 @@ The user opens the desktop app and creates a session for a project, optionally c
   - App data: database, token, logs, worktrees and chats are all under `%LOCALAPPDATA%\MultiAgentHub`, shared by the app and `uv run`. A lock file stops two backends from using the same database. The old `backend/data` was copied, not moved, and can be deleted once the app is accepted.
   - Installer: NSIS, per-user install (no administrator rights), Start menu entry and a desktop shortcut, always created by an install hook (Tauri alone only offers a checkbox on the last page, which was easy to miss). Unsigned, so Windows SmartScreen warns on first run.
 
-**Phase 5: Local model**
-- Goal: Ollama as the last-resort tier.
-- In scope: Ollama adapter, local model selection, addition to the default handoff chain.
-- Exclusions: RAG, evaluations.
-- Dependencies: phases 1 to 3, Ollama installed with a chosen model.
-- Acceptance: a handoff from Codex to a local model completes a simple task, with the quality limits clearly shown.
-- Tradeoffs: local models are weaker at coding, and hardware determines usefulness; the model choice is open.
+**Phase 5: Local model** (scope revised 2026-11-09, Session 36)
+- Goal: whatever local model the user installs works in the hub **the same way as Claude and Codex**: as a coding agent in project sessions (reads and edits files, runs commands, with diffs, plan, questions and handoff) and as a chatbot in chats. It is also the last-resort tier of the default chain.
+- No subscription (decided 2026-11-09): using a local model must not depend on a Claude or ChatGPT subscription or sign-in. Local sessions spend no subscription usage.
+- In scope: a local-model agent behind the existing `AgentAdapter` interface; choosing the local model (per session and in the chain); addition to the default handoff chain; showing the model in use and its quality limits.
+- Engine, open (to decide before building). How the local model gets tools:
+  - **A. Codex CLI as the engine**, run with `--oss --local-provider ollama|lmstudio` (or a custom provider for other servers). Reuses the Codex adapter: tools, sandbox, diffs, resume and handoff already work. Checked 2026-11-09 against codex-cli 0.164.0: with an empty `CODEX_HOME` (no sign-in), `codex exec --oss` skipped login and only stopped because no Ollama server was running, so it appears to need no subscription; **confirm with a running server**. Costs: Codex CLI must be installed (free, open source), and its long prompt and tool schema need a capable model with a large context (roughly 32k tokens or more; unverified).
+  - **B. The hub's own agent loop**: the hub calls the local server's chat API and gives the model a small tool set (read, list, edit, write, run command), parses tool calls and produces the same events, diffs and plan. No other CLI, and the prompt can be kept short for small models. Costs: much more code, and commands run without Codex's sandbox (only worktrees, until phase 9).
+- Runtimes, open: Ollama (background service, `ollama pull`, an API for downloads), LM Studio (desktop app with a model browser; its server must be switched on), or any OpenAI-compatible server (llama.cpp, Jan, vLLM, LocalAI) through a custom URL. Codex's `--oss` supports Ollama and LM Studio directly. Neither is installed as of 2026-11-09.
+- Setup helpers, on hold (2026-11-09): considered and postponed, to be revisited after the engine and runtimes are chosen: auto-detecting local servers; a model list with on/off switches; a test button (answer, speed, context size, warnings); downloading models in the app (Ollama); model suggestions for the PC's memory; a setup guide when nothing is detected; fixing Ollama's small default context; adding a custom server URL; server health in the status bar.
+- Exclusions: RAG, evaluations, fine-tuning.
+- Dependencies: phases 1 to 3; a local runtime installed with at least one model; Codex CLI if engine A is chosen.
+- Acceptance: with no Claude or Codex sign-in needed for it, a local model (1) answers in a chat, (2) completes a simple coding task in a project session (edits a file and runs a command), and (3) takes over a session from Codex in a handoff, with its quality limits clearly shown.
+- Tradeoffs: local models are weaker at coding and slower, and hardware decides which models are usable; the model is the user's choice at run time rather than fixed in the plan.
 
 **Phase 7: Delegation** (added 2026-10-25; can be built before phase 6, which is marked later. Numbered 7 so existing references to phase 6 stay valid.)
 - Goal: an orchestrator-style session. The current agent hands a sub-task to another agent, which completes it and returns control to the original agent with a report.
@@ -297,13 +303,13 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 **Assumptions**
 - Windows only.
-- The CLIs and Ollama are installed and logged in by the user separately.
+- The CLIs are installed and logged in by the user separately; a local runtime and its models are installed by the user, and local models need no sign-in.
 - SQLite is local to the PC.
 - Default handoff chain is Claude → Codex → local model.
 
 **Unresolved**
 - Claude's default permission mode. With `acceptEdits` (the current default) and no approval surface, every shell command is denied headless, so Claude can't run tests or git. `auto` (Claude Code's classifier approves safe actions) works headless and was used on 2026-10-26 via `HUB_CLAUDE_PERMISSION_MODE=auto`; whether to make it the default is open. Neither is a sandbox (phase 9).
-- Local model runtime model and hardware (Ollama chosen; specific model open).
+- Phase 5 engine (Codex CLI with `--oss`, or the hub's own agent loop) and runtimes (Ollama, LM Studio, any OpenAI-compatible server); setup helpers on hold. The model itself is picked by the user at run time.
 - Whether headless `claude -p` and `codex exec` support mid-run user input (check in phase 1).
 - Current Anthropic policy on subscription CLI use (recheck against Anthropic's own pages).
 - Windows Codex sign-in billing report: checked 2026-10-25 with ChatGPT login and no API key set; no API charges appeared.
