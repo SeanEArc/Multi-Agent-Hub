@@ -1,4 +1,3 @@
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,7 +27,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.token = token or load_or_create_token(settings.token_file)
+        app.state.token = (
+            token
+            or (settings.token.get_secret_value() if settings.token else None)
+            or load_or_create_token(settings.token_file)
+        )
         init_db(engine)
         orchestrator.recover_interrupted()
         yield
@@ -63,17 +66,6 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    import uvicorn
+    from app.server import run
 
-    settings = get_settings()
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    uvicorn.run(
-        "app.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.reload,
-        log_level=settings.log_level,
-    )
+    run()

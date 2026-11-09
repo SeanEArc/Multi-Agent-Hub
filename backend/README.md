@@ -20,7 +20,16 @@ $env:HUB_RELOAD="true"; uv run python -m app.main  # dev: restart on code change
 ```
 
 API: http://127.0.0.1:8765/api, interactive docs: http://127.0.0.1:8765/docs.
-The database is created at `backend/data/hub.db` and migrated to the latest schema on every start.
+The database is created at `%LOCALAPPDATA%\MultiAgentHub\data\hub.db` and migrated to the latest schema on every start.
+Only one backend can use that folder at a time (`server.lock`); a second one exits with code 3.
+
+## Bundle (for the desktop app)
+
+```powershell
+uv run pyinstaller hub-backend.spec --noconfirm   # dist/hub-backend/hub-backend.exe
+```
+
+`npm run tauri build` in `frontend/` runs this for you.
 
 ## Test
 
@@ -47,27 +56,30 @@ uv run pytest
 
 Set as `HUB_*` environment variables or in `backend/.env`:
 `HUB_DATABASE_URL`, `HUB_HOST`, `HUB_PORT`, `HUB_RELOAD`, `HUB_LOG_LEVEL`,
-`HUB_CORS_ORIGINS`, `HUB_CLAUDE_PERMISSION_MODE`, `HUB_TOKEN_FILE`.
+`HUB_CORS_ORIGINS`, `HUB_CLAUDE_PERMISSION_MODE`, `HUB_TOKEN_FILE`, `HUB_TOKEN`, `HUB_LOCK_FILE`.
 
 Optional: copy `.env.example` to `.env` and adjust the values. Shell variables take
 precedence. `HUB_CORS_ORIGINS` must be a JSON array of URLs. Without a database
-override, the app uses `backend/data/hub.db`. `HUB_HOST` must be a loopback address
+override, the app uses `%LOCALAPPDATA%\MultiAgentHub\data\hub.db`. `HUB_HOST` must be a loopback address
 (the app refuses to start otherwise). No API keys or CLI login tokens belong in this file.
 
 ## Authentication
 
 Every `/api` route, including the event stream, needs `Authorization: Bearer <token>`.
 
-- The token is created on first start in `backend/data/token` (or `HUB_TOKEN_FILE`), with
-  access limited to your Windows account. Delete the file and restart to change it.
+- The token is created on first start in `%LOCALAPPDATA%\MultiAgentHub\data\token` (or
+  `HUB_TOKEN_FILE`), with access limited to your Windows account. Delete the file and restart
+  to change it.
 - The Vite dev proxy reads that file and adds the header, so the browser never holds it.
+- The desktop app sets `HUB_TOKEN` to a new token each launch instead, and the UI adds it to
+  its requests (reading the event stream with `fetch`, since `EventSource` can't send headers).
 - Requests are also refused (403) if `Host` isn't a loopback name, if a browser `Origin`
   isn't the API itself or one of `HUB_CORS_ORIGINS`, or if they are cross-site.
 
 To call the API by hand in PowerShell:
 
 ```powershell
-$token = Get-Content backend\data\token
+$token = Get-Content "$env:LOCALAPPDATA\MultiAgentHub\data\token"
 Invoke-RestMethod http://127.0.0.1:8765/api/sessions -Headers @{ Authorization = "Bearer $token" }
 ```
 

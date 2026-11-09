@@ -5,6 +5,8 @@ import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SessionView } from "./components/SessionView";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
+import { BackendBanner } from "./components/BackendBanner";
+import { inDesktopApp } from "./connection";
 
 const SELECTED_KEY = "hub.selectedSession";
 // The dashboard polls often; with a session open, that session streams live and the rest poll slower.
@@ -68,7 +70,8 @@ export function App() {
         onSettings={() => setEditingSettings(true)}
       />
       <main className="main">
-        {backendDown && (
+        {inDesktopApp && <BackendBanner unreachable={backendDown} />}
+        {backendDown && !inDesktopApp && (
           <div className="banner error">
             Can't reach the backend. Start it with <code>uv run python -m app.main</code> in the <code>backend</code>{" "}
             folder.

@@ -1247,3 +1247,33 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Phase 4d on `feature/tauri-shell`: shell, token, sidecar (PyInstaller), app data move, installer and shortcut.
 - [ ] Then Phase 5, 7, 9, 8, 10, 6, per the roadmap.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-09 (UTC-05:00)
+
+# Session 36: Built Phase 4d (Tauri desktop shell) on `feature/tauri-shell`; the user accepted it.
+
+## What was done
+
+1. **Backend:** app data defaults moved to `%LOCALAPPDATA%\MultiAgentHub\data` (database and token). The existing `backend/data` was copied there with SQLite's backup API (14 sessions, 1,291 events); the originals are untouched. `HUB_TOKEN` replaces the token file when set. `http://tauri.localhost` is an allowed origin. New `app/server.py` holds `data\server.lock`, so a second backend exits with code 3. New tests in `test_auth.py` and `test_server.py`; 163 pass.
+2. **Bundle:** `backend/hub-backend.spec` (PyInstaller one-folder build, migrations shipped as files); PyInstaller added as a dev dependency. Smoke-tested: ready in about 2 s on a fresh database.
+3. **Shell** (`frontend/src-tauri`): free port plus a new token per launch, backend started with no window and logged to `logs\backend.log`, health polling, restart with backoff (gives up after more than 5 crashes in 2 minutes; Retry button), a kill-on-close job object per backend run, single instance.
+4. **UI:** `connection.ts` (`apiFetch`, a fetch-based event stream with `Last-Event-ID` reconnects, a wait for the backend before the first request) and `BackendBanner.tsx`. In the browser, nothing changes; the Vite proxy now reads the token from the new location.
+5. **Installer:** `npm run tauri build` makes `Multi-Agent Hub_0.1.0_x64-setup.exe` (22.9 MB, NSIS, per-user; a hook in `src-tauri/windows/installer-hooks.nsh` always creates the desktop shortcut, because the default checkbox on the last page was easy to miss). Tested on the release exe (not yet installed): the backend comes up and refuses requests without the token; after being killed it restarts on the same port; it dies when the shell is killed or closed; a second launch doesn't start another backend.
+6. Docs: README, `backend/README.md`, CLAUDE.md, and the 4d decisions in `plan.md`.
+7. **Desktop shortcut:** the user couldn't find it, because Tauri's installer only offers it as a checkbox on its last page. Added `src-tauri/windows/installer-hooks.nsh` (`NSIS_HOOK_POSTINSTALL`), so the installer always creates it, and rebuilt.
+8. **Acceptance (user):** installed the app (per-user, in `%LOCALAPPDATA%\Multi-Agent Hub`), opened it from the desktop shortcut and signed off. Phase 4d is done, and `plan.md`'s roadmap marks Phase 5 (local model) as next.
+
+## Next steps
+
+**For the user**
+- [ ] `backend\data` (the old copy of the database and token) can now be deleted.
+- [ ] After code changes, rebuild with `npm run tauri build` in `frontend` and run the new installer; it updates the installed app in place.
+- [ ] Confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Commit and merge `feature/tauri-shell` (not yet committed).
+- [ ] Phase 5 (local model: Ollama adapter, model choice, last in the default chain); then 7, 9, 8, 10, 6, per the roadmap.
+- [ ] Possible later: code-sign the installer (removes the SmartScreen warning) and in-app updates.
+- [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

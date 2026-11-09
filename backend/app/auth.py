@@ -1,7 +1,8 @@
 """Minimal local authentication: one per-install bearer token, plus Host and Origin checks.
 
-The token lives in a file only the current user can read. The Vite dev proxy (and later the
-Tauri shell) reads that file and adds the header, so the browser never holds the token.
+The token lives in a file only the current user can read. The Vite dev proxy reads that file and
+adds the header, so the browser never holds the token. The desktop shell instead makes a fresh
+token each launch, passes it to the backend in HUB_TOKEN and adds it to the UI's requests.
 """
 
 import getpass
@@ -77,7 +78,7 @@ class Caller:
     method: str
 
 
-_bearer = HTTPBearer(auto_error=False, description="The token in backend/data/token")
+_bearer = HTTPBearer(auto_error=False, description="The token in %LOCALAPPDATA%/MultiAgentHub/data/token")
 
 
 def require_caller(

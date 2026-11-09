@@ -65,7 +65,9 @@ def test_foreign_origin_is_rejected_even_with_token(client: TestClient) -> None:
     assert response.json()["detail"] == "Origin not allowed"
 
 
-@pytest.mark.parametrize("origin", ["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:8765"])
+@pytest.mark.parametrize(
+    "origin", ["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:8765", "http://tauri.localhost"]
+)
 def test_ui_and_own_origins_are_accepted(client: TestClient, origin: str) -> None:
     assert client.get("/api/health", headers={"Origin": origin}).status_code == 200
 
@@ -90,6 +92,18 @@ def test_token_survives_a_restart(engine: Engine, tmp_path: Path, monkeypatch: p
         token = path.read_text(encoding="utf-8")
         headers = {"Authorization": f"Bearer {token}"}
         assert test_client.get("/api/health", headers=headers).status_code == 200
+
+
+def test_token_from_the_shell_replaces_the_file(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "token"
+    monkeypatch.setenv("HUB_TOKEN", "shell-token-for-this-launch")
+    monkeypatch.setattr("app.main.get_settings", lambda: Settings(token_file=path))
+    with make_client(create_app(engine, fake_adapter_factory), token=None) as test_client:
+        ok = {"Authorization": "Bearer shell-token-for-this-launch"}
+        assert test_client.get("/api/health", headers=ok).status_code == 200
+        assert not path.exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows ACLs")

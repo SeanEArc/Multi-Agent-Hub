@@ -155,6 +155,16 @@ pre {
   border-bottom: 1px solid var(--danger);
 }
 
+.banner:not(.error) {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.banner-action {
+  margin-left: 8px;
+}
+
 .empty-state {
   margin: auto;
   text-align: center;

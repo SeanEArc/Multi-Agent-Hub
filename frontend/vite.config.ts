@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The backend creates this file on first start (see backend/app/auth.py).
-const tokenFile =
-  process.env.HUB_TOKEN_FILE ?? fileURLToPath(new URL("../backend/data/token", import.meta.url));
+// The backend creates this file on first start (see backend/app/auth.py and config.py).
+const appData = process.env.LOCALAPPDATA ?? join(homedir(), ".local", "share");
+const tokenFile = process.env.HUB_TOKEN_FILE ?? join(appData, "MultiAgentHub", "data", "token");
 
 // Read on every request, so a token created after Vite started is still picked up.
 function readToken(): string | null {

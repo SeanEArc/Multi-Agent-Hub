@@ -1,4 +1,5 @@
 // Types and calls for the FastAPI backend (see backend/app/api/sessions.py).
+import { apiFetch } from "./connection";
 import type { PlanItem } from "./progress";
 
 export type SessionStatus =
@@ -229,7 +230,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await apiFetch(`/api${path}`, {
     ...init,
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
   });

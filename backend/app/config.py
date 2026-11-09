@@ -3,15 +3,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.auth import is_loopback
 from app.models import AgentKind
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-# Per-user app data, outside any repository (the Tauri shell will keep its data here too).
+# Per-user app data, outside any repository. The desktop app and `uv run` share it.
 APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "MultiAgentHub"
+DATA_DIR = APP_DATA_DIR / "data"
 
 
 class Settings(BaseSettings):
@@ -19,14 +20,19 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="HUB_", env_file=BACKEND_DIR / ".env")
 
-    database_url: str = f"sqlite:///{(BACKEND_DIR / 'data' / 'hub.db').as_posix()}"
-    # Vite's default dev server; the React UI calls the API from here.
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    database_url: str = f"sqlite:///{(DATA_DIR / 'hub.db').as_posix()}"
+    # Vite's default dev server, and the Tauri webview's origin on Windows.
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173", "http://tauri.localhost"]
     # Loopback only. Remote access (Phase 6) goes through `tailscale serve`, which proxies to loopback.
     host: str = "127.0.0.1"
     port: int = 8765
     # Per-install API token, created on first start. The Vite dev proxy reads it from here.
-    token_file: Path = BACKEND_DIR / "data" / "token"
+    token_file: Path = DATA_DIR / "token"
+    # Set by the desktop shell, which makes a fresh token each launch; the token file is then not used.
+    token: SecretStr | None = None
+    # Held while the server runs, so a second server can't share the database (the desktop app and
+    # `uv run` use the same data folder).
+    lock_file: Path = DATA_DIR / "server.lock"
     # Development only: restart the server when code changes.
     reload: bool = False
     log_level: str = "info"

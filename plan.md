@@ -10,8 +10,8 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 |---|---|---|
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
-| 3 | 4d: Tauri shell | Next |
-| 4 | 5: Local model | Not started |
+| 3 | 4d: Tauri shell | Done |
+| 4 | 5: Local model | Next |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -190,10 +190,18 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Theme switch (added 2026-11-02, Session 32): **System / Light / Dark** in Settings. It sets `data-theme` on the page, applies at once and is remembered per browser. This is the groundwork for phase 10's design styles.
 - Acceptance: the user signs off on the look.
 
-**Phase 4d: Tauri desktop shell**
+**Phase 4d: Tauri desktop shell** (done 2026-11-09)
+- Status: complete. The user installed the app, opened it from the desktop shortcut the installer created, and signed off (2026-11-09).
 - The Tauri shell, with the backend bundled as a sidecar that the shell starts, monitors and restarts, and to which it passes the auth token (replacing the Vite dev proxy's role). App data moves to `%LOCALAPPDATA%\MultiAgentHub`, next to the worktrees.
-- Dependencies: Rust (rustup with the MSVC toolchain) installed on the PC; not installed as of 2026-10-26.
+- Dependencies: Rust (rustup with the MSVC toolchain) installed on the PC; installed 2026-11-06 (Rust 1.99.1).
 - Acceptance: the app starts from its desktop shortcut, the backend comes up with it, and it restarts if the backend crashes.
+- Built 2026-11-09 (Session 36), decisions:
+  - Token: the shell makes a new random token each launch and passes it in `HUB_TOKEN` (environment, not the command line); the token file is used only by `uv run` and the Vite proxy. The UI gets the port and token from a Tauri command and adds the header itself, reading the event stream with `fetch`, because `EventSource` can't send headers. Chosen over a proxy inside the shell, which would need an HTTP server in Rust.
+  - Port: a free loopback port picked at launch, so the app never collides with a dev backend on 8765.
+  - Backend bundle: a PyInstaller one-folder build, shipped as a Tauri resource and started with plain `std::process` rather than Tauri's sidecar plugin (which expects one file). A one-file build would unpack itself on every launch. Ready in about 2 seconds.
+  - Monitoring: the shell polls `/api/health`, restarts the backend with backoff when it exits, and stops after more than 5 crashes in two minutes, showing a Retry button. Each backend run is in a kill-on-close Windows job object, so the agent CLIs it started die with it, and the shell closing (even a crash) kills everything.
+  - App data: database, token, logs, worktrees and chats are all under `%LOCALAPPDATA%\MultiAgentHub`, shared by the app and `uv run`. A lock file stops two backends from using the same database. The old `backend/data` was copied, not moved, and can be deleted once the app is accepted.
+  - Installer: NSIS, per-user install (no administrator rights), Start menu entry and a desktop shortcut, always created by an install hook (Tauri alone only offers a checkbox on the last page, which was easy to miss). Unsigned, so Windows SmartScreen warns on first run.
 
 **Phase 5: Local model**
 - Goal: Ollama as the last-resort tier.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type SessionEvent, type SessionStatus } from "./api";
+import { openEventStream } from "./connection";
 
 export interface SessionStream {
   events: SessionEvent[];
@@ -19,9 +20,9 @@ export function useSessionStream(sessionId: string | null): SessionStream {
     setConnected(false);
     if (!sessionId) return;
 
-    // EventSource reconnects on its own and sends Last-Event-ID, so the backend
+    // The stream reconnects on its own and sends Last-Event-ID, so the backend
     // resumes after the last event we received.
-    const source = new EventSource(api.streamUrl(sessionId));
+    const source = openEventStream(api.streamUrl(sessionId));
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
     source.addEventListener("status", (message) => {

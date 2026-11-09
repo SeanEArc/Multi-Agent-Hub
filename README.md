@@ -44,6 +44,7 @@ The React UI talks to a local FastAPI backend. For each session the orchestrator
 - [uv](https://docs.astral.sh/uv/) (installs the pinned Python 3.14 for you)
 - [Node.js](https://nodejs.org/) with npm
 - Git
+- To build the desktop app: [Rust](https://rustup.rs/) (stable, MSVC toolchain), the Visual Studio C++ build tools and the WebView2 runtime (included in Windows 11)
 - At least one agent CLI, installed and signed in:
   - [Claude Code](https://code.claude.com/) (`claude`), signed in with your Claude subscription. The native `claude.exe` is required.
   - [Codex CLI](https://developers.openai.com/codex/) (`codex`), signed in with your ChatGPT account.
@@ -60,7 +61,7 @@ All commands are for PowerShell.
    uv run python -m app.main
    ```
 
-   The API runs at http://127.0.0.1:8765 (interactive docs at `/docs`). On first start it creates the database (`backend/data/hub.db`) and the API token (`backend/data/token`), and it applies database migrations on every start.
+   The API runs at http://127.0.0.1:8765 (interactive docs at `/docs`). On first start it creates the database and the API token in `%LOCALAPPDATA%\MultiAgentHub\data`, and it applies database migrations on every start. The desktop app uses the same folder, so only one of them can run at a time.
 
 2. **In a second terminal, start the UI:**
 
@@ -74,6 +75,18 @@ All commands are for PowerShell.
 
 The Vite dev server forwards `/api` to the backend and adds the API token to each request, so the browser never holds it.
 
+## Desktop app
+
+The desktop app is a [Tauri](https://tauri.app/) shell (`frontend/src-tauri`) around the same UI. It starts the backend itself, on a free loopback port with a new token each launch, and restarts it if it crashes (up to 5 times in two minutes, then it shows a Retry button). The backend's output goes to `%LOCALAPPDATA%\MultiAgentHub\logs\backend.log`.
+
+```powershell
+cd frontend
+npm run tauri dev     # development: runs the backend from source with uv, and Vite with hot reload
+npm run tauri build   # bundles the backend with PyInstaller, then builds the app and its installer
+```
+
+The installer is written to `frontend/src-tauri/target/release/bundle/nsis/`. It installs for the current user only (no administrator rights), and adds a Start menu entry and a desktop shortcut (always created, by the hook in `src-tauri/windows/installer-hooks.nsh`; Tauri on its own only offers it as a checkbox on the last page).
+
 ## Configuration
 
 Settings are `HUB_*` environment variables or entries in `backend/.env` (see [`backend/.env.example`](backend/.env.example)). Shell variables take precedence. All are optional.
@@ -82,10 +95,12 @@ Settings are `HUB_*` environment variables or entries in `backend/.env` (see [`b
 |---|---|---|
 | `HUB_HOST` | `127.0.0.1` | Bind address. Must be loopback; the app refuses to start otherwise. |
 | `HUB_PORT` | `8765` | API port. |
-| `HUB_DATABASE_URL` | `backend/data/hub.db` | SQLite database location. |
-| `HUB_TOKEN_FILE` | `backend/data/token` | API token file. Set it for both the backend and the Vite dev server. |
+| `HUB_DATABASE_URL` | `%LOCALAPPDATA%\MultiAgentHub\data\hub.db` | SQLite database location. |
+| `HUB_TOKEN_FILE` | `%LOCALAPPDATA%\MultiAgentHub\data\token` | API token file. Set it for both the backend and the Vite dev server. |
+| `HUB_TOKEN` | unset | Set by the desktop app (a new token each launch); the token file is then not used. |
+| `HUB_LOCK_FILE` | `%LOCALAPPDATA%\MultiAgentHub\data\server.lock` | Held while a backend runs, so two backends can't share the database. |
 | `HUB_WORKTREES_DIR` | `%LOCALAPPDATA%\MultiAgentHub\worktrees` | Where session worktrees are created. Keep it outside any repository. |
-| `HUB_CORS_ORIGINS` | Vite dev server origins | JSON array of allowed browser origins. |
+| `HUB_CORS_ORIGINS` | Vite dev server and Tauri origins | JSON array of allowed browser origins. |
 | `HUB_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Permission mode passed to Claude Code. With `acceptEdits`, Claude can edit files but every shell command is denied, because a headless session can't ask for approval. `auto` lets Claude Code's safety check approve safe commands (tests, git). Neither is a sandbox. |
 | `HUB_CODEX_SANDBOX` | `workspace-write` | Sandbox mode passed to Codex. |
 | `HUB_CODEX_PATH` | auto-detected | Path to the native `codex.exe`. |
@@ -100,7 +115,7 @@ The handoff chain and limit policy are set in the app's **Settings** dialog and 
 Agents launched by the hub can edit files and run commands, so the API is locked down to your own machine:
 
 - The backend binds to a loopback address only.
-- Every `/api` route, including the event stream, requires `Authorization: Bearer <token>`, checked in constant time. The token is generated on first start and its file is readable only by your Windows account. Delete it and restart to rotate it.
+- Every `/api` route, including the event stream, requires `Authorization: Bearer <token>`, checked in constant time. The token is generated on first start and its file is readable only by your Windows account. Delete it and restart to rotate it. The desktop app instead makes a new token each launch and passes it to the backend in an environment variable, never on the command line.
 - Requests with a non-loopback `Host`, an unknown `Origin`, or `Sec-Fetch-Site: cross-site` are rejected.
 - The hub never reads, stores or logs CLI login tokens or the API token.
 
@@ -109,7 +124,7 @@ Git worktrees isolate sessions from each other, but they are **not a security sa
 To call the API by hand:
 
 ```powershell
-$token = Get-Content backend\data\token
+$token = Get-Content "$env:LOCALAPPDATA\MultiAgentHub\data\token"
 Invoke-RestMethod http://127.0.0.1:8765/api/sessions -Headers @{ Authorization = "Bearer $token" }
 ```
 
