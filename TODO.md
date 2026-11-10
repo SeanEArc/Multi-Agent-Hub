@@ -6,7 +6,7 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 ## Phase 5c: local model robustness and choice
 
-- [ ] **Model choice, notices and handoff.** Restart the backend.
+- [x] **Model choice, notices and handoff.** Restart the backend.
   - Settings: **Default local model** lists your installed models; pick one and save. The new-session dialog's Model list then says "Default (that model)". The chain editor's local entry and the **Hand off** dialog also list the installed models, and Hand off is disabled with a message when Ollama isn't running.
   - A local session shows a one-line note under its header (runs on this PC, slower and weaker at coding).
   - Hand a Codex session off to the local model (Hand off → Local model): it continues from the brief.
@@ -15,14 +15,14 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 ## Phase 5b: local model tools
 
-- [ ] **A small coding task with the local model.** Restart the backend, click **New session**, pick a scratch folder (or a test project in a worktree) and **Local model (Ollama)**, and ask for something small, for example "create hello.py that prints the sum of 17 and 25, run it with python and tell me the output", then "add a function that returns the average of a list, and test it".
+- [x] **A small coding task with the local model.** Restart the backend, click **New session**, pick a scratch folder (or a test project in a worktree) and **Local model (Ollama)**, and ask for something small, for example "create hello.py that prints the sum of 17 and 25, run it with python and tell me the output", then "add a function that returns the average of a list, and test it".
   - Expect: rows for the model's steps like Claude's: **Write** / **Edit** with a diff, **PowerShell** with its output (and a red exit code when one fails), **Read**, **List**, **Search**. A plan card when it makes a plan. The edited files under **Files changed** in Split. The turn ends with its summary (or just "Done"; small models often skip the summary).
   - Also try: **Stop** while it runs a slow command (ask it to run `Start-Sleep 60`): the turn ends at once. Ask for something that needs your input ("ask me which name to use, then create the file"): it ends with a question, and your answer continues it.
   - Why: the tools and loop passed tests and live runs against your Ollama, but not in the app's transcript.
 
 ## Phase 5a: local model chat
 
-- [ ] **Chat with the local model in the app.** Restart the app (or the backend), click **New session**, leave the folder empty and pick **Local model (Ollama)** as the agent.
+- [x] **Chat with the local model in the app.** Restart the app (or the backend), click **New session**, leave the folder empty and pick **Local model (Ollama)** as the agent.
   - Expect: the Model list shows your installed models, with "Default (qwen3.5:9b-q4_K_M)" first, and the hint says it runs with no subscription. Ask a question: it answers in a few seconds to a minute, and the header shows "Local model (qwen3.5:9b-q4_K_M)". A follow-up continues the conversation, also after closing and reopening the app. **Stop** during a long answer ends the turn. Deleting the session removes its file under `%LOCALAPPDATA%\MultiAgentHub\local`.
   - Also try: quit Ollama (tray icon → Quit) and open the dialog again: the hint says Ollama isn't running and **Create** is disabled.
   - Why: checked with the API, the real Ollama server and tests, but the dialog itself hasn't been looked at in the app.
@@ -58,7 +58,7 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
   - Also try: Re-summarize while a turn is running (it works alongside), and with `$env:HUB_SIMULATE_LIMIT="claude"` on a Claude session (Codex should write it, noting Claude was out of usage).
   - Why: the one-off call (`claude --tools "" --no-session-persistence`, `codex exec --ephemeral` read-only) passed the live adapter tests and one real Codex summary on sample data; not yet on a real session.
 
-- [ ] **Light mode.** Pick **Light** under Theme in Settings (or leave it on System and switch Windows) and look over the dashboard and a session.
+- [x] **Light mode.** Pick **Light** under Theme in Settings (or leave it on System and switch Windows) and look over the dashboard and a session.
   - Why: new colors were added for the dashboard and progress view; the screenshots covered light mode with sample data only.
 
 - [x] **Handoff still works.** (passed 2026-11-02) In a session, click **Hand off** and pick another agent.
@@ -67,14 +67,14 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 ## Phase 4c: style polish
 
-- [ ] **Tables, task lists and code colors (4c-1).** Reload the page and ask an agent for something that answers with a markdown table, a checklist and code (for example "compare two ways to do X in a table, then show the code").
+- [x] **Tables, task lists and code colors (4c-1).** Reload the page and ask an agent for something that answers with a markdown table, a checklist and code (for example "compare two ways to do X in a table, then show the code").
   - Expect: a bordered table (scrolling sideways if it's wide), checkboxes inline with their items, ~~strikethrough~~ in gray, and colored code in blocks that name a language (`ts`, `python`, `diff` with red/green lines). Blocks without a language stay plain. Check light mode too.
   - Also: a Codex edit row reads like `Edit src\theme.ts, src\useTheme.ts (new)`, not JSON; and at a narrow window width the session header's buttons wrap onto a second line instead of running off the side.
   - Why: checked only with sample data in screenshots.
-- [ ] **Codex diffs (4c-2).** Restart the backend, start a Codex session on a git project and ask for a small edit to an existing file and a new file (for example "add type hints to one function and create `todo.md`"). Then ask for a second edit to the same file.
+- [x] **Codex diffs (4c-2).** Restart the backend, start a Codex session on a git project and ask for a small edit to an existing file and a new file (for example "add type hints to one function and create `todo.md`"). Then ask for a second edit to the same file.
   - Expect: each Codex **Edit** row shows its diff under it, with line numbers and `+N −M` on the row. A diff that changes more than 20 lines starts closed and opens on click; a smaller one starts open. The second edit's diff shows only that edit, not both. **Files changed** in the Split layout lists the file with 2 edits; opening it shows each edit's time, agent and diff.
   - Why: the hub works out Codex's diffs by reading the files right after each patch. This was tested with a fake Codex and the real snapshot code, but not with the live CLI.
-- [ ] **Claude diffs and command rows (4c-2).** In a Claude session, ask for an edit to an existing file and for a command that fails (for example "run `git log` on a branch that doesn't exist").
+- [x] **Claude diffs and command rows (4c-2).** In a Claude session, ask for an edit to an existing file and for a command that fails (for example "run `git log` on a branch that doesn't exist").
   - Expect: the Edit row shows the real diff with line numbers. A failed command shows a red `exit 128` (or whatever the code is) and the first and last lines of its output under the row. A successful command shows its first lines. The turn's last row reads like `✓ Done · 1 file edited`.
 
 ## Chats (no project folder)
@@ -91,4 +91,4 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 ## Before Phase 4d
 
-- [ ] **Install Rust** (https://rustup.rs). Why: the Tauri desktop shell in Phase 4d needs it to build.
+- [x] **Install Rust** (https://rustup.rs). Why: the Tauri desktop shell in Phase 4d needs it to build.

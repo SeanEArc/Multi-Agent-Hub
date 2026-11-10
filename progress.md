@@ -1420,7 +1420,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 ## Next steps
 
 **For the user**
-- [ ] Try the 5a, 5b and 5c checks in `TODO.md`.
+- [x] Try the 5a, 5b and 5c checks in `TODO.md` (all passed, user, 2026-11-10; 4b, 4c and 4d checks also confirmed).
 - [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
 
 **For the agent**

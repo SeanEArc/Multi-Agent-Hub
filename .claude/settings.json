@@ -18,7 +18,9 @@
       "Bash(uv sync --directory backend:*)",
       "Bash(uv run --directory backend pytest:*)",
       "Bash(npm --prefix frontend run build:*)",
-      "Bash(npm --prefix frontend run typecheck:*)"
+      "Bash(npm --prefix frontend run typecheck:*)",
+      "Bash(python:*)", 
+      "PowerShell(python:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",
