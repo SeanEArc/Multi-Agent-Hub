@@ -4,6 +4,13 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## Phase 5b: local model tools
+
+- [ ] **A small coding task with the local model.** Restart the backend, click **New session**, pick a scratch folder (or a test project in a worktree) and **Local model (Ollama)**, and ask for something small, for example "create hello.py that prints the sum of 17 and 25, run it with python and tell me the output", then "add a function that returns the average of a list, and test it".
+  - Expect: rows for the model's steps like Claude's: **Write** / **Edit** with a diff, **PowerShell** with its output (and a red exit code when one fails), **Read**, **List**, **Search**. A plan card when it makes a plan. The edited files under **Files changed** in Split. The turn ends with its summary (or just "Done"; small models often skip the summary).
+  - Also try: **Stop** while it runs a slow command (ask it to run `Start-Sleep 60`): the turn ends at once. Ask for something that needs your input ("ask me which name to use, then create the file"): it ends with a question, and your answer continues it.
+  - Why: the tools and loop passed tests and live runs against your Ollama, but not in the app's transcript.
+
 ## Phase 5a: local model chat
 
 - [ ] **Chat with the local model in the app.** Restart the app (or the backend), click **New session**, leave the folder empty and pick **Local model (Ollama)** as the agent.

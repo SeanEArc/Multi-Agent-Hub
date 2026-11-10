@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 32768
     # Ollama's `think` option for models that support it; None leaves it to the model.
     ollama_think: bool | None = None
+    # The local model's agent loop: tool rounds allowed in one turn, and how long one command may run (seconds).
+    ollama_max_rounds: int = 30
+    ollama_command_timeout: int = 300
     # The local model's conversations, one JSON file each: Ollama keeps no history of its own.
     local_dir: Path = APP_DATA_DIR / "local"
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was

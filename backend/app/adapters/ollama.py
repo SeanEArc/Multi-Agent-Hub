@@ -2,7 +2,13 @@
 
 Unlike Claude and Codex there is no CLI: the hub calls the chat API itself, keeps the
 conversation (Ollama stores none) and turns the replies into the shared AgentEvents.
-Phase 5a is chat only; tools and the loop that runs them come in 5b.
+
+The loop (phase 5b): the request carries the tool definitions from `local_tools`. While the
+model's reply has `tool_calls`, the hub runs each one, emits TOOL_USE and TOOL_RESULT, appends
+the results and asks again; a reply without tool calls ends the turn. `update_plan` becomes a
+PLAN event and `ask_user` ends the turn as a QUESTION, so no text markers are needed. A cap on
+rounds per turn keeps a confused model from looping forever. Models without the `tools`
+capability get plain chat.
 
 Behavior verified against Ollama 0.40.15:
 - `POST /api/chat` with `stream: true` returns one JSON object per line,
@@ -14,6 +20,10 @@ Behavior verified against Ollama 0.40.15:
   with 4096 tokens and silently drops the start of longer prompts.
 - `GET /api/tags` lists installed models, with `capabilities` (such as "tools", "thinking")
   and `details.context_length`.
+- With `tools` in the request, a reply's tool calls arrive as `message.tool_calls`
+  (`[{function: {name, arguments}}]`, arguments as an object) in a streamed chunk. Results go
+  back as `{role: "tool", content, tool_name}` messages after the assistant message that made
+  the calls. A model without the tools capability answers HTTP 400 to a request with tools.
 """
 
 import asyncio
@@ -27,20 +37,44 @@ from typing import Any
 import httpx2 as httpx
 
 from app.adapters.base import AgentAdapter, AgentEvent, EventType
+from app.adapters.local_tools import (
+    DEFAULT_COMMAND_TIMEOUT,
+    TOOL_DEFINITIONS,
+    LocalTools,
+    ToolError,
+    plan_from_args,
+)
+from app.adapters.runner import Runner
 from app.models import AgentKind
 
 DEFAULT_URL = "http://127.0.0.1:11434"
 DEFAULT_NUM_CTX = 32768
+DEFAULT_MAX_ROUNDS = 30
 # Loading a large model and thinking before the first token can take minutes on a modest GPU.
 TIMEOUT = httpx.Timeout(600.0, connect=5.0)
 LIST_TIMEOUT = 3.0
 HISTORY_VERSION = 1
 
+# For models that can't use tools.
 CHAT_PROMPT = (
     "You are {model}, a local model running inside Multi-Agent Hub on the user's Windows PC. "
-    "The session's folder is {cwd}. You can't read or change files or run commands in this version, "
-    "so answer from the conversation, and say so plainly when a request needs those."
+    "The session's folder is {cwd}. This model can't use tools, so you can't read or change files or "
+    "run commands: answer from the conversation, and say so plainly when a request needs those."
 )
+# Short and direct, written for small models.
+TOOLS_PROMPT = """\
+You are {model}, a coding agent running on the user's Windows PC inside Multi-Agent Hub.
+Your working folder is {cwd}. Paths are relative to it. You can't use files outside it.
+
+How to work:
+- Look at files with read_file, list_files and search before changing them. Don't guess what a file contains.
+- Change files only with write_file (new file or whole file) and edit_file (replace exact text). Never write files with shell commands.
+- run_command runs Windows PowerShell 5.1 in the working folder. Use PowerShell syntax: separate commands with `;` (not `&&`). Commands can't ask for input.
+- For a task with several steps, call update_plan with all the steps first, then again each time you finish one.
+- If you can't continue without an answer from the user, call ask_user.
+- When the task is done, answer with a short summary of what you did and no tool call.
+- Questions that need no files or commands: just answer them.
+"""
 
 
 class OllamaUnavailable(RuntimeError):
@@ -52,7 +86,10 @@ class OllamaError(RuntimeError):
 
 
 class _Stopped(Exception):
-    pass
+    def __init__(self, partial: str = "") -> None:
+        super().__init__("stopped")
+        # The reply's text received before the stop.
+        self.partial = partial
 
 
 _END = object()
@@ -179,6 +216,10 @@ class OllamaAdapter(AgentAdapter):
         num_ctx: int = DEFAULT_NUM_CTX,
         think: bool | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        tools: bool = True,
+        runner: Runner | None = None,
+        max_rounds: int = DEFAULT_MAX_ROUNDS,
+        command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
     ) -> None:
         self.cwd = Path(cwd)
         self.model = model
@@ -186,6 +227,10 @@ class OllamaAdapter(AgentAdapter):
         self.base_url = base_url
         self.num_ctx = num_ctx
         self.think = think
+        # False for a model without the tools capability: plain chat.
+        self.use_tools = tools
+        self.max_rounds = max_rounds
+        self.tools = LocalTools(self.cwd, runner, command_timeout)
         self._transport = transport
         self._conversation_id = native_session_id
         self._reader: asyncio.Task[None] | None = None
@@ -211,14 +256,17 @@ class OllamaAdapter(AgentAdapter):
         return self._one_off(instructions, prompt)
 
     async def stop(self) -> None:
+        # The loop checks the flag between steps; a request or a command in progress is ended now.
+        self._stopping = True
         if self._reader is not None and not self._reader.done():
-            self._stopping = True
             self._reader.cancel()
+        await self.tools.kill()
 
     def _system_prompt(self) -> str:
-        return CHAT_PROMPT.format(model=self.model, cwd=self.cwd)
+        return (TOOLS_PROMPT if self.use_tools else CHAT_PROMPT).format(model=self.model, cwd=self.cwd)
 
     async def _turn(self, text: str, new: bool) -> AsyncGenerator[AgentEvent]:
+        """One turn: ask, run the tools the reply calls, ask again, until a reply calls none."""
         path = history_path(self.history_dir, self._conversation_id)
         if new:
             history: list[dict[str, Any]] = []
@@ -232,41 +280,137 @@ class OllamaAdapter(AgentAdapter):
                 })
                 return
 
+        self._stopping = False
         yield AgentEvent(EventType.STARTED, {"session_id": self._conversation_id, "model": self.model,
                                              "cwd": str(self.cwd)})
-        user = {"role": "user", "content": text}
-        messages = [{"role": "system", "content": self._system_prompt()}, *history, user]
+        system = {"role": "system", "content": self._system_prompt()}
+        # This turn's messages, saved after the history when the turn ends.
+        added: list[dict[str, Any]] = [{"role": "user", "content": text}]
+        usage = _Usage()
+        turn = uuid.uuid4().hex[:8]
+        calls_made = 0
+
+        def save() -> None:
+            save_history(path, self.model, [*history, *added])
+
+        for round_number in range(1, self.max_rounds + 1):
+            try:
+                reply, tool_calls, final = await self._ask([system, *history, *added])
+            except _Stopped as stopped:
+                if stopped.partial:
+                    # Keep what the user saw, so the next message follows on from it.
+                    added.append({"role": "assistant", "content": stopped.partial})
+                save()
+                yield usage.event()
+                yield AgentEvent(EventType.ERROR, {"message": "Stopped by user", "stopped": True})
+                return
+            except OllamaError as exc:
+                if round_number > 1:
+                    save()  # the tools already ran, so their results stay in the conversation
+                # Otherwise not saved: sending the message again shouldn't put it in the conversation twice.
+                yield usage.event()
+                yield AgentEvent(EventType.ERROR, {"message": str(exc)})
+                return
+            usage.add(final)
+
+            assistant: dict[str, Any] = {"role": "assistant", "content": reply}
+            if tool_calls:
+                assistant["tool_calls"] = tool_calls
+            added.append(assistant)
+            if reply:
+                yield AgentEvent(EventType.MESSAGE, {"text": reply, "parent_tool_use_id": None})
+
+            if not tool_calls:
+                save()
+                yield usage.event()
+                if reply or round_number > 1:
+                    # Small models often finish their tool work with no closing words; the work still counts.
+                    yield AgentEvent(EventType.COMPLETED, {"text": reply, "done_reason": final.get("done_reason")})
+                else:
+                    yield AgentEvent(EventType.ERROR, {"message": "The local model returned an empty answer."})
+                return
+
+            question: str | None = None
+            for call in tool_calls:
+                function = call["function"]
+                name, args = function["name"], function["arguments"]
+                if self._stopping or question is not None:
+                    # Every call gets an answer, or the next request confuses the model.
+                    added.append(_tool_message(call, "Not run: the turn ended first."))
+                    continue
+                if isinstance(args, str):
+                    added.append(_tool_message(call, f"Error: the arguments for {name} weren't valid JSON. "
+                                                     "Call it again with a JSON object."))
+                    continue
+                if name == "ask_user":
+                    question = str(args.get("question") or "").strip() or "The model asked for your input."
+                    added.append(_tool_message(call, "The question was shown to the user. "
+                                                     "Their answer is the next message."))
+                    continue
+                if name == "update_plan":
+                    try:
+                        items = plan_from_args(args)
+                    except ToolError as exc:
+                        added.append(_tool_message(call, f"Error: {exc}"))
+                        continue
+                    yield AgentEvent(EventType.PLAN, {"items": items})
+                    added.append(_tool_message(call, "Plan updated."))
+                    continue
+
+                calls_made += 1
+                tool_use_id = f"{turn}-{calls_made}"
+                shown = self.tools.display(name, args)
+                yield AgentEvent(EventType.TOOL_USE, {"tool_use_id": tool_use_id, "name": shown.name,
+                                                      "input": shown.input, "parent_tool_use_id": None})
+                result = await self.tools.run(name, args)
+                yield AgentEvent(EventType.TOOL_RESULT, {"tool_use_id": tool_use_id, "is_error": result.is_error,
+                                                         "content": result.content, "parent_tool_use_id": None,
+                                                         **result.extra})
+                added.append(_tool_message(call, result.content))
+
+            if self._stopping:
+                save()
+                yield usage.event()
+                yield AgentEvent(EventType.ERROR, {"message": "Stopped by user", "stopped": True})
+                return
+            if question is not None:
+                save()
+                yield AgentEvent(EventType.MESSAGE, {"text": question, "parent_tool_use_id": None})
+                yield usage.event()
+                yield AgentEvent(EventType.QUESTION, {"text": question})
+                return
+
+        save()
+        yield usage.event()
+        yield AgentEvent(EventType.ERROR, {
+            "message": f"The local model took {self.max_rounds} steps without finishing, so the turn was "
+                       "stopped. Send a message to let it continue, or hand the session off.",
+            "round_cap": True,
+        })
+
+    async def _ask(self, messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+        """One request: the reply's text, its tool calls (normalized) and the final chunk.
+
+        Raises OllamaError, or _Stopped carrying the text received so far.
+        """
         parts: list[str] = []
+        calls: list[dict[str, Any]] = []
         final: dict[str, Any] = {}
         try:
-            async for chunk in self._chat(messages):
-                parts.append((chunk.get("message") or {}).get("content") or "")
+            async for chunk in self._chat(messages, tools=self.use_tools):
+                message = chunk.get("message") or {}
+                parts.append(message.get("content") or "")
+                calls += [c for c in (_normalize_call(raw) for raw in message.get("tool_calls") or []) if c]
                 if chunk.get("done"):
                     final = chunk
         except _Stopped:
-            # Keep what the user saw, so the next message follows on from it.
-            partial = "".join(parts).strip()
-            save_history(path, self.model, [*history, user, *([{"role": "assistant", "content": partial}] if partial else [])])
-            yield AgentEvent(EventType.ERROR, {"message": "Stopped by user", "stopped": True})
-            return
-        except OllamaError as exc:
-            # Not saved: sending the message again shouldn't put it in the conversation twice.
-            yield AgentEvent(EventType.ERROR, {"message": str(exc)})
-            return
-
-        reply = "".join(parts).strip()
-        save_history(path, self.model, [*history, user, {"role": "assistant", "content": reply}])
-        if reply:
-            yield AgentEvent(EventType.MESSAGE, {"text": reply})
-        yield _usage(final)
-        if not reply:
-            yield AgentEvent(EventType.ERROR, {"message": "The local model returned an empty answer."})
-        else:
-            yield AgentEvent(EventType.COMPLETED, {"text": reply, "done_reason": final.get("done_reason")})
+            raise _Stopped("".join(parts).strip()) from None
+        return "".join(parts).strip(), calls, final
 
     async def _one_off(self, instructions: str, prompt: str) -> AsyncGenerator[AgentEvent]:
-        """A call outside the conversation, saving nothing."""
+        """A call outside the conversation, saving nothing, with no tools."""
         messages = [{"role": "system", "content": instructions}, {"role": "user", "content": prompt}]
+        self._stopping = False
         parts: list[str] = []
         final: dict[str, Any] = {}
         try:
@@ -283,7 +427,7 @@ class OllamaAdapter(AgentAdapter):
         yield _usage(final)
         yield AgentEvent(EventType.COMPLETED, {"text": "".join(parts).strip()})
 
-    async def _chat(self, messages: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any]]:
+    async def _chat(self, messages: list[dict[str, Any]], tools: bool = False) -> AsyncGenerator[dict[str, Any]]:
         """Ollama's response chunks. Raises OllamaError, or _Stopped after stop().
 
         The request runs in its own task, so stop() can cancel it at any point, even while
@@ -299,8 +443,9 @@ class OllamaAdapter(AgentAdapter):
         }
         if self.think is not None:
             payload["think"] = self.think
+        if tools:
+            payload["tools"] = TOOL_DEFINITIONS
         queue: asyncio.Queue[Any] = asyncio.Queue()
-        self._stopping = False
         self._reader = asyncio.create_task(self._read(payload, queue))
         try:
             while True:
@@ -354,6 +499,58 @@ def _error_text(status: int, body: bytes, model: str) -> str:
     if status == 404:
         return f"The model {model} isn't installed in Ollama ({message or 'not found'}). Install it with `ollama pull {model}`."
     return f"Ollama returned HTTP {status}: {message or 'no details'}"
+
+
+def _normalize_call(raw: Any) -> dict[str, Any] | None:
+    """A tool call as `{function: {name, arguments}}`, arguments parsed from JSON text if needed.
+
+    Arguments that aren't valid JSON stay a string, so the loop can tell the model.
+    """
+    function = (raw or {}).get("function") if isinstance(raw, dict) else None
+    if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+        return None
+    args = function.get("arguments")
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args) if args.strip() else {}
+            args = parsed if isinstance(parsed, dict) else args
+        except json.JSONDecodeError:
+            pass
+    elif not isinstance(args, dict):
+        args = {}
+    call: dict[str, Any] = {"function": {"name": function["name"], "arguments": args}}
+    if isinstance(raw.get("id"), str):
+        call["id"] = raw["id"]
+    return call
+
+
+def _tool_message(call: dict[str, Any], content: str) -> dict[str, Any]:
+    message = {"role": "tool", "content": content, "tool_name": call["function"]["name"]}
+    if "id" in call:
+        message["tool_call_id"] = call["id"]
+    return message
+
+
+class _Usage:
+    """A turn's tokens and time, added up over its requests."""
+
+    def __init__(self) -> None:
+        self.input = self.output = self.requests = 0
+        self.duration_ns = 0
+
+    def add(self, final: dict[str, Any]) -> None:
+        self.requests += 1
+        self.input += final.get("prompt_eval_count") or 0
+        self.output += final.get("eval_count") or 0
+        duration = final.get("total_duration")
+        self.duration_ns += duration if isinstance(duration, int | float) else 0
+
+    def event(self) -> AgentEvent:
+        return AgentEvent(EventType.USAGE, {
+            "usage": {"input_tokens": self.input, "output_tokens": self.output},
+            "duration_ms": round(self.duration_ns / 1_000_000) if self.duration_ns else None,
+            "num_turns": self.requests,
+        })
 
 
 def _usage(final: dict[str, Any]) -> AgentEvent:

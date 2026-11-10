@@ -84,12 +84,13 @@ def test_turn_streams_a_reply_and_saves_the_conversation(tmp_path: Path) -> None
     assert [e.type for e in events] == [EventType.STARTED, EventType.MESSAGE, EventType.USAGE, EventType.COMPLETED]
     assert events[0].data == {"session_id": local.native_session_id, "model": MODEL, "cwd": str(tmp_path)}
     assert events[1].data["text"] == "Echo: hello (2 messages)"
-    assert events[2].data == {"usage": {"input_tokens": 12, "output_tokens": 5}, "duration_ms": 1500}
+    assert events[2].data == {"usage": {"input_tokens": 12, "output_tokens": 5}, "duration_ms": 1500, "num_turns": 1}
     assert events[3].data["text"] == "Echo: hello (2 messages)"
 
     sent = fake.calls[0]
     assert sent["options"] == {"num_ctx": 32768}
     assert "think" not in sent
+    assert [t["function"]["name"] for t in sent["tools"]][:2] == ["read_file", "list_files"]
     assert sent["messages"][0]["role"] == "system" and MODEL in sent["messages"][0]["content"]
     assert saved_messages(tmp_path, local.native_session_id) == [
         {"role": "user", "content": "hello"},
@@ -166,6 +167,113 @@ def test_stop_cancels_a_hanging_request(tmp_path: Path) -> None:
     ]
 
 
+# --- The tool loop --------------------------------------------------------------------------------
+
+
+def test_tool_turn_runs_the_tools_and_ends_with_the_answer(tmp_path: Path) -> None:
+    fake = FakeOllama("tools")
+    local = adapter(tmp_path, fake)
+    events = collect(local.start_task("make hello.txt and show it"))
+
+    assert [e.type for e in events] == [
+        EventType.STARTED, EventType.MESSAGE, EventType.PLAN, EventType.TOOL_USE, EventType.TOOL_RESULT,
+        EventType.TOOL_USE, EventType.TOOL_RESULT, EventType.MESSAGE, EventType.USAGE, EventType.COMPLETED,
+    ]
+    plan, write_use, write_result, run_use, run_result = events[2:7]
+    assert plan.data["items"][0] == {"text": "Create hello.txt", "status": "in_progress"}
+    # The same shapes as Claude's, so the transcript shows the diff and the command row.
+    assert write_use.data["name"] == "Write"
+    assert write_use.data["input"] == {"file_path": str(tmp_path / "hello.txt")}
+    assert write_result.data["tool_use_id"] == write_use.data["tool_use_id"]
+    assert write_result.data["diffs"][0]["kind"] == "add"
+    assert run_use.data == {"tool_use_id": run_use.data["tool_use_id"], "name": "PowerShell",
+                            "input": {"command": "Get-Content hello.txt"}, "parent_tool_use_id": None}
+    assert run_result.data["exit_code"] == 0
+    assert run_result.data["content"] == "hello from the local model"
+    assert events[-2].data["num_turns"] == 3
+    assert events[-1].data["text"] == "Created hello.txt and printed it."
+
+    # The tool results went back to the model, after the assistant message that called them.
+    roles = [m["role"] for m in fake.calls[2]["messages"]]
+    assert roles == ["system", "user", "assistant", "tool", "tool", "assistant", "tool"]
+    assert fake.calls[2]["messages"][-1] == {"role": "tool", "content": "hello from the local model",
+                                             "tool_name": "run_command"}
+    # The whole turn is saved, so the next message follows on from it.
+    assert len(saved_messages(tmp_path, local.native_session_id)) == 7
+
+
+def test_no_closing_words_after_tool_work_still_completes(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("list_files", {})]}, ""])
+    events = collect(adapter(tmp_path, fake).start_task("look"))
+    assert events[-1].type is EventType.COMPLETED and events[-1].data["text"] == ""
+
+
+def test_ask_user_ends_the_turn_as_a_question(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("ask_user", {"question": "Which file?"}), ("list_files", {})]}])
+    local = adapter(tmp_path, fake)
+    events = collect(local.start_task("tidy up"))
+    assert [e.type for e in events][-3:] == [EventType.MESSAGE, EventType.USAGE, EventType.QUESTION]
+    assert events[-1].data == {"text": "Which file?"}
+    assert EventType.TOOL_USE not in [e.type for e in events]  # nothing runs after the question
+    saved = saved_messages(tmp_path, local.native_session_id)
+    assert [m["content"] for m in saved if m["role"] == "tool"] == [
+        "The question was shown to the user. Their answer is the next message.",
+        "Not run: the turn ended first.",
+    ]
+
+    # The answer is an ordinary next message.
+    answer = collect(adapter(tmp_path, FakeOllama(), local.native_session_id).send_reply("app.py"))
+    assert answer[-1].type is EventType.COMPLETED
+    assert answer[-1].data["text"] == "Echo: app.py (6 messages)"
+
+
+def test_round_cap_ends_a_looping_turn(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("list_files", {})]}] * 10)
+    events = collect(adapter(tmp_path, fake, max_rounds=3).start_task("loop"))
+    assert len(fake.calls) == 3
+    assert events[-1].type is EventType.ERROR and events[-1].data["round_cap"] is True
+    assert "took 3 steps" in events[-1].data["message"]
+
+
+def test_bad_tool_calls_go_back_to_the_model(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[
+        {"tool_calls": [("read_file", "{not json"), ("read_file", {"path": "../secret.txt"}), ("nope", {})]},
+        "I couldn't.",
+    ])
+    events = collect(adapter(tmp_path, fake).start_task("read it"))
+    assert events[-1].type is EventType.COMPLETED
+    tool_replies = [m["content"] for m in fake.calls[1]["messages"] if m["role"] == "tool"]
+    assert "weren't valid JSON" in tool_replies[0]
+    assert "outside the working folder" in tool_replies[1]
+    assert "no tool named nope" in tool_replies[2]
+
+
+def test_a_model_without_tools_just_chats(tmp_path: Path) -> None:
+    fake = FakeOllama()
+    collect(adapter(tmp_path, fake, tools=False).start_task("hello"))
+    assert "tools" not in fake.calls[0]
+    assert "can't use tools" in fake.calls[0]["messages"][0]["content"]
+
+
+def test_stop_during_a_command_ends_the_turn(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("run_command", {"command": "Start-Sleep -Seconds 30"}),
+                                              ("list_files", {})]}])
+    local = adapter(tmp_path, fake)
+
+    async def run() -> list[AgentEvent]:
+        seen = []
+        async for event in local.start_task("wait"):
+            seen.append(event)
+            if event.type is EventType.TOOL_USE:
+                asyncio.get_running_loop().call_later(1.5, lambda: asyncio.ensure_future(local.stop()))
+        return seen
+
+    events = asyncio.run(asyncio.wait_for(run(), 20))
+    assert events[-1].type is EventType.ERROR and events[-1].data["stopped"] is True
+    assert [e.data["name"] for e in events if e.type is EventType.TOOL_USE] == ["PowerShell"]  # list_files never ran
+    assert len(fake.calls) == 1
+
+
 def test_summarize_saves_nothing(tmp_path: Path) -> None:
     fake = FakeOllama()
     local = adapter(tmp_path, fake)
@@ -173,6 +281,7 @@ def test_summarize_saves_nothing(tmp_path: Path) -> None:
     assert [e.type for e in events] == [EventType.USAGE, EventType.COMPLETED]
     assert events[-1].data["text"] == "Echo: the session (2 messages)"
     assert fake.calls[0]["messages"][0] == {"role": "system", "content": "Write a summary."}
+    assert "tools" not in fake.calls[0]  # read-only: no tools
     assert local.native_session_id is None
     assert not (tmp_path / "history").exists()
 
@@ -219,6 +328,18 @@ def test_local_session_chats_continues_and_is_deleted_with_its_history(engine: E
         assert history.exists()
         assert client.delete(f"/api/sessions/{session_id}").status_code == 204
         assert not history.exists()
+
+
+def test_local_session_edits_a_file_and_runs_a_command(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "ollama:tools", agent="ollama")
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "make hello.txt and show it"})
+    session = wait_until_idle(client, session_id)
+    assert session["status"] == "completed"
+    assert session["plan"][0]["text"] == "Create hello.txt"
+    assert (Path(session["project_path"]) / "hello.txt").read_text(encoding="utf-8") == "hello from the local model\n"
+    events = client.get(f"/api/sessions/{session_id}/events").json()
+    assert [e["payload"]["name"] for e in events if e["type"] == "tool_use"] == ["Write", "PowerShell"]
+    assert [e["payload"].get("exit_code") for e in events if e["type"] == "tool_result"] == [None, 0]
 
 
 def test_local_model_takes_over_from_codex(client: TestClient, tmp_path: Path) -> None:

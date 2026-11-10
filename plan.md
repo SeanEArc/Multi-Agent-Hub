@@ -11,7 +11,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a built; next: 5b |
+| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a and 5b built; next: 5c |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -229,7 +229,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Tests: a fake Ollama server (a small ASGI app, or `httpx.MockTransport`) for streaming, resume from the saved file, stop, server down and model missing; `HUB_LIVE_OLLAMA=1` opt-in live test against the real server. An HTTP client becomes a runtime dependency.
 - Acceptance: part (1) of the phase acceptance: a chat with the local model answers, a follow-up message continues the same conversation, and that still works after the backend restarts.
 
-**Phase 5b: Tools and the agent loop** (not started)
+**Phase 5b: Tools and the agent loop** (built 2026-11-10, Session 40, on `feature/ollama-chat`; the acceptance task passed live with `qwen3.5:9b-q4_K_M`; the in-app check is in `TODO.md`. Tools in `app/adapters/local_tools.py`; settings `HUB_OLLAMA_MAX_ROUNDS` and `HUB_OLLAMA_COMMAND_TIMEOUT`. Invalid JSON arguments, unknown tools and refused paths already go back to the model as errors, the simplest part of 5c's tool-call repair.)
 - The loop: send the history with tool definitions; when the reply has `tool_calls`, emit `TOOL_USE`, run each tool, emit `TOOL_RESULT`, append the result and call again, until the model answers without tool calls. A cap on tool rounds per turn (setting, default about 30) ends the turn with an error message instead of looping forever.
 - Tool set (JSON-schema function tools, deliberately small): `read_file` (with line range), `list_files`, `search` (text search in the project), `write_file`, `edit_file` (exact old/new text, must match once), `run_command`, `update_plan` (a real checklist tool, so no `PLAN_MARKER` text is needed) and `ask_user` (ends the turn as a `QUESTION`, so no `[[NEEDS_INPUT]]` marker is needed).
 - Safety: file tools resolve paths inside the session's working folder and refuse anything outside it (including `..` and absolute paths elsewhere); `run_command` runs in that folder through the session's `Runner` (so phase 9's Docker runner applies) with the headless git env, a timeout, and output capped before it goes back to the model. Commands run in Windows PowerShell; the prompt tells the model to use `write_file`/`edit_file` for files rather than shell redirection. Not a sandbox until phase 9.

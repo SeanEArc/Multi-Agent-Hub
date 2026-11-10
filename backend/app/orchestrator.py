@@ -124,14 +124,20 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
             case AgentKind.OLLAMA:
                 # Checking the server here lets the handoff chain skip the local model when Ollama is off.
                 models = list_models_sync(settings.ollama_url)
+                model = pick_model(models, stint.model, settings.ollama_model)
+                capable = next((m["tools"] for m in models if m["name"] == model), None)
                 return OllamaAdapter(
                     cwd,
-                    model=pick_model(models, stint.model, settings.ollama_model),
+                    model=model,
                     native_session_id=stint.native_session_id,
                     history_dir=settings.local_dir,
                     base_url=settings.ollama_url,
                     num_ctx=settings.ollama_num_ctx,
                     think=settings.ollama_think,
+                    # Unknown (an older Ollama) is tried with tools; only a model known to lack them chats.
+                    tools=capable is not False,
+                    max_rounds=settings.ollama_max_rounds,
+                    command_timeout=settings.ollama_command_timeout,
                 )
     except (ClaudeCliNotFound, CodexCliNotFound, OllamaUnavailable) as exc:
         raise AgentUnavailable(str(exc)) from exc

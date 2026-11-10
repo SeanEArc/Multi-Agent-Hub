@@ -37,3 +37,29 @@ def test_chat_then_reply(tmp_path: Path) -> None:
     second = asyncio.run(run(resumed.send_reply("What is my favorite color? Answer in one word.")))
     assert second[-1].type is EventType.COMPLETED, second[-1].data
     assert "teal" in second[-1].data["text"].lower()
+
+
+def test_coding_task_with_tools(tmp_path: Path) -> None:
+    """Phase 5b's acceptance task: create a file, run it, report the output."""
+    settings = get_settings()
+    model = pick_model(list_models_sync(settings.ollama_url), None, settings.ollama_model)
+    project = tmp_path / "project"
+    project.mkdir()
+    adapter = OllamaAdapter(project, model, history_dir=tmp_path / "history", base_url=settings.ollama_url,
+                            num_ctx=settings.ollama_num_ctx, command_timeout=120)
+
+    async def run(events):
+        return [event async for event in events]
+
+    events = asyncio.run(run(adapter.start_task(
+        "Create a Python file hello.py that prints the sum of 17 and 25. Run it with python and tell me what it printed."
+    )))
+    for e in events:
+        if e.type in (EventType.TOOL_USE, EventType.TOOL_RESULT, EventType.MESSAGE, EventType.PLAN):
+            print(e.type, {k: v for k, v in e.data.items() if k != "diffs"})
+    assert events[-1].type is EventType.COMPLETED, events[-1].data
+    assert (project / "hello.py").is_file()
+    tools = [e.data["name"] for e in events if e.type is EventType.TOOL_USE]
+    assert "Write" in tools and "PowerShell" in tools
+    assert any(e.type is EventType.TOOL_RESULT and "42" in e.data["content"] for e in events)
+    assert "42" in events[-1].data["text"]
