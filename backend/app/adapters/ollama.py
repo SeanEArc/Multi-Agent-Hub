@@ -37,6 +37,7 @@ from typing import Any
 import httpx2 as httpx
 
 from app.adapters.base import AgentAdapter, AgentEvent, EventType
+from app.adapters.local_context import fit, prompt_budget
 from app.adapters.local_tools import (
     DEFAULT_COMMAND_TIMEOUT,
     TOOL_DEFINITIONS,
@@ -50,6 +51,11 @@ from app.models import AgentKind
 DEFAULT_URL = "http://127.0.0.1:11434"
 DEFAULT_NUM_CTX = 32768
 DEFAULT_MAX_ROUNDS = 30
+QUIET_NUDGE = "(From the hub: reply to the user now, with your answer or a short summary of what you did.)"
+# The same tool call with the same arguments, this many times in a row: the third is answered with a
+# nudge instead of being run, the fourth ends the turn.
+REPEAT_NUDGE = 3
+REPEAT_STOP = 4
 # Loading a large model and thinking before the first token can take minutes on a modest GPU.
 TIMEOUT = httpx.Timeout(600.0, connect=5.0)
 LIST_TIMEOUT = 3.0
@@ -289,13 +295,34 @@ class OllamaAdapter(AgentAdapter):
         usage = _Usage()
         turn = uuid.uuid4().hex[:8]
         calls_made = 0
+        budget = prompt_budget(self.num_ctx, TOOL_DEFINITIONS if self.use_tools else None)
+        context_noted = False
+        last_call, repeats = "", 0
+        # Asked once per turn for an answer after the model went quiet; sent, not saved.
+        nudge: dict[str, Any] | None = None
+        nudged = False
 
         def save() -> None:
             save_history(path, self.model, [*history, *added])
 
+        def end_early(message: str, reason: str) -> list[AgentEvent]:
+            """The turn stops before the model finished, waiting for the user to say how to go on."""
+            save()
+            return [
+                usage.event(),
+                AgentEvent(EventType.NOTICE, {"message": message, "reason": reason}),
+                AgentEvent(EventType.QUESTION, {"text": message, "reason": reason}),
+            ]
+
         for round_number in range(1, self.max_rounds + 1):
+            fitted = fit([system, *history, *added], budget)
+            if fitted.changed and not context_noted:
+                context_noted = True
+                yield AgentEvent(EventType.NOTICE, {"message": _context_note(fitted, self.num_ctx), "reason": "context",
+                                                    "shortened": fitted.shortened, "dropped": fitted.dropped,
+                                                    "cut_prompt": fitted.cut_prompt})
             try:
-                reply, tool_calls, final = await self._ask([system, *history, *added])
+                reply, tool_calls, final = await self._ask([*fitted.messages, *([nudge] if nudge else [])])
             except _Stopped as stopped:
                 if stopped.partial:
                     # Keep what the user saw, so the next message follows on from it.
@@ -312,6 +339,11 @@ class OllamaAdapter(AgentAdapter):
                 yield AgentEvent(EventType.ERROR, {"message": str(exc)})
                 return
             usage.add(final)
+            if not reply and not tool_calls and round_number > 1 and not nudged and not self._stopping:
+                # Small models often answer in their (dropped) thinking and then say nothing. Ask once more.
+                nudge, nudged = {"role": "user", "content": QUIET_NUDGE}, True
+                continue
+            nudge = None
 
             assistant: dict[str, Any] = {"role": "assistant", "content": reply}
             if tool_calls:
@@ -331,10 +363,11 @@ class OllamaAdapter(AgentAdapter):
                 return
 
             question: str | None = None
+            looping = False
             for call in tool_calls:
                 function = call["function"]
                 name, args = function["name"], function["arguments"]
-                if self._stopping or question is not None:
+                if self._stopping or question is not None or looping:
                     # Every call gets an answer, or the next request confuses the model.
                     added.append(_tool_message(call, "Not run: the turn ended first."))
                     continue
@@ -355,6 +388,19 @@ class OllamaAdapter(AgentAdapter):
                         continue
                     yield AgentEvent(EventType.PLAN, {"items": items})
                     added.append(_tool_message(call, "Plan updated."))
+                    continue
+
+                signature = f"{name} {json.dumps(args, sort_keys=True)}"
+                repeats = repeats + 1 if signature == last_call else 1
+                last_call = signature
+                if repeats >= REPEAT_STOP:
+                    looping = True
+                    added.append(_tool_message(call, "Not run: the same call again."))
+                    continue
+                if repeats == REPEAT_NUDGE:
+                    added.append(_tool_message(call, "Not run: you already made this exact call twice in a row and "
+                                                     "got the result above. Use that result, try something else, "
+                                                     "or give your answer."))
                     continue
 
                 calls_made += 1
@@ -379,14 +425,17 @@ class OllamaAdapter(AgentAdapter):
                 yield usage.event()
                 yield AgentEvent(EventType.QUESTION, {"text": question})
                 return
+            if looping:
+                for event in end_early(
+                    "The local model kept repeating the same step, so the hub stopped the turn. Send a message "
+                    "to steer it (for example, what to try instead), or hand the session off.", "loop"):
+                    yield event
+                return
 
-        save()
-        yield usage.event()
-        yield AgentEvent(EventType.ERROR, {
-            "message": f"The local model took {self.max_rounds} steps without finishing, so the turn was "
-                       "stopped. Send a message to let it continue, or hand the session off.",
-            "round_cap": True,
-        })
+        for event in end_early(
+            f"The local model took {self.max_rounds} steps without finishing, so the hub paused the turn. "
+            "Send a message (such as \"continue\") to let it go on, or hand the session off.", "round_cap"):
+            yield event
 
     async def _ask(self, messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
         """One request: the reply's text, its tool calls (normalized) and the final chunk.
@@ -499,6 +548,19 @@ def _error_text(status: int, body: bytes, model: str) -> str:
     if status == 404:
         return f"The model {model} isn't installed in Ollama ({message or 'not found'}). Install it with `ollama pull {model}`."
     return f"Ollama returned HTTP {status}: {message or 'no details'}"
+
+
+def _context_note(fitted: Any, num_ctx: int) -> str:
+    parts = []
+    if fitted.shortened:
+        parts.append(f"shortened {fitted.shortened} old tool output{'s' if fitted.shortened != 1 else ''}")
+    if fitted.dropped:
+        parts.append(f"left out {fitted.dropped} earlier message{'s' if fitted.dropped != 1 else ''}")
+    if fitted.cut_prompt:
+        parts.append("cut the middle of the latest message")
+    return (f"The conversation is longer than the local model's context ({num_ctx:,} tokens), so the hub "
+            f"{', '.join(parts[:-1]) + ' and ' + parts[-1] if len(parts) > 1 else parts[0]} for this turn. "
+            "The model may have forgotten details from earlier; the saved conversation is complete.")
 
 
 def _normalize_call(raw: Any) -> dict[str, Any] | None:

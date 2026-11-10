@@ -1,4 +1,5 @@
-import { AGENT_NAMES, AVAILABLE_AGENTS, MODELS, type AgentKind, type ChainEntry, type LimitPolicy } from "../api";
+import { AGENT_NAMES, AVAILABLE_AGENTS, type AgentKind, type ChainEntry, type LimitPolicy } from "../api";
+import { ModelSelect, useLocalModels } from "./ModelSelect";
 
 interface Props {
   chain: ChainEntry[];
@@ -9,6 +10,9 @@ const AGENTS: AgentKind[] = ["claude", "codex", "ollama"];
 
 /** The handoff order: when an agent hits its usage limit, the next one in the list takes over. */
 export function ChainEditor({ chain, onChange }: Props) {
+  // Looked up once for every local entry, when there is one.
+  const local = useLocalModels(chain.some((e) => e.agent === "ollama"));
+
   function update(index: number, entry: ChainEntry) {
     onChange(chain.map((e, i) => (i === index ? entry : e)));
   }
@@ -38,18 +42,14 @@ export function ChainEditor({ chain, onChange }: Props) {
                 </option>
               ))}
             </select>
-            <select
+            <ModelSelect
               aria-label={`Model ${i + 1}`}
-              value={entry.model ?? ""}
+              agent={entry.agent}
+              value={entry.model}
+              local={local}
               disabled={unavailable}
-              onChange={(e) => update(i, { ...entry, model: e.target.value || null })}
-            >
-              {(MODELS[entry.agent] ?? [""]).map((m) => (
-                <option key={m} value={m}>
-                  {m || "Default"}
-                </option>
-              ))}
-            </select>
+              onChange={(model) => update(i, { ...entry, model })}
+            />
             <span className="chain-buttons">
               <button type="button" className="button subtle" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">
                 ↑

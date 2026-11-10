@@ -486,11 +486,25 @@ class HubSettings(SQLModel):
     default_chain: list[ChainEntry] = Field(default_factory=lambda: list(DEFAULT_CHAIN), min_length=1)
     limit_policy: LimitPolicy = LimitPolicy.AUTO
     progress_layout: ProgressLayout = ProgressLayout.PANEL
+    # The Ollama model a local stint gets when neither the session nor the chain names one. None: the
+    # HUB_OLLAMA_MODEL env setting, else the first installed model that supports tools.
+    local_model: str | None = None
 
 
 def load_hub_settings(db: Session) -> HubSettings:
     stored = {row.key: row.value for row in db.exec(select(Setting))}
     return HubSettings.model_validate(stored)
+
+
+def stint_model(db: Session, agent: AgentKind, model: str | None) -> str | None:
+    """The model a new stint records: the one asked for, or for the local model the default from Settings.
+
+    Applied when the stint is created, so the stint keeps the model it started with even if the
+    default changes later (its saved conversation came from that model).
+    """
+    if model or agent is not AgentKind.OLLAMA:
+        return model
+    return load_hub_settings(db).local_model
 
 
 def save_hub_settings(db: Session, settings: HubSettings) -> None:

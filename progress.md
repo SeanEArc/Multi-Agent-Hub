@@ -1391,6 +1391,39 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
 
 **For the agent**
-- [ ] Commit 5b on `feature/ollama-chat` when the user agrees; merge after the in-app checks.
+- [x] Commit 5b on `feature/ollama-chat` when the user agrees (done: `0de8d6f`, pushed); merge after the in-app checks.
 - [ ] Then 5c (context budget, loop detection, handoff brief fit, local model choice in the chain and handoff dialog, quality notice); decide whether 5d is needed; then phases 7, 9, 8, 10, 6.
+- [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-10 15:53 (UTC-06:00)
+
+# Session 41: Built Phase 5c, robustness, the default local model and the quality notice, on `feature/local-robustness` (not committed yet).
+
+## What was done
+
+1. **5b committed and pushed** (`0de8d6f` on `feature/ollama-chat`); 5c branched from it as `feature/local-robustness`.
+2. **Context budget** (`app/adapters/local_context.py`, new): before each request the hub estimates the size (characters / 3, no tokenizer) against `num_ctx` minus room for the reply (20%, at least 4096 tokens) and the tool definitions. When it's too big it shortens what is sent, in this order: old tool outputs and old file contents in write/edit calls (cut to a stub, the latest 6 messages kept whole); earlier turns' tool steps (keeping each turn's request and final answer); whole earlier turns; then the current turn's tool outputs and, last, the middle of the current message (a long handoff brief keeps its start and end). The task (the first message) is always kept, and the system prompt says how many messages were left out. The saved conversation stays complete. A `NOTICE` event (new event type, no migration) tells the user once per turn.
+3. **Loop detection:** the same call with the same arguments a third time in a row gets a nudge instead of running; a fourth ends the turn.
+4. **Gentler early ends:** the round cap and loop detection now end the turn with a `NOTICE` plus a `QUESTION` (the session waits for the user) instead of an `ERROR` (failed).
+5. **Quiet model:** when the model ends its tool work with an empty reply, the hub asks once more for its answer (a nudge sent, not saved). Found live: in a short second turn, Qwen read the file and then said nothing; with the nudge it answered.
+6. **Default local model:** a hub setting `local_model` (Settings → Default local model). Applied when a stint is created (`stint_model`: new sessions, handoffs, the chain's candidates, summaries), so a stint records the model it started with. `GET /api/local/models` reports it as the default.
+7. **UI:**
+   - A shared `ModelSelect` (with `useLocalModels`) lists the installed local models in the new-session dialog, the chain editor (Settings and per session), the handoff dialog (with the Ollama hint, and **Hand off** disabled when Ollama is off) and Settings.
+   - A notice row in the transcript (`row notice warning`).
+   - A one-line quality note under the header of local sessions.
+8. **Tests:** `tests/test_local_context.py` (6), and new loop tests in `test_ollama_adapter.py`: round cap pause, loop nudge then stop, the context notice with shortening (and the saved file complete), the quiet-model nudge (once), and the default model through the API (session, explicit model, handoff, other agents unaffected). 221 passed, 6 skipped; both live tests pass; the frontend builds and type-checks.
+9. **Live check with an 8k context** (`qwen3.5:9b-q4_K_M`): a task reading five files completed with the notice; the follow-up turn kept the first turn's answer, needed 3 requests and 7k tokens (before the tool-steps-first change: 10 requests, 26k tokens, re-reading every file), and answered correctly.
+10. **Docs:** `CLAUDE.md`, `plan.md` (5c built), `TODO.md` (manual check for 5c).
+
+## Next steps
+
+**For the user**
+- [ ] Try the 5a, 5b and 5c checks in `TODO.md`.
+- [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Commit 5c when the user agrees; merge the Phase 5 branches after the in-app checks.
+- [ ] Decide with the user whether 5d (LM Studio and other OpenAI-compatible servers) is needed now; then phases 7, 9, 8, 10, 6.
 - [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

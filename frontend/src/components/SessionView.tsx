@@ -127,6 +127,12 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
               {session.chat ? "Chat, no project folder" : session.project_path}
             </span>
           </div>
+          {session.agent === "ollama" && (
+            <div className="hint">
+              Runs on this PC with no subscription. Local models are slower and weaker at coding than Claude and
+              Codex: check their changes, and hand off if one gets stuck.
+            </div>
+          )}
         </div>
         <div className="session-actions">
           <UsageMeters refreshKey={lastUsageReport?.id} current={session.agent} />

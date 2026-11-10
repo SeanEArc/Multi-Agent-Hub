@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from sqlmodel import Session
 
 from app.adapters.ollama import OllamaUnavailable, list_models, pick_model
 from app.config import get_settings
+from app.db import get_session
+from app.models import load_hub_settings
 
 router = APIRouter(prefix="/local", tags=["local"])
+
+DbSession = Annotated[Session, Depends(get_session)]
 
 
 class LocalModel(BaseModel):
@@ -29,7 +36,7 @@ class LocalModels(BaseModel):
 
 
 @router.get("/models", response_model=LocalModels)
-async def local_models(request: Request) -> LocalModels:
+async def local_models(request: Request, db: DbSession) -> LocalModels:
     """The models installed in Ollama, for picking a session's local model."""
     settings = get_settings()
     url = request.app.state.ollama_url or settings.ollama_url
@@ -37,8 +44,9 @@ async def local_models(request: Request) -> LocalModels:
         models = await list_models(url, transport=request.app.state.ollama_transport)
     except OllamaUnavailable as exc:
         return LocalModels(url=url, available=False, models=[], error=str(exc))
+    chosen = load_hub_settings(db).local_model
     try:
-        default = pick_model(models, None, settings.ollama_model)
+        default = pick_model(models, chosen, settings.ollama_model)
         error = None
     except OllamaUnavailable as exc:
         default, error = None, str(exc)

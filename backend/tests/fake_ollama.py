@@ -98,8 +98,11 @@ class FakeOllama:
 
     def _scripted(self, body: dict[str, Any]) -> list[dict[str, Any]]:
         messages = body["messages"]
-        last_user = max(i for i, m in enumerate(messages) if m["role"] == "user")
-        step = sum(1 for m in messages[last_user:] if m["role"] == "assistant")
+        # The hub's one-off nudge for an answer isn't a new request from the user; it follows a quiet reply
+        # that wasn't kept, so it counts as one more step.
+        nudged = [i for i, m in enumerate(messages) if m["role"] == "user" and m["content"].startswith("(From the hub")]
+        last_user = max(i for i, m in enumerate(messages) if m["role"] == "user" and i not in nudged)
+        step = sum(1 for m in messages[last_user:] if m["role"] == "assistant") + len(nudged)
         reply = self.script[step] if step < len(self.script) else "Done."
         if isinstance(reply, str):
             return [_chunk(reply, body["model"])]

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type HubSettings, type LimitPolicy, type ProgressLayout } from "../api";
 import { useTheme } from "../theme";
 import { ChainEditor, POLICY_LABELS } from "./ChainEditor";
+import { ModelSelect, useLocalModels } from "./ModelSelect";
 
 interface Props {
   onClose: () => void;
@@ -14,6 +15,7 @@ export function SettingsDialog({ onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useTheme();
+  const local = useLocalModels(true);
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -59,6 +61,20 @@ export function SettingsDialog({ onClose }: Props) {
                 git diff. Sessions can override this.
               </span>
             </div>
+            <label>
+              Default local model
+              <ModelSelect
+                agent="ollama"
+                value={settings.local_model}
+                local={local && { ...local, default: local.default && !settings.local_model ? local.default : null }}
+                onChange={(local_model) => setSettings({ ...settings, local_model })}
+              />
+              <span className="hint">
+                {local && !local.available
+                  ? local.error
+                  : "Used by local sessions, chain entries and handoffs that don't pick a model. Default: the first installed model that can use tools."}
+              </span>
+            </label>
             <label>
               When an agent hits its limit
               <select

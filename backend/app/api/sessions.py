@@ -32,6 +32,7 @@ from app.models import (
     latest_summary,
     session_read,
     session_worktree,
+    stint_model,
     summary_read,
     utcnow,
 )
@@ -89,7 +90,8 @@ async def create_session(body: SessionCreate, db: DbSession, request: Request) -
         except WorktreeError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not create a worktree: {exc}") from None
     db.add(agent_session)
-    db.add(Stint(session_id=agent_session.id, seq=1, agent=body.agent, model=body.model, reason=StintReason.NEW))
+    db.add(Stint(session_id=agent_session.id, seq=1, agent=body.agent, model=stint_model(db, body.agent, body.model),
+                 reason=StintReason.NEW))
     if repo is not None:
         db.add(Worktree(session_id=agent_session.id, repo_path=str(repo.root), path=str(created.path),
                         subdir=repo.subdir, branch=created.branch, base_commit=created.base_commit))

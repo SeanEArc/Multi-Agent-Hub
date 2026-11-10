@@ -11,7 +11,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a and 5b built; next: 5c |
+| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c built; 5d to decide |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -238,7 +238,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Tests: a scripted fake server that returns tool calls, covering each tool, the path checks, the round cap, a question turn, and stop during a running command.
 - Acceptance: part (2) of the phase acceptance: in a project session, `qwen3.5:9b-q4_K_M` creates a file, runs it and reports the output, with the edit's diff and the command shown in the transcript.
 
-**Phase 5c: Robustness, handoff and the chain** (not started)
+**Phase 5c: Robustness, handoff and the chain** (built 2026-11-10, Session 41, on `feature/local-robustness`; checked live with an 8k context; the in-app check is in `TODO.md`. Context fitting in `app/adapters/local_context.py`: old tool outputs, then earlier turns' tool steps (keeping each turn's request and answer), then whole turns, then the current message's middle. The round cap and loop detection pause the turn as a question with a transcript notice rather than failing it. Added along the way: when the model ends tool work with no reply, it is asked once for its answer. The default local model is a hub setting applied when a stint is created.)
 - Context budget: estimate the history's size against `num_ctx` and, before it overflows, shorten old tool outputs and then drop or summarize the oldest turns, keeping the task and the latest turns, so long sessions keep working on a small context. Warn in the transcript when the history was shortened.
 - Tool-call repair: invalid JSON arguments, unknown tools or missing parameters go back to the model as a tool error it can correct, rather than failing the turn. Loop detection: the same call with the same arguments repeated several times in a row ends the turn with a message.
 - Handoff: a local stint started from a handoff brief works like the others (the brief is the first prompt); check that the brief fits in the context, shortening it if not. Chain entries and the handoff dialog offer a local model choice; a setting for the default local model.

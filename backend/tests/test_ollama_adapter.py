@@ -202,9 +202,20 @@ def test_tool_turn_runs_the_tools_and_ends_with_the_answer(tmp_path: Path) -> No
     assert len(saved_messages(tmp_path, local.native_session_id)) == 7
 
 
-def test_no_closing_words_after_tool_work_still_completes(tmp_path: Path) -> None:
-    fake = FakeOllama(script=[{"tool_calls": [("list_files", {})]}, ""])
+def test_a_quiet_model_is_asked_once_for_its_answer(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("list_files", {})]}, "", "There are no files."])
+    local = adapter(tmp_path, fake)
+    events = collect(local.start_task("look"))
+    assert events[-1].type is EventType.COMPLETED and events[-1].data["text"] == "There are no files."
+    assert fake.calls[2]["messages"][-1]["content"].startswith("(From the hub")
+    # The nudge was sent, not saved.
+    assert "From the hub" not in json.dumps(saved_messages(tmp_path, local.native_session_id))
+
+
+def test_no_closing_words_even_when_asked_still_completes(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("list_files", {})]}, "", ""])
     events = collect(adapter(tmp_path, fake).start_task("look"))
+    assert len(fake.calls) == 3  # asked once, not again
     assert events[-1].type is EventType.COMPLETED and events[-1].data["text"] == ""
 
 
@@ -227,12 +238,42 @@ def test_ask_user_ends_the_turn_as_a_question(tmp_path: Path) -> None:
     assert answer[-1].data["text"] == "Echo: app.py (6 messages)"
 
 
-def test_round_cap_ends_a_looping_turn(tmp_path: Path) -> None:
-    fake = FakeOllama(script=[{"tool_calls": [("list_files", {})]}] * 10)
+def test_round_cap_pauses_the_turn_for_the_user(tmp_path: Path) -> None:
+    fake = FakeOllama(script=[{"tool_calls": [("read_file", {"path": f"f{n}.txt"})]} for n in range(10)])
     events = collect(adapter(tmp_path, fake, max_rounds=3).start_task("loop"))
     assert len(fake.calls) == 3
-    assert events[-1].type is EventType.ERROR and events[-1].data["round_cap"] is True
-    assert "took 3 steps" in events[-1].data["message"]
+    # A pause waiting for the user, not a failure: a notice in the transcript, then a question.
+    assert [e.type for e in events][-2:] == [EventType.NOTICE, EventType.QUESTION]
+    assert events[-1].data["reason"] == "round_cap"
+    assert "took 3 steps" in events[-2].data["message"]
+
+
+def test_repeating_the_same_call_is_nudged_then_stopped(tmp_path: Path) -> None:
+    same = {"tool_calls": [("list_files", {"path": "."})]}
+    fake = FakeOllama(script=[same] * 10)
+    events = collect(adapter(tmp_path, fake).start_task("look"))
+    # Run twice, the third gets a nudge instead of running, the fourth ends the turn.
+    assert [e.type for e in events].count(EventType.TOOL_USE) == 2
+    assert len(fake.calls) == 4
+    assert "already made this exact call twice" in fake.calls[3]["messages"][-1]["content"]
+    assert events[-1].type is EventType.QUESTION and events[-1].data["reason"] == "loop"
+    assert "repeating the same step" in events[-2].data["message"]
+
+
+def test_a_long_conversation_is_shortened_with_a_notice(tmp_path: Path) -> None:
+    big = "line of output\n" * 2000  # about 10,000 tokens per read
+    for n in range(4):
+        (tmp_path / f"big{n}.txt").write_text(big, encoding="utf-8")
+    fake = FakeOllama(script=[{"tool_calls": [("read_file", {"path": f"big{n}.txt"})]} for n in range(4)])
+    events = collect(adapter(tmp_path, fake, num_ctx=16384).start_task("read them all"))
+    assert events[-1].type is EventType.COMPLETED
+    notices = [e for e in events if e.type is EventType.NOTICE]
+    assert len(notices) == 1 and notices[0].data["reason"] == "context"
+    assert "shortened" in notices[0].data["message"]
+    # What was sent got shortened; what was saved is complete.
+    assert "left out to save space" in json.dumps(fake.calls[-1]["messages"])
+    saved = saved_messages(tmp_path, events[0].data["session_id"])
+    assert "left out" not in json.dumps(saved)
 
 
 def test_bad_tool_calls_go_back_to_the_model(tmp_path: Path) -> None:
@@ -340,6 +381,28 @@ def test_local_session_edits_a_file_and_runs_a_command(client: TestClient, tmp_p
     events = client.get(f"/api/sessions/{session_id}/events").json()
     assert [e["payload"]["name"] for e in events if e["type"] == "tool_use"] == ["Write", "PowerShell"]
     assert [e["payload"].get("exit_code") for e in events if e["type"] == "tool_result"] == [None, 0]
+
+
+def test_default_local_model_from_settings(engine: Engine, tmp_path: Path) -> None:
+    app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, local_dir=tmp_path / "local-history",
+                     ollama_url="http://127.0.0.1:11434", ollama_transport=FakeOllama().transport)
+    with make_client(app) as client:
+        settings = client.get("/api/settings").json()
+        assert settings["local_model"] is None
+        client.put("/api/settings", json={**settings, "local_model": "plain:1b"})
+        assert client.get("/api/local/models").json()["default"] == "plain:1b"
+
+        # A new local session and a handoff to the local model both record it; a model asked for wins.
+        local = client.get(f"/api/sessions/{create(client, tmp_path, 'ollama:ok', agent='ollama')}").json()
+        assert local["model"] == "plain:1b"
+        chosen = create(client, tmp_path, "ollama:ok", agent="ollama", model=MODEL)
+        assert client.get(f"/api/sessions/{chosen}").json()["model"] == MODEL
+        codex = create(client, tmp_path, "codex:ok ollama:ok", agent="codex")
+        assert client.post(f"/api/sessions/{codex}/handoff", json={"agent": "ollama", "model": None}).status_code == 202
+        session = wait_until_idle(client, codex)
+        assert (session["agent"], session["model"]) == ("ollama", "plain:1b")
+        # Claude and Codex keep their own default.
+        assert client.get(f"/api/sessions/{create(client, tmp_path, 'ok')}").json()["model"] is None
 
 
 def test_local_model_takes_over_from_codex(client: TestClient, tmp_path: Path) -> None:

@@ -4,6 +4,15 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## Phase 5c: local model robustness and choice
+
+- [ ] **Model choice, notices and handoff.** Restart the backend.
+  - Settings: **Default local model** lists your installed models; pick one and save. The new-session dialog's Model list then says "Default (that model)". The chain editor's local entry and the **Hand off** dialog also list the installed models, and Hand off is disabled with a message when Ollama isn't running.
+  - A local session shows a one-line note under its header (runs on this PC, slower and weaker at coding).
+  - Hand a Codex session off to the local model (Hand off → Local model): it continues from the brief.
+  - Optional, to see the context notice: start the backend with `$env:HUB_OLLAMA_NUM_CTX="8192"`, ask the local model to read several files: a yellow notice says the conversation was shortened, and the follow-up still answers.
+  - Why: the API and the loop are tested, the dialogs and notice row only built and type-checked.
+
 ## Phase 5b: local model tools
 
 - [ ] **A small coding task with the local model.** Restart the backend, click **New session**, pick a scratch folder (or a test project in a worktree) and **Local model (Ollama)**, and ask for something small, for example "create hello.py that prints the sum of 17 and 25, run it with python and tell me the output", then "add a function that returns the average of a list, and test it".

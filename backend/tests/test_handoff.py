@@ -89,6 +89,7 @@ def test_global_settings_apply_to_sessions_without_their_own(client: TestClient,
                           {"agent": "ollama", "model": None}],
         "limit_policy": "auto",
         "progress_layout": "panel",
+        "local_model": None,
     }
     saved = client.put("/api/settings", json={"default_chain": CODEX_THEN_CLAUDE, "limit_policy": "ask"})
     assert saved.json()["limit_policy"] == "ask"

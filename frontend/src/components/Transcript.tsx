@@ -160,6 +160,13 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
             )}
           </div>
         );
+      case "notice":
+        // A note from the hub, such as the local model's conversation being shortened to fit its context.
+        return (
+          <div key={event.id} className="row notice warning">
+            {p.message}
+          </div>
+        );
       case "error":
         return p.stopped ? (
           <TurnEnd key={event.id} outcome="stopped" label="Stopped" files={files} />

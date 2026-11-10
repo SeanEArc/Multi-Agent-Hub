@@ -32,6 +32,9 @@ class EventType(StrEnum):
     LIMIT_REACHED = "limit_reached"  # usage limit hit; triggers handoff
     ERROR = "error"
     COMPLETED = "completed"
+    # A note from the hub shown in the transcript, such as the local model's conversation being shortened
+    # to fit its context: {message, reason}. Doesn't end the turn.
+    NOTICE = "notice"
 
 
 @dataclass

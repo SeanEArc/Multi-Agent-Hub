@@ -43,6 +43,7 @@ from app.models import (
     current_stint,
     load_hub_settings,
     session_worktree,
+    stint_model,
     utcnow,
 )
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
@@ -269,6 +270,7 @@ class Orchestrator:
                 if entry.agent in tried:
                     continue
                 tried.add(entry.agent)
+                entry = self._with_default_model(entry)
                 stint = Stint(session_id=session_id, seq=0, agent=entry.agent, model=entry.model,
                               reason=StintReason.MANUAL)
                 try:
@@ -457,7 +459,13 @@ class Orchestrator:
             return [ChainEntry.model_validate(e) for e in agent_session.chain]
         return load_hub_settings(db).default_chain
 
+    def _with_default_model(self, entry: ChainEntry) -> ChainEntry:
+        """The entry with the model a new stint for it records (the default local model from Settings)."""
+        with Session(self._engine) as db:
+            return ChainEntry(agent=entry.agent, model=stint_model(db, entry.agent, entry.model))
+
     def _can_run(self, agent_session: AgentSession, entry: ChainEntry) -> bool:
+        entry = self._with_default_model(entry)
         try:
             stint = Stint(session_id=agent_session.id, seq=0, agent=entry.agent, model=entry.model,
                           reason=StintReason.LIMIT)
@@ -468,6 +476,7 @@ class Orchestrator:
 
     async def _handoff(self, session_id: str, target: ChainEntry, reason: StintReason, note: str | None = None) -> None:
         """End the current stint, start one for `target` and run its first turn on the brief."""
+        target = self._with_default_model(target)
         self._handing_off.add(session_id)
         try:
             with Session(self._engine) as db:

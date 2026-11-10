@@ -184,6 +184,8 @@ export interface HubSettings {
   default_chain: ChainEntry[];
   limit_policy: LimitPolicy;
   progress_layout: ProgressLayout;
+  // The Ollama model local stints get when none is chosen; null: the first installed model with tools.
+  local_model: string | null;
 }
 
 export interface RunningSubagent {
