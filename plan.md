@@ -11,7 +11,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c built; 5d to decide |
+| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c built (to merge after the in-app checks); 5d on hold |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -245,7 +245,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Quality limits shown: a one-line notice in local sessions (the model name, that local models are weaker at coding and slower), and a clear transcript note when the round cap, loop detection or context shortening stepped in.
 - Acceptance: part (3) of the phase acceptance: a session hands off from Codex (simulated limit) to the local model, which continues the task from the brief; a long session gets past its context size without failing.
 
-**Phase 5d: Other runtimes** (not started; may be postponed after 5c if not needed)
+**Phase 5d: Other runtimes** (on hold, decided 2026-11-10: the user runs Ollama, so it waits until another runtime is wanted; the agent loop is already separate from the Ollama client, so it can be added later without other changes)
 - An OpenAI-compatible client (`/v1/chat/completions` with tools) behind the same loop, for LM Studio, llama.cpp's server, Jan and others, through a configurable base URL. The context size is then set in that runtime rather than per request, so the model list warns when it is small.
 - Acceptance: the 5b coding task works against LM Studio (or another OpenAI-compatible server) with the same events as Ollama.
 

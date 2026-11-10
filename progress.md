@@ -1424,6 +1424,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
 
 **For the agent**
-- [ ] Commit 5c when the user agrees; merge the Phase 5 branches after the in-app checks.
-- [ ] Decide with the user whether 5d (LM Studio and other OpenAI-compatible servers) is needed now; then phases 7, 9, 8, 10, 6.
+- [x] Commit 5c when the user agrees (done: `3e6d1a2`, pushed on `feature/local-robustness`); merge the Phase 5 branches after the in-app checks.
+- [x] Decide whether 5d is needed now: on hold (user, 2026-11-10), recorded in `plan.md`.
+- [ ] Next: phase 7 (delegation), then 9, 8, 10, 6.
 - [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
