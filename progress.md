@@ -1305,3 +1305,30 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Later: the setup helpers on hold in `plan.md`; then phases 7, 9, 8, 10, 6, per the roadmap.
 - [ ] Possible later: code-sign the installer and in-app updates.
 - [ ] Carried over: the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-09 (UTC-05:00)
+
+# Session 38: Tested Codex `--oss` against Ollama, chose the hub's own agent loop for Phase 5, and split Phase 5 into 5a to 5d.
+
+## What was done
+
+1. **Runtime:** the user installed Ollama (0.40.15, running on `127.0.0.1:11434`) and `qwen3.5:9b-q4_K_M` (9B, Q4_K_M, tools and thinking capable). `ollama.exe` is in `%LOCALAPPDATA%\Programs\Ollama` but not on the shell's PATH; the hub will use the HTTP API.
+2. **Codex `--oss` tested** (engine A), with an empty `CODEX_HOME`:
+   - No sign-in confirmed: a chat answered with no login.
+   - A coding task failed at first: Codex had no metadata for the model and offered it no shell or edit tools; Ollama's default 4,096-token context also cut off Codex's prompt and tool definitions.
+   - It worked only after four workarounds: a `model_catalog_json` entry (`shell_type: shell_command`; apply_patch only accepts `freeform`; null fields are rejected), a model copy with `num_ctx` 32768, an empty `CODEX_HOME` (the user's config adds MCP servers), and `-c windows.sandbox=elevated` (otherwise every command was "blocked by policy"). The run took about 40 commands for a two-line file.
+3. **Decided (user):** engine B, the hub's own agent loop, with Ollama's native `/api/chat` first. `plan.md` now records the test results, the decision, and sub-phases 5a (chat adapter, history files, model list), 5b (tools and loop), 5c (context budget, tool-call repair, loop detection, handoff, chain, quality notice) and 5d (OpenAI-compatible runtimes, possibly postponed). Roadmap updated.
+4. **Left behind:** the test model copy `qwen3.5-hub:9b` in Ollama and the folder `%LOCALAPPDATA%\MultiAgentHub\oss-test`. Deleting them was blocked by the permission system.
+
+## Next steps
+
+**For the user**
+- [ ] Remove the test leftovers: `ollama rm qwen3.5-hub:9b` (from `%LOCALAPPDATA%\Programs\Ollama` if `ollama` isn't on PATH) and `Remove-Item -Recurse -Force $env:LOCALAPPDATA\MultiAgentHub\oss-test`.
+- [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Build Phase 5a on a feature branch: `OllamaAdapter` (streaming chat, `num_ctx` per request, history files, stop, summarize, errors), settings, `GET /api/local/models`, the model picker in the new-session dialog, a fake Ollama server for tests, and the opt-in live test.
+- [ ] Then 5b, 5c, and decide whether 5d is needed; then phases 7, 9, 8, 10, 6, per the roadmap.
+- [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

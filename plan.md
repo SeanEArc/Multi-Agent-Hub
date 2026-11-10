@@ -11,7 +11,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5: Local model | Next, scope revised; engine and runtimes open |
+| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | Next: 5a |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -203,19 +203,51 @@ The user opens the desktop app and creates a session for a project, optionally c
   - App data: database, token, logs, worktrees and chats are all under `%LOCALAPPDATA%\MultiAgentHub`, shared by the app and `uv run`. A lock file stops two backends from using the same database. The old `backend/data` was copied, not moved, and can be deleted once the app is accepted.
   - Installer: NSIS, per-user install (no administrator rights), Start menu entry and a desktop shortcut, always created by an install hook (Tauri alone only offers a checkbox on the last page, which was easy to miss). Unsigned, so Windows SmartScreen warns on first run.
 
-**Phase 5: Local model** (scope revised 2026-11-09, Session 36)
+**Phase 5: Local model** (scope revised 2026-11-09, Session 36; engine chosen and split into sub-phases 5a to 5d on 2026-11-09, Session 38; each is built, tested and committed on its own)
 - Goal: whatever local model the user installs works in the hub **the same way as Claude and Codex**: as a coding agent in project sessions (reads and edits files, runs commands, with diffs, plan, questions and handoff) and as a chatbot in chats. It is also the last-resort tier of the default chain.
 - No subscription (decided 2026-11-09): using a local model must not depend on a Claude or ChatGPT subscription or sign-in. Local sessions spend no subscription usage.
 - In scope: a local-model agent behind the existing `AgentAdapter` interface; choosing the local model (per session and in the chain); addition to the default handoff chain; showing the model in use and its quality limits.
-- Engine, open (to decide before building). How the local model gets tools:
-  - **A. Codex CLI as the engine**, run with `--oss --local-provider ollama|lmstudio` (or a custom provider for other servers). Reuses the Codex adapter: tools, sandbox, diffs, resume and handoff already work. Checked 2026-11-09 against codex-cli 0.164.0: with an empty `CODEX_HOME` (no sign-in), `codex exec --oss` skipped login and only stopped because no Ollama server was running, so it appears to need no subscription; **confirm with a running server**. Costs: Codex CLI must be installed (free, open source), and its long prompt and tool schema need a capable model with a large context (roughly 32k tokens or more; unverified).
-  - **B. The hub's own agent loop**: the hub calls the local server's chat API and gives the model a small tool set (read, list, edit, write, run command), parses tool calls and produces the same events, diffs and plan. No other CLI, and the prompt can be kept short for small models. Costs: much more code, and commands run without Codex's sandbox (only worktrees, until phase 9).
-- Runtimes, open: Ollama (background service, `ollama pull`, an API for downloads), LM Studio (desktop app with a model browser; its server must be switched on), or any OpenAI-compatible server (llama.cpp, Jan, vLLM, LocalAI) through a custom URL. Codex's `--oss` supports Ollama and LM Studio directly. Neither is installed as of 2026-11-09.
-- Setup helpers, on hold (2026-11-09): considered and postponed, to be revisited after the engine and runtimes are chosen: auto-detecting local servers; a model list with on/off switches; a test button (answer, speed, context size, warnings); downloading models in the app (Ollama); model suggestions for the PC's memory; a setup guide when nothing is detected; fixing Ollama's small default context; adding a custom server URL; server health in the status bar.
-- Exclusions: RAG, evaluations, fine-tuning.
-- Dependencies: phases 1 to 3; a local runtime installed with at least one model; Codex CLI if engine A is chosen.
-- Acceptance: with no Claude or Codex sign-in needed for it, a local model (1) answers in a chat, (2) completes a simple coding task in a project session (edits a file and runs a command), and (3) takes over a session from Codex in a handoff, with its quality limits clearly shown.
-- Tradeoffs: local models are weaker at coding and slower, and hardware decides which models are usable; the model is the user's choice at run time rather than fixed in the plan.
+- **Engine: B, the hub's own agent loop** (decided 2026-11-09, Session 38). The hub calls the local server's chat API with tool calling, gives the model a small tool set of its own, runs the tools and emits the same `AgentEvent`s as the other adapters. Option A (Codex CLI with `--oss`) was tested with Ollama 0.40.15 and `qwen3.5:9b-q4_K_M` and rejected:
+  - No sign-in is confirmed: with an empty `CODEX_HOME`, `codex exec --oss --local-provider ollama` answered a chat.
+  - But it only completed a coding task after four workarounds: a hand-made `model_catalog_json` entry (without one Codex uses fallback metadata that exposes no shell or edit tools); a copy of the model with a 32k `num_ctx` (Ollama's default 4,096 cut off Codex's ~5k-token prompt and its tool definitions, and Codex can't set the context size); an empty `CODEX_HOME` (the user's own config adds MCP servers that swamp a 9B model); and `-c windows.sandbox=elevated` (with an empty home every command was "blocked by policy").
+  - Even then the model had no file-edit tool it could use (Codex's apply_patch only comes in the freeform grammar format), wrote files through PowerShell (`echo >` writes UTF-16), and took about 40 commands, 20 of them a repeated pointless check, for a two-line file.
+  - B instead gives small models simple JSON tools (`write_file`, `edit_file`), sets the context size per request, keeps the prompt short and depends on no undocumented Codex internals. Cost: more code, and commands run without Codex's sandbox (worktrees only, until phase 9).
+- **Runtime: Ollama first** (decided 2026-11-09): installed on the user's PC (0.40.15, model `qwen3.5:9b-q4_K_M`, tools and thinking capable). Its native `/api/chat` is used because it accepts `options.num_ctx` per request (fixing the small default context without a model copy) and `think`. LM Studio and other OpenAI-compatible servers come in 5d.
+- Setup helpers, on hold (2026-11-09): considered and postponed: auto-detecting local servers; a model list with on/off switches; a test button (answer, speed, context size, warnings); downloading models in the app (Ollama); model suggestions for the PC's memory; a setup guide when nothing is detected; adding a custom server URL; server health in the status bar. (Fixing Ollama's small default context is no longer a helper: 5a sends `num_ctx` on every request.) The model list from the server (5a) is the only part pulled forward, because the user must be able to pick a model.
+- Exclusions: RAG, evaluations, fine-tuning, the setup helpers above.
+- Dependencies: phases 1 to 3; Ollama running with at least one tool-capable model.
+- Acceptance (whole phase): with no Claude or Codex sign-in needed for it, a local model (1) answers in a chat, (2) completes a simple coding task in a project session (edits a file and runs a command), and (3) takes over a session from Codex in a handoff, with its quality limits clearly shown.
+- Tradeoffs: local models are weaker at coding and slower, and hardware decides which models are usable; the model is the user's choice at run time rather than fixed in the plan; the hub owns the tool loop, so tool behavior, safety checks and context handling are the hub's code to maintain.
+
+**Phase 5a: Ollama chat adapter** (not started)
+- `OllamaAdapter` (`app/adapters/ollama.py`) behind `AgentAdapter`, with no tools yet: streams `/api/chat` (`stream: true`) into `MESSAGE` events, sends `options.num_ctx` (setting `HUB_OLLAMA_NUM_CTX`, default 32768) on every request, reports `USAGE` from `prompt_eval_count`/`eval_count`, and ends with `COMPLETED`. Thinking output (`think`) is kept out of the message text and shown as reasoning, if the UI already has a place for it, or dropped.
+- Conversation history: Ollama keeps none, so the adapter saves the message list as JSON per conversation in `%LOCALAPPDATA%\MultiAgentHub\local\<id>.json` (setting `HUB_LOCAL_DIR`). The id is the stint's `native_session_id`, chosen up front like Claude's, so resume and a backend restart both work. Deleting a session deletes its files.
+- `stop()` cancels the HTTP request. `summarize()` is a one-off call with the given instructions, saving no history.
+- Errors: server not running or model not installed → `AgentUnavailable` with a plain message (so the chain skips it), other HTTP errors → `ERROR`. Never `LIMIT_REACHED`: local models have no usage limit.
+- Settings `HUB_OLLAMA_URL` (default `http://127.0.0.1:11434`, loopback only) and `HUB_OLLAMA_MODEL` (default model when none is chosen). `GET /api/local/models` lists installed models from `/api/tags` with size, context length and whether they support tools.
+- UI: enable "Local model" in the new-session dialog, with a model picker filled from `/api/local/models` (and a clear message when Ollama isn't running); the agent badge shows the model name.
+- Tests: a fake Ollama server (a small ASGI app, or `httpx.MockTransport`) for streaming, resume from the saved file, stop, server down and model missing; `HUB_LIVE_OLLAMA=1` opt-in live test against the real server. An HTTP client becomes a runtime dependency.
+- Acceptance: part (1) of the phase acceptance: a chat with the local model answers, a follow-up message continues the same conversation, and that still works after the backend restarts.
+
+**Phase 5b: Tools and the agent loop** (not started)
+- The loop: send the history with tool definitions; when the reply has `tool_calls`, emit `TOOL_USE`, run each tool, emit `TOOL_RESULT`, append the result and call again, until the model answers without tool calls. A cap on tool rounds per turn (setting, default about 30) ends the turn with an error message instead of looping forever.
+- Tool set (JSON-schema function tools, deliberately small): `read_file` (with line range), `list_files`, `search` (text search in the project), `write_file`, `edit_file` (exact old/new text, must match once), `run_command`, `update_plan` (a real checklist tool, so no `PLAN_MARKER` text is needed) and `ask_user` (ends the turn as a `QUESTION`, so no `[[NEEDS_INPUT]]` marker is needed).
+- Safety: file tools resolve paths inside the session's working folder and refuse anything outside it (including `..` and absolute paths elsewhere); `run_command` runs in that folder through the session's `Runner` (so phase 9's Docker runner applies) with the headless git env, a timeout, and output capped before it goes back to the model. Commands run in Windows PowerShell; the prompt tells the model to use `write_file`/`edit_file` for files rather than shell redirection. Not a sandbox until phase 9.
+- Event shapes match what the UI already renders: edits carry `diffs` built with `app/adapters/diffs.py`, commands carry `exit_code`, so diffs, command rows and per-file edit history work with no UI changes, or only small ones.
+- A short system prompt written for small models: the working folder, the tools, Windows/PowerShell, and how to use the plan and question tools.
+- Tests: a scripted fake server that returns tool calls, covering each tool, the path checks, the round cap, a question turn, and stop during a running command.
+- Acceptance: part (2) of the phase acceptance: in a project session, `qwen3.5:9b-q4_K_M` creates a file, runs it and reports the output, with the edit's diff and the command shown in the transcript.
+
+**Phase 5c: Robustness, handoff and the chain** (not started)
+- Context budget: estimate the history's size against `num_ctx` and, before it overflows, shorten old tool outputs and then drop or summarize the oldest turns, keeping the task and the latest turns, so long sessions keep working on a small context. Warn in the transcript when the history was shortened.
+- Tool-call repair: invalid JSON arguments, unknown tools or missing parameters go back to the model as a tool error it can correct, rather than failing the turn. Loop detection: the same call with the same arguments repeated several times in a row ends the turn with a message.
+- Handoff: a local stint started from a handoff brief works like the others (the brief is the first prompt); check that the brief fits in the context, shortening it if not. Chain entries and the handoff dialog offer a local model choice; a setting for the default local model.
+- Quality limits shown: a one-line notice in local sessions (the model name, that local models are weaker at coding and slower), and a clear transcript note when the round cap, loop detection or context shortening stepped in.
+- Acceptance: part (3) of the phase acceptance: a session hands off from Codex (simulated limit) to the local model, which continues the task from the brief; a long session gets past its context size without failing.
+
+**Phase 5d: Other runtimes** (not started; may be postponed after 5c if not needed)
+- An OpenAI-compatible client (`/v1/chat/completions` with tools) behind the same loop, for LM Studio, llama.cpp's server, Jan and others, through a configurable base URL. The context size is then set in that runtime rather than per request, so the model list warns when it is small.
+- Acceptance: the 5b coding task works against LM Studio (or another OpenAI-compatible server) with the same events as Ollama.
 
 **Phase 7: Delegation** (added 2026-10-25; can be built before phase 6, which is marked later. Numbered 7 so existing references to phase 6 stay valid.)
 - Goal: an orchestrator-style session. The current agent hands a sub-task to another agent, which completes it and returns control to the original agent with a report.
@@ -300,6 +332,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Stack items from the user-supplied table are accepted except the Node orchestrator and the separate Python AI service (merged into the FastAPI backend) and Docker (moved out of the first build into phase 9).
 - Tauri is the desktop shell (decided 2026-10-22, replacing the Electron default). Effect: smaller and lighter shell, but its main process needs some Rust; the shell itself is built in phase 4d.
 - Tailscale is the remote-access method for phase 6 (decided 2026-10-22).
+- Phase 5 engine and runtime (decided 2026-11-09): the hub's own agent loop (option B) on Ollama's native chat API, split into sub-phases 5a (chat adapter), 5b (tools and loop), 5c (robustness, handoff, chain) and 5d (other runtimes). Codex CLI with `--oss` was tested and rejected: it needs no sign-in, but a 9B model only worked after four workarounds and still struggled without a usable file-edit tool.
 
 **Assumptions**
 - Windows only.
@@ -309,7 +342,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 **Unresolved**
 - Claude's default permission mode. With `acceptEdits` (the current default) and no approval surface, every shell command is denied headless, so Claude can't run tests or git. `auto` (Claude Code's classifier approves safe actions) works headless and was used on 2026-10-26 via `HUB_CLAUDE_PERMISSION_MODE=auto`; whether to make it the default is open. Neither is a sandbox (phase 9).
-- Phase 5 engine (Codex CLI with `--oss`, or the hub's own agent loop) and runtimes (Ollama, LM Studio, any OpenAI-compatible server); setup helpers on hold. The model itself is picked by the user at run time.
+- Phase 5 setup helpers (on hold, see phase 5), and whether 5d (other runtimes) is needed. The model itself is picked by the user at run time.
 - Whether headless `claude -p` and `codex exec` support mid-run user input (check in phase 1).
 - Current Anthropic policy on subscription CLI use (recheck against Anthropic's own pages).
 - Windows Codex sign-in billing report: checked 2026-10-25 with ChatGPT login and no API key set; no API charges appeared.
