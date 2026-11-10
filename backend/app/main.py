@@ -4,9 +4,10 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from httpx2 import AsyncBaseTransport
 from sqlalchemy.engine import Engine
 
-from app.api import folders, health, sessions, settings as hub_settings, usage
+from app.api import folders, health, local, sessions, settings as hub_settings, usage
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
 from app.db import init_db, make_engine
@@ -19,8 +20,11 @@ def create_app(
     token: str | None = None,
     worktrees_dir: Path | None = None,
     chats_dir: Path | None = None,
+    local_dir: Path | None = None,
+    ollama_url: str | None = None,
+    ollama_transport: AsyncBaseTransport | None = None,
 ) -> FastAPI:
-    """Tests pass `token`, `worktrees_dir` and `chats_dir`; otherwise they come from the settings."""
+    """Tests pass `token`, the folders and a fake Ollama transport; otherwise they come from the settings."""
     settings = get_settings()
     engine = engine or make_engine(settings.database_url)
     orchestrator = Orchestrator(engine, adapter_factory, simulate_limit=set(settings.simulate_limit))
@@ -43,6 +47,9 @@ def create_app(
     app.state.orchestrator = orchestrator
     app.state.worktrees_dir = worktrees_dir or settings.worktrees_dir
     app.state.chats_dir = chats_dir or settings.chats_dir
+    app.state.local_dir = local_dir or settings.local_dir
+    app.state.ollama_url = ollama_url
+    app.state.ollama_transport = ollama_transport
 
     app.add_middleware(
         CORSMiddleware,
@@ -59,6 +66,7 @@ def create_app(
     app.include_router(folders.router, prefix="/api", dependencies=authenticated)
     app.include_router(hub_settings.router, prefix="/api", dependencies=authenticated)
     app.include_router(usage.router, prefix="/api", dependencies=authenticated)
+    app.include_router(local.router, prefix="/api", dependencies=authenticated)
     return app
 
 

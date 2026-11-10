@@ -1332,3 +1332,33 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Build Phase 5a on a feature branch: `OllamaAdapter` (streaming chat, `num_ctx` per request, history files, stop, summarize, errors), settings, `GET /api/local/models`, the model picker in the new-session dialog, a fake Ollama server for tests, and the opt-in live test.
 - [ ] Then 5b, 5c, and decide whether 5d is needed; then phases 7, 9, 8, 10, 6, per the roadmap.
 - [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-09 20:32 (UTC-06:00)
+
+# Session 39: Built Phase 5a, the local model chat adapter on Ollama, on `feature/ollama-chat` (not committed yet).
+
+## What was done
+
+1. **Plan committed** on `main` as `742a7f1` (engine B, sub-phases 5a to 5d); then branched `feature/ollama-chat`.
+2. **Backend:**
+   - `app/adapters/ollama.py`: `OllamaAdapter` streams `/api/chat`, sends `num_ctx` on every request, saves each conversation to `%LOCALAPPDATA%\MultiAgentHub\local\<uuid>.json`, and resumes from it. `stop()` cancels the request, `summarize()` is a one-off call, and errors become plain messages.
+   - The factory builds it after checking Ollama and the model, so the chain skips it when Ollama is off. `GET /api/local/models` lists installed models. Deleting a session deletes its conversation files.
+   - Settings: `HUB_OLLAMA_URL` (loopback only), `HUB_OLLAMA_MODEL`, `HUB_OLLAMA_NUM_CTX`, `HUB_OLLAMA_THINK`, `HUB_LOCAL_DIR`. `httpx2` moved from a dev to a runtime dependency.
+3. **UI:** "Local model (Ollama)" is enabled in the new-session dialog, with a model list from the server, a hint about speed and quality, and **Create** disabled when Ollama isn't running. The chain editor and handoff dialog offer it too, with the default model (the model picker there is 5c).
+4. **Tests:** `tests/fake_ollama.py` (a mock transport) and `tests/test_ollama_adapter.py` (19 tests, including a handoff from Codex to the local model), and the opt-in `tests/test_ollama_live.py`. The fake local model is only available when a session title names a mode for it (`ollama:ok`), so the existing chain tests keep their meaning. 182 passed, 4 skipped; the live test passed against the real Ollama (12 s); the frontend builds.
+5. **End to end** with a throwaway backend, database and folders, the real factory and the real Ollama: a chat answered, a follow-up after a backend restart remembered the earlier question, and deleting the session removed its conversation file. The dialog itself was not looked at in a browser.
+6. **Docs:** `CLAUDE.md` (local model adapter, settings, tests), `plan.md` (5a built, roadmap), `TODO.md` (manual check for 5a).
+
+## Next steps
+
+**For the user**
+- [x] Remove the test leftovers. Done 2026-11-10: `qwen3.5-hub:9b` removed from Ollama (only `qwen3.5:9b-q4_K_M` is left, so it is now the default) and the `oss-test` folder deleted.
+- [ ] Try the 5a check in `TODO.md` (a chat with the local model in the app).
+- [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Commit 5a on `feature/ollama-chat` when the user agrees, and merge after the in-app check.
+- [ ] Build 5b (tools and the agent loop), then 5c; decide whether 5d is needed; then phases 7, 9, 8, 10, 6.
+- [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.

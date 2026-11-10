@@ -11,10 +11,13 @@ from sqlalchemy.pool import StaticPool
 from app.adapters.base import AgentAdapter
 from app.adapters.claude import ClaudeAdapter
 from app.adapters.codex import CodexAdapter
+from app.adapters.ollama import OllamaAdapter
 from app.db import make_engine
 from app.main import create_app
 from app.models import AgentKind, AgentSession, Stint
 from app.orchestrator import AgentUnavailable
+
+import fake_ollama
 
 FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
 FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
@@ -50,7 +53,17 @@ def fake_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> Agen
             native_session_id=stint.native_session_id,
             command=[sys.executable, str(FAKE_CLAUDE), mode],
         )
-    raise AgentUnavailable(f"The {stint.agent} agent is not supported yet")
+    # The local model is off unless the title gives it a mode ("ollama:ok"), so chains that end in it
+    # behave as when Ollama isn't running.
+    if stint.agent is AgentKind.OLLAMA and f"ollama:{mode}" in session.title and mode != "down":
+        return OllamaAdapter(
+            cwd,
+            model=stint.model or fake_ollama.MODEL,
+            native_session_id=stint.native_session_id,
+            history_dir=Path(session.project_path) / "local-history",
+            transport=fake_ollama.FakeOllama(mode).transport,
+        )
+    raise AgentUnavailable(f"The {stint.agent} agent is not available")
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | Next: 5a |
+| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a built; next: 5b |
 | 5 | 7: Delegation | Not started, open questions settled |
 | 6 | 9: Docker isolation | Not started |
 | 7 | 8: Parallel split | Not started |
@@ -219,7 +219,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance (whole phase): with no Claude or Codex sign-in needed for it, a local model (1) answers in a chat, (2) completes a simple coding task in a project session (edits a file and runs a command), and (3) takes over a session from Codex in a handoff, with its quality limits clearly shown.
 - Tradeoffs: local models are weaker at coding and slower, and hardware decides which models are usable; the model is the user's choice at run time rather than fixed in the plan; the hub owns the tool loop, so tool behavior, safety checks and context handling are the hub's code to maintain.
 
-**Phase 5a: Ollama chat adapter** (not started)
+**Phase 5a: Ollama chat adapter** (built 2026-11-09, Session 38, on `feature/ollama-chat`; checked through the API against the real Ollama, including a restart; the in-app check is in `TODO.md`)
 - `OllamaAdapter` (`app/adapters/ollama.py`) behind `AgentAdapter`, with no tools yet: streams `/api/chat` (`stream: true`) into `MESSAGE` events, sends `options.num_ctx` (setting `HUB_OLLAMA_NUM_CTX`, default 32768) on every request, reports `USAGE` from `prompt_eval_count`/`eval_count`, and ends with `COMPLETED`. Thinking output (`think`) is kept out of the message text and shown as reasoning, if the UI already has a place for it, or dropped.
 - Conversation history: Ollama keeps none, so the adapter saves the message list as JSON per conversation in `%LOCALAPPDATA%\MultiAgentHub\local\<id>.json` (setting `HUB_LOCAL_DIR`). The id is the stint's `native_session_id`, chosen up front like Claude's, so resume and a backend restart both work. Deleting a session deletes its files.
 - `stop()` cancels the HTTP request. `summarize()` is a one-off call with the given instructions, saving no history.

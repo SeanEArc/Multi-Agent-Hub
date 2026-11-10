@@ -4,6 +4,13 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## Phase 5a: local model chat
+
+- [ ] **Chat with the local model in the app.** Restart the app (or the backend), click **New session**, leave the folder empty and pick **Local model (Ollama)** as the agent.
+  - Expect: the Model list shows your installed models, with "Default (qwen3.5:9b-q4_K_M)" first, and the hint says it runs with no subscription. Ask a question: it answers in a few seconds to a minute, and the header shows "Local model (qwen3.5:9b-q4_K_M)". A follow-up continues the conversation, also after closing and reopening the app. **Stop** during a long answer ends the turn. Deleting the session removes its file under `%LOCALAPPDATA%\MultiAgentHub\local`.
+  - Also try: quit Ollama (tray icon → Quit) and open the dialog again: the hint says Ollama isn't running and **Create** is disabled.
+  - Why: checked with the API, the real Ollama server and tests, but the dialog itself hasn't been looked at in the app.
+
 ## Phase 4b: dashboard, progress view, history and summaries
 
 - [x] **Claude subagents on the dashboard.** Confirmed on 2026-10-26: the working session's card lists each running subagent with its latest step.

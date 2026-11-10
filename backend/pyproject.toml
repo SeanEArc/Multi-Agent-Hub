@@ -9,12 +9,12 @@ dependencies = [
     "sqlmodel>=0.0.48",
     "pydantic-settings>=2.16",
     "alembic>=1.16",
+    "httpx2>=2.16.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1",
-    "httpx2",
     "pyinstaller>=6.22.3",
 ]
 

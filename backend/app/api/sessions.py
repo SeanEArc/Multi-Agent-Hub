@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, col, select
 
+from app.adapters.ollama import delete_history
 from app.db import get_session
 from app.handoff import git_state
 from app.models import (
+    AgentKind,
     AgentSession,
     EventRead,
     GitSummary,
@@ -117,21 +119,27 @@ def get_stint(session_id: str, stint_id: int, db: DbSession) -> Stint:
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_session(session_id: str, db: DbSession, orchestrator: Orch) -> None:
+async def delete_session(session_id: str, db: DbSession, orchestrator: Orch, request: Request) -> None:
     """Delete the session and its history. Its worktree is removed too (branch kept), but only if it is clean.
 
-    A chat's folder belongs to the hub and is deleted with it.
+    A chat's folder and the local model's conversation files belong to the hub and are deleted with it.
     """
     agent_session = _get_or_404(db, session_id)
     await orchestrator.forget(session_id)
     worktree = session_worktree(db, session_id)
     if worktree is not None and worktree.status is WorktreeStatus.ACTIVE:
         await _remove_worktree(db, agent_session, worktree, WorktreeRemove())
+    local_conversations = db.exec(
+        select(Stint.native_session_id).where(Stint.session_id == session_id, Stint.agent == AgentKind.OLLAMA)
+    ).all()
     # The session's events are removed by the database (ON DELETE CASCADE).
     db.delete(agent_session)
     db.commit()
     if agent_session.chat:
         shutil.rmtree(agent_session.project_path, ignore_errors=True)
+    for conversation_id in local_conversations:
+        if conversation_id:
+            delete_history(request.app.state.local_dir, conversation_id)
 
 
 @router.post("/{session_id}/messages", response_model=SessionRead, status_code=status.HTTP_202_ACCEPTED)

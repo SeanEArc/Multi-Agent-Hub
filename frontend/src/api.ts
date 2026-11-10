@@ -34,8 +34,28 @@ export function sessionModel(session: AgentSession): string {
   return session.reported_model ?? session.model ?? "default";
 }
 
-// Agents the backend can run; the local model arrives in phase 5.
-export const AVAILABLE_AGENTS: AgentKind[] = ["claude", "codex"];
+// Agents the backend can run. The local model also needs Ollama running (see api.localModels).
+export const AVAILABLE_AGENTS: AgentKind[] = ["claude", "codex", "ollama"];
+
+/** A model installed in Ollama (GET /api/local/models). */
+export interface LocalModel {
+  name: string;
+  size: number | null;
+  parameter_size: string | null;
+  quantization: string | null;
+  context_length: number | null;
+  tools: boolean | null;
+  thinking: boolean | null;
+}
+
+export interface LocalModels {
+  url: string;
+  available: boolean;
+  models: LocalModel[];
+  // What a session gets when it names no model.
+  default: string | null;
+  error: string | null;
+}
 
 // Values each CLI accepts for --model; empty means the CLI's default.
 // Codex slugs come from its model cache (codex-cli 0.164.0).
@@ -273,6 +293,7 @@ export const api = {
   // Waits until the agent has written it (up to a few minutes).
   writeSummary: (id: string) => request<AgentSummary>(`/sessions/${id}/summary`, { method: "POST" }),
   getUsage: () => request<Partial<Record<AgentKind, AgentUsage>>>("/usage"),
+  localModels: () => request<LocalModels>("/local/models"),
   getSettings: () => request<HubSettings>("/settings"),
   putSettings: (body: HubSettings) =>
     request<HubSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),

@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -48,6 +49,16 @@ class Settings(BaseSettings):
     chats_dir: Path = APP_DATA_DIR / "chats"
     # Full path to the native codex.exe, if it isn't found on PATH or inside the npm install.
     codex_path: str | None = None
+    # The local Ollama server (loopback only), the model used when a session doesn't name one (None: the
+    # first installed model that supports tools), and the context size sent with every request (Ollama's
+    # own default, 4096 tokens, is too small for a coding session).
+    ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str | None = None
+    ollama_num_ctx: int = 32768
+    # Ollama's `think` option for models that support it; None leaves it to the model.
+    ollama_think: bool | None = None
+    # The local model's conversations, one JSON file each: Ollama keeps no history of its own.
+    local_dir: Path = APP_DATA_DIR / "local"
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was
     # reached, so handoff can be tried with the real CLIs. The turn still runs and uses real usage.
     simulate_limit: Annotated[list[AgentKind], NoDecode] = []
@@ -65,6 +76,14 @@ class Settings(BaseSettings):
         if not is_loopback(value):
             raise ValueError(f"HUB_HOST must be a loopback address such as 127.0.0.1, not {value!r}")
         return value
+
+    @field_validator("ollama_url")
+    @classmethod
+    def _loopback_ollama(cls, value: str) -> str:
+        host = urlsplit(value).hostname
+        if urlsplit(value).scheme not in ("http", "https") or not host or not is_loopback(host):
+            raise ValueError(f"HUB_OLLAMA_URL must be an http URL on this PC, such as http://127.0.0.1:11434, not {value!r}")
+        return value.rstrip("/")
 
 
 @lru_cache

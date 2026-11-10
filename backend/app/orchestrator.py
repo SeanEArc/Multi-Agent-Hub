@@ -24,6 +24,7 @@ from sqlmodel import Session, col, select
 from app.adapters.base import AgentAdapter, AgentEvent, EventType
 from app.adapters.claude import ClaudeAdapter, ClaudeCliNotFound
 from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
+from app.adapters.ollama import OllamaAdapter, OllamaUnavailable, list_models_sync, pick_model
 from app.config import get_settings
 from app.handoff import build_brief, git_state, next_in_chain
 from app.models import (
@@ -120,7 +121,19 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     sandbox=settings.codex_sandbox,
                     command=[find_codex(settings.codex_path)],
                 )
-    except (ClaudeCliNotFound, CodexCliNotFound) as exc:
+            case AgentKind.OLLAMA:
+                # Checking the server here lets the handoff chain skip the local model when Ollama is off.
+                models = list_models_sync(settings.ollama_url)
+                return OllamaAdapter(
+                    cwd,
+                    model=pick_model(models, stint.model, settings.ollama_model),
+                    native_session_id=stint.native_session_id,
+                    history_dir=settings.local_dir,
+                    base_url=settings.ollama_url,
+                    num_ctx=settings.ollama_num_ctx,
+                    think=settings.ollama_think,
+                )
+    except (ClaudeCliNotFound, CodexCliNotFound, OllamaUnavailable) as exc:
         raise AgentUnavailable(str(exc)) from exc
     raise AgentUnavailable(f"The {stint.agent} agent is not supported yet")
 

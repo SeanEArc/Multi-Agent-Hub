@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { MODELS, api, type AgentKind, type ChainEntry, type GitInfo, type LimitPolicy, type NewSession } from "../api";
+import {
+  MODELS,
+  api,
+  type AgentKind,
+  type ChainEntry,
+  type GitInfo,
+  type LimitPolicy,
+  type LocalModel,
+  type LocalModels,
+  type NewSession,
+} from "../api";
 import { ChainEditor, POLICY_LABELS } from "./ChainEditor";
 import { FolderPicker } from "./FolderPicker";
 
@@ -24,6 +34,7 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
   const [policy, setPolicy] = useState<LimitPolicy | "">("");
   const [useWorktree, setUseWorktree] = useState(true);
   const [git, setGit] = useState<GitInfo | null>(null);
+  const [local, setLocal] = useState<LocalModels | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +60,24 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
     };
   }, [projectPath]);
 
+  // The installed local models, looked up when the local model is chosen.
+  useEffect(() => {
+    if (agent !== "ollama") return;
+    let current = true;
+    setLocal(null);
+    api
+      .localModels()
+      .then((models) => current && setLocal(models))
+      .catch((err) =>
+        current &&
+        setLocal({ url: "", available: false, models: [], default: null, error: err instanceof Error ? err.message : String(err) }),
+      );
+    return () => {
+      current = false;
+    };
+  }, [agent]);
+
+  const localProblem = local && (!local.available || !local.default) ? local.error ?? "No local model is available." : null;
   const canUseWorktree = !!git?.is_repo && git.has_commits;
   const isChat = !projectPath.trim();
 
@@ -142,22 +171,39 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
             >
               <option value="claude">Claude Code</option>
               <option value="codex">Codex</option>
-              <option value="ollama" disabled>
-                Local model (phase 5)
-              </option>
+              <option value="ollama">Local model (Ollama)</option>
             </select>
           </label>
           <label>
             Model
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
-              {(MODELS[agent] ?? [""]).map((m) => (
-                <option key={m} value={m}>
-                  {m || "Default"}
-                </option>
-              ))}
-            </select>
+            {agent === "ollama" ? (
+              <select value={model} onChange={(e) => setModel(e.target.value)} disabled={!local?.available}>
+                <option value="">{local?.default ? `Default (${local.default})` : "Default"}</option>
+                {local?.models.map((m) => (
+                  <option key={m.name} value={m.name}>
+                    {localModelLabel(m)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select value={model} onChange={(e) => setModel(e.target.value)}>
+                {(MODELS[agent] ?? [""]).map((m) => (
+                  <option key={m} value={m}>
+                    {m || "Default"}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
         </div>
+        {agent === "ollama" && (
+          <span className={`hint${localProblem ? " warning" : ""}`}>
+            {local === null
+              ? "Looking for Ollama…"
+              : localProblem ??
+                "Runs on this PC with no subscription. Local models are slower and weaker at coding than Claude and Codex."}
+          </span>
+        )}
 
         <div className="field">
           <span>Handoff</span>
@@ -211,13 +257,19 @@ export function NewSessionDialog({ onCreate, onClose, recentProjects }: Props) {
           <button type="button" className="button" onClick={() => dialog.current?.close()}>
             Cancel
           </button>
-          <button type="submit" className="button primary" disabled={busy}>
+          <button type="submit" className="button primary" disabled={busy || (agent === "ollama" && !!localProblem)}>
             {firstMessage.trim() ? "Create and start" : "Create"}
           </button>
         </div>
       </form>
     </dialog>
   );
+}
+
+/** "qwen3.5:9b-q4_K_M (9.0B)", marked when the model can't use tools. */
+function localModelLabel(m: LocalModel): string {
+  const size = m.parameter_size ? ` (${m.parameter_size})` : "";
+  return `${m.name}${size}${m.tools === false ? ", no tools" : ""}`;
 }
 
 /** A chat's title when none is given: the start of its first message. */

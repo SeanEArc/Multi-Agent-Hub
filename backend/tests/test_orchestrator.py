@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
+from app.config import get_settings
 from app.db import init_db
 from app.main import create_app
 from app.models import AgentKind, AgentSession, SessionStatus, Stint, StintReason
@@ -124,12 +125,14 @@ def test_delete_stops_running_turn(client: TestClient, tmp_path: Path) -> None:
     assert client.get(f"/api/sessions/{session_id}").status_code == 404
 
 
-def test_unsupported_agent(engine: Engine, tmp_path: Path) -> None:
+def test_local_model_unavailable_when_ollama_is_off(engine: Engine, tmp_path: Path, monkeypatch) -> None:
+    # Nothing listens on port 9, so the real factory finds no Ollama server (and never the user's real one).
+    monkeypatch.setattr(get_settings(), "ollama_url", "http://127.0.0.1:9")
     with make_client(create_app(engine, token=TEST_TOKEN)) as client:  # real factory
         session_id = create(client, tmp_path, "ok", agent="ollama")
         response = client.post(f"/api/sessions/{session_id}/messages", json={"text": "hi"})
         assert response.status_code == 400
-        assert "not supported" in response.json()["detail"]
+        assert "Ollama isn't running" in response.json()["detail"]
 
 
 def test_interrupted_turns_fail_on_startup(engine: Engine, tmp_path: Path) -> None:
