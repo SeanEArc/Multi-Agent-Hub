@@ -11,12 +11,13 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 1 | 1 to 3: Claude, Codex, handoff | Done |
 | 2 | 4a to 4c: worktrees, dashboard, style polish | Done |
 | 3 | 4d: Tauri shell | Done |
-| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c built (to merge after the in-app checks); 5d on hold |
-| 5 | 7: Delegation | Not started, open questions settled |
-| 6 | 9: Docker isolation | Not started |
+| 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c done (merged and checked in the app 2026-11-10); 5d on hold |
+| 5 | APPLICATION REVISION: Session flow (new session opens a chat, pickers under the composer, chaining switches) | Not started, scope drafted 2026-11-10 |
+| 6 | 7: Delegation | Not started, open questions settled |
 | 7 | 8: Parallel split | Not started |
-| 8 | 10: Design styles and layouts | Not started |
-| 9 | 6: iPhone access, including Tailscale | Not started |
+| 8 | 9: Docker isolation | Not started |
+| 9 | 10: Design styles and layouts | Not started |
+| 10 | 6: iPhone access, including Tailscale | Not started |
 
 ## 1. Purpose and requirements
 
@@ -249,6 +250,21 @@ The user opens the desktop app and creates a session for a project, optionally c
 - An OpenAI-compatible client (`/v1/chat/completions` with tools) behind the same loop, for LM Studio, llama.cpp's server, Jan and others, through a configurable base URL. The context size is then set in that runtime rather than per request, so the model list warns when it is small.
 - Acceptance: the 5b coding task works against LM Studio (or another OpenAI-compatible server) with the same events as Ollama.
 
+## APPLICATION REVISION: Session flow* (added 2026-11-10; built after phase 5 and before phase 7, so delegation's controls go into the final composer)
+- Why (the user's words): "The way it is set up is too complex and annoying every time we have to create a new chat. We are going to make it more like the setup Codex has, but be able to select different models on the bottom of the text area. When we click on new session, instead of opening up a modal, it will open up a new chat ready to go. In that area, we are going to have the place to set up the mount, the model the user can select, and options for chaining. This would be much more simplified than the setup we currently have so the user does not have to go through a setup just to start a new session."
+- Goal: starting and steering a session happens in the chat itself. **New session** opens a chat at once, the agent, model and folder are picked under the text box, and chaining is switched on or off in Settings and per chat.
+- In scope:
+  - **New session opens a chat:** no dialog. Clicking **New session** shows an empty session with the text box focused. The session is created when the first message is sent (so empty sessions aren't left behind), and its title comes from that message, as chats already do.
+  - **Pickers under the text box:** agent and model (the existing `ModelSelect`), and the folder (`FolderPicker`, empty means a chat), with the worktree checkbox shown when the folder is a git repository. Before the first message they only set what the session starts with. After it, the folder is shown but locked, because the CLIs resume a conversation only from the folder it began in.
+  - **Switching the model mid-chat:** picking another agent or model asks whether to pass along a brief of the conversation and tasks so far. **With a brief:** the existing manual handoff (`_handoff` with `StintReason.MANUAL`), with the optional note. **Without:** a new stint for the chosen agent that starts clean, with no brief, and sees only the messages that follow. In both cases the new agent waits for the user's next message instead of starting a turn on its own (today's manual handoff starts one). Refused while a turn is running, as today (stop first). It replaces the separate **Hand off** button and dialog.
+  - **Settings:** a default agent and model for new sessions; an **Allow chaining** switch (on by default). When it is on, Settings shows the default chain (`ChainEditor`) to change; when it is off, the chain is hidden and a usage limit stops the session with a notice and waits for the user, with no handoff.
+  - **Auto handoff switch under the text box:** shown next to the model picker when chaining is allowed, starting from the Settings default and changeable at any time during the chat, including mid-turn. On: when the agent runs out of usage, the next agent in the chain takes over at once (today's `auto` policy). Off: the hub offers the next agent in the transcript and waits for the user to accept (today's `ask` policy). The hub reads the switch when the limit happens, so a change takes effect from the next limit.
+  - **Backend:** a hub setting `chaining_enabled` and a default agent and model; an endpoint to change a session's `limit_policy` (and `chain`) after it is created; a handoff option to skip the brief and one to wait for the user instead of starting a turn; `_after_limit` stopping with a notice when chaining is off. No schema migration should be needed (settings are key/JSON rows, and the session already has `chain` and `limit_policy`).
+- Exclusions: Claude Code and Codex skills (on hold, user, 2026-11-10); delegation controls (phase 7); editing a per-session chain in the composer (the session uses the default chain; the backend field stays for later); visual styles and layouts (phase 10).
+- Dependencies: phases 3, 4 and 5 (handoff, the UI and the model picker).
+- Acceptance: clicking **New session** opens a chat with the text box focused; the user picks Codex and a project folder under the text box and sends a message; mid-chat they switch to Claude with a brief, and Claude knows the task without being told; with auto handoff on, a simulated Claude limit (`HUB_SIMULATE_LIMIT`) hands off to the next agent at once; switched off mid-chat, the next limit offers the handoff instead; with chaining off in Settings, a limit stops the session and waits.
+- Open: whether a switch without a brief should still include the user's own earlier messages; whether the auto handoff switch's default should be its own Settings item or follow **Allow chaining**.
+
 **Phase 7: Delegation** (added 2026-10-25; can be built before phase 6, which is marked later. Numbered 7 so existing references to phase 6 stay valid.)
 - Goal: an orchestrator-style session. The current agent hands a sub-task to another agent, which completes it and returns control to the original agent with a report.
 - In scope: a delegate action (button or slash command such as `/delegate claude write tests for the parser`) that starts a child stint with the handoff brief plus the sub-task; the child works through as many turns as needed, and its questions reach the user as usual; on completion the hub resumes the parent stint with a return report (the sub-task, the child's final message, files changed from git, commands run); the parent agent then gives the user a brief overview and continues. Later in the phase: agent-initiated delegation, where an agent ends its turn with a marker such as `[[DELEGATE claude: ...]]` (the same mechanism as `[[NEEDS_INPUT]]`), rather than an MCP tool that would block for minutes.
@@ -260,7 +276,20 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Attempt limit (decided 2026-11-05): a cap on how much a sub-task can use, so a struggling delegate doesn't waste usage. Proposed defaults, adjustable in Settings: at most 5 turns per delegate stint, and at most 2 re-delegations of the same sub-task. When a cap is hit, the delegate stops and a partial report goes back to the parent with the cap named under "where the agents struggled"; the parent then asks the user rather than delegating again.
 - Tradeoffs: each agent sees a brief, not the other's full reasoning; delegating costs extra turns on both agents.
 
-**Phase 9: Container isolation (Docker)** (added 2026-10-25; numbered 9 so existing phase numbers stay valid; planned after phase 4 and before phase 6)
+**Phase 8: Parallel split (minimal)** (added 2026-10-25; a first version, developed further later; built right after phase 7, before phase 9, since 2026-11-10)
+- Goal: several agents work on parts of one task at the same time, then their work is combined and the original agent continues.
+- In scope:
+  - **Trigger:** a Split action (button or slash command) where the user lists the sub-tasks and assigns an agent to each, for example `/split claude: build the settings page | codex: add the settings API`.
+  - **Running:** each sub-task becomes a child stint of the current stint and runs at the same time as the others, in its own git worktree and branch created from the session's current state. Each child gets the handoff brief plus its sub-task. Questions from a child reach the user as usual, labelled with that child.
+  - **Progress:** the session view lists the children with their agent, sub-task and status, and each child's transcript can be opened.
+  - **Combining:** when all children have finished, the hub merges their branches back into the session one at a time. A clean merge continues automatically; a conflict stops and is shown to the user, and nothing is resolved automatically.
+  - **Return:** the parent stint resumes with a combined report (per child: sub-task, final message, files changed, merge result), and the original agent gives the user an overview and continues.
+- Exclusions (later development): the agent proposing or planning the split itself; automatic conflict resolution; sub-tasks that depend on each other; children splitting again; a live side-by-side view; limits on how many agents run at once.
+- Dependencies: phase 4a (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
+- Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
+- Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
+
+**Phase 9: Container isolation (Docker)** (added 2026-10-25; numbered 9 so existing phase numbers stay valid; planned after phase 8 and before phase 6, moved after phase 8 on 2026-11-10 because phase 8 builds directly on phase 7 and does not need containers, while Docker mainly protects phase 6's remote access)
 - Goal: agents run inside Docker containers, so a misbehaving or prompt-injected agent can reach only its session's files, not the rest of the user's PC.
 - In scope:
   - **Docker runner** behind the phase 4a runner interface: one container per session (or per stint, for phase 8 children), with the session's worktree mounted as the only project folder, started by the hub and stopped when the session ends; the agent's turn runs through `docker exec`, and stopping a turn kills the process inside the container.
@@ -275,20 +304,7 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Open: whether Codex's ChatGPT sign-in works inside a container (device-code or browser flow); Claude Code's official dev container setup as a starting point; image size and start-up time; how the Codex and Claude permission settings change inside a container (their own sandboxes may be redundant there).
 - Tradeoffs: real isolation, at the cost of Docker Desktop's memory and start-up time, a second login per agent, per-project images, and slower file access unless projects live in WSL.
 
-**Phase 8: Parallel split (minimal)** (added 2026-10-25; a first version, developed further later)
-- Goal: several agents work on parts of one task at the same time, then their work is combined and the original agent continues.
-- In scope:
-  - **Trigger:** a Split action (button or slash command) where the user lists the sub-tasks and assigns an agent to each, for example `/split claude: build the settings page | codex: add the settings API`.
-  - **Running:** each sub-task becomes a child stint of the current stint and runs at the same time as the others, in its own git worktree and branch created from the session's current state. Each child gets the handoff brief plus its sub-task. Questions from a child reach the user as usual, labelled with that child.
-  - **Progress:** the session view lists the children with their agent, sub-task and status, and each child's transcript can be opened.
-  - **Combining:** when all children have finished, the hub merges their branches back into the session one at a time. A clean merge continues automatically; a conflict stops and is shown to the user, and nothing is resolved automatically.
-  - **Return:** the parent stint resumes with a combined report (per child: sub-task, final message, files changed, merge result), and the original agent gives the user an overview and continues.
-- Exclusions (later development): the agent proposing or planning the split itself; automatic conflict resolution; sub-tasks that depend on each other; children splitting again; a live side-by-side view; limits on how many agents run at once.
-- Dependencies: phase 4a (worktrees) and phase 7 (child stints and the return report). The project folder must be a git repository.
-- Acceptance: in one session, the user splits a task between Claude and Codex, both work at the same time on different files, their changes are merged into the project, and the original agent summarizes what each did.
-- Tradeoffs: agents running at once use several subscriptions' limits at the same time; sub-tasks that touch the same files will conflict, so splits work best along clear file boundaries; two children asking questions at once compete for the user's attention.
-
-**Phase 10: Design styles and layouts** (added 2026-11-02; numbered 10 so existing phase numbers stay valid; planned after phase 8 and before phase 6)
+**Phase 10: Design styles and layouts** (added 2026-11-02; numbered 10 so existing phase numbers stay valid; planned after phases 8 and 9 and before phase 6)
 - Goal: the user can switch the app between several visual styles and layouts in Settings, keeping today's look as the default.
 - In scope:
   - **Styles:** named sets of theme tokens (colors, fonts, corner radius, density) chosen in Settings next to the light/dark switch, each with a light and a dark version. Today's Claude Code and Codex blend stays as the default style.

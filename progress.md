@@ -1421,10 +1421,11 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 **For the user**
 - [x] Try the 5a, 5b and 5c checks in `TODO.md` (all passed, user, 2026-11-10; 4b, 4c and 4d checks also confirmed).
-- [ ] Carried over: delete the old copy `backend\data`; confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+- [x] Deleted the old copy `backend\data` (user, 2026-11-10; the backend uses `%LOCALAPPDATA%\MultiAgentHub\data`).
+- [ ] Carried over: confirm or change the attempt-limit defaults (5 turns per delegate, 2 re-delegations).
 
 **For the agent**
 - [x] Commit 5c when the user agrees (done: `3e6d1a2`, pushed on `feature/local-robustness`). Merged into `main` by fast-forward on 2026-11-10 at the user's request, before the in-app checks (221 passed, frontend builds on `main`); the 5a to 5c checks in `TODO.md` are still to do.
 - [x] Decide whether 5d is needed now: on hold (user, 2026-11-10), recorded in `plan.md`.
-- [ ] Next: phase 7 (delegation), then 9, 8, 10, 6.
+- [ ] Next: the APPLICATION REVISION (session flow, no phase number, drafted in `plan.md` 2026-11-10), then phase 7 (delegation), 8, 9, 10, 6 (8 moved before 9 on 2026-11-10, user).
 - [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
