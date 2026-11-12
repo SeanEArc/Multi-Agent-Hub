@@ -251,6 +251,8 @@ export interface HandoffRequest {
   note?: string | null;
   // false: the new agent starts clean, without a brief of the conversation.
   brief?: boolean;
+  // With brief false: still pass the user's own earlier messages (not the agents' replies).
+  messages?: boolean;
   // true: no turn starts; the new agent waits for the user's next message.
   wait?: boolean;
 }

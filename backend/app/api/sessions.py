@@ -134,9 +134,10 @@ def update_session(session_id: str, body: SessionUpdate, db: DbSession, orchestr
         agent_session.chain = [entry.to_json() for entry in body.chain] if body.chain else None
     if "effort" in changes:
         stint = current_stint(db, session_id)
-        stint.effort = body.effort
+        # The local model has no effort setting.
+        stint.effort = None if stint.agent == AgentKind.OLLAMA else body.effort
         db.add(stint)
-        orchestrator.set_effort(session_id, body.effort)
+        orchestrator.set_effort(session_id, stint.effort)
     db.add(agent_session)
     db.commit()
     db.refresh(agent_session)
@@ -198,7 +199,7 @@ async def hand_off(session_id: str, body: HandoffCreate, db: DbSession, orchestr
     """
     try:
         await orchestrator.handoff(session_id, body.agent, body.model, body.note, brief=body.brief, wait=body.wait,
-                                   effort=body.effort)
+                                   messages=body.messages, effort=body.effort)
     except SessionNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from None
     except SessionBusy as exc:

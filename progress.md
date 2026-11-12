@@ -1450,8 +1450,56 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Carried over: confirm or change the delegation attempt-limit defaults (5 turns per delegate, 2 re-delegations).
 
 **For the agent**
-- [ ] Commit and merge `revision/session-flow` when the user agrees.
+- [x] Commit and merge `revision/session-flow` when the user agrees (done: merged as PR #1, `d65f411`).
 - [ ] Next: phase 7 (delegation), then 8, 9, 10, 6.
 - [ ] Open (from `plan.md`): whether a switch without a brief should still include the user's earlier messages.
 - [ ] Keep `CLAUDE_VERSIONS` (and `CODEX_FALLBACK`) in `app/model_list.py` current when models are released or retired; confirm Claude Code's real wording for an unavailable model matches `UNAVAILABLE_MODEL` the first time it happens (seen only in the fake CLI so far).
 - [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a lighter headless prompt for chats. (The one-click "New chat" button is covered by the revision.)
+
+---
+
+2026-11-11 (recap written 2026-11-12)
+
+# Session 43: Built APPLICATION REVISION 2 (model picker and reasoning effort) and added the MIT license; merged to `main`.
+
+## What was done
+1. **Centered new session:** "What should we build today?" above the text box, or "What should we build in {repo or folder}?" once a folder is picked (`NewChatView.tsx`).
+2. **One model box by Send** (`ModelPicker` in `ComposerControls.tsx`, logos in `AgentLogo.tsx`): the agent's mark, the model and the effort; a three-column menu of provider, models and efforts. The effort column has no "Default" row.
+3. **Reasoning effort per stint** (migration `b7e41c2d9a10`, a plain `ADD COLUMN`): sent as Claude's `--effort` and Codex's `model_reasoning_effort`; changeable between turns (`PATCH` → `Orchestrator.set_effort`); carried by handoffs; `HubSettings.default_effort` (medium) applied by `stint_effort()`. Codex efforts per model from its model cache ("ultra" left out). 5 new tests in `test_effort.py`.
+4. **Claude aliases removed** from the model lists (redundant with the full names).
+5. **License:** MIT, SeanEArc (`LICENSE`, plus `license` fields in `pyproject.toml`, `Cargo.toml`, `package.json`, and the README).
+6. Merged into `main` (PR #1 `d65f411`, then `9aa5c52`). 238 passed, 6 skipped; frontend builds. No in-app checks yet.
+
+---
+
+2026-11-12 14:18 (UTC-06:00)
+
+# Session 44: Audit and test pass on `revision/test-pass`; planned revision 3 (skills, slash commands and tools).
+
+## What was done
+1. **Process:** agreed to a "done" checklist per change (tests and build, docs, in-app check in `TODO.md`, own branch, `/code-review` before merging). Revisions go into `plan.md` after the last completed phase, without rewriting phases.
+2. **`plan.md`:** added APPLICATION REVISION 2 (record of what was built) and APPLICATION REVISION 3 (skills, `/` commands and tools, starting with a verification step of what the CLIs support headless), with roadmap rows. Recorded three decisions in section 7: a switch without a brief asks the user each time; Auto handoff by default stays its own Settings toggle; delegation limits 5 turns and 2 re-delegations.
+3. **Switch dialog:** no more old model dropdown (it had a "Default" choice and no effort); it shows the model and effort picked in the box and offers **Switch with brief**, **My messages only** and **Start clean**. Backend: `HandoffCreate.messages` and `messages_brief()` in `handoff.py` give the new agent only the user's earlier messages; the `handoff` event carries `messages`, and the transcript row says "your messages only". 1 new test.
+4. **Docs:** `TODO.md` check 3 updated (no aliases), 5 new revision 2 checks; `CLAUDE.md` status and handoff notes; session 42's merge marked done; session 43 recap above.
+5. **Live checks (real Claude CLI, tiny prompts):** Haiku 5.5 and Sonnet 5.5 accept low, xhigh and max effort without errors. Claude Code's real message for an unknown or retired model is "There's an issue with the selected model (…). It may not exist or you may not have access to it. Run --model to pick a different model." (`is_error` true, subtype `success`), which `UNAVAILABLE_MODEL` matches; fake Claude's `badmodel` text updated to the same wording.
+6. **Flaky test:** the full suite ran 5 times in a row, 239 passed each time; the earlier single failure happened in an unusually slow (49 s) run, so it is probably a timing-sensitive test under load. Watch for it; not reproduced.
+7. **Code review** (`/code-review high` on `b234efc..HEAD` plus this branch): 10 findings. Fixed 7:
+   - Switching twice in a row built the brief from the idle stint in between; `_handoff` now briefs from the last stint that ran (`source`).
+   - "My messages only" could drop the first message (the task); it is now always kept.
+   - Accepting a handoff offer dropped the chain entry's effort; the offer's `effort` is now passed on.
+   - `PATCH` effort on a local-model session stored an effort; it is now ignored (None).
+   - An unavailable-model error was overwritten by a later generic error, so the model wasn't marked "not on your plan"; the first such error is kept.
+   - The transcript kept saying "waiting for your message" after the user answered; it now stops once a message follows.
+   - Switching before the first message added an empty handoff brief; now no brief.
+   4 new tests; 243 passed, 6 skipped; frontend builds.
+
+## Next steps
+
+**For the user**
+- [ ] **Reminder:** try the APPLICATION REVISION 2 checks and the session-flow checks in `TODO.md` (postponed by the user on 2026-11-12; `revision/test-pass` was merged into `main` before them at the user's request).
+
+**For the agent**
+- [ ] Revision 3, step 1: verify what skills, slash commands, MCP servers and tool permissions do in headless `claude -p` and `codex exec`; then design the rest with the user.
+- [ ] From the review, not fixed yet: (a) `stint_effort` sends the default effort (medium) to a Codex model even if its cache doesn't list medium, which the CLI may reject (use the model's own default effort); (b) after a failed first send in `NewChatView`, a retry goes to the half-created session even if the folder or agent changed (reset it, or open that session); (c) `GET /api/models` reads the Codex cache twice, and `CODEX_HOME` is looked up in two places.
+- [ ] Then phase 7 (delegation), 8, 9, 10, 6.
+- [ ] Carried over: keep `CLAUDE_VERSIONS` and `CODEX_FALLBACK` current; code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a lighter headless prompt for chats.

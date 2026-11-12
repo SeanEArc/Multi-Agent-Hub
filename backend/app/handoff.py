@@ -139,6 +139,23 @@ def build_brief(
     return clip("\n\n".join([head, git_section, closing]), MAX_BRIEF)
 
 
+def messages_brief(events: Sequence[SessionEvent], to_agent: AgentKind) -> str | None:
+    """A switch without a brief that keeps the user's own earlier messages (not the agents' replies), or None."""
+    user_messages = [e.payload.get("text", "") for e in events if e.type == EventType.USER_MESSAGE]
+    if not user_messages:
+        return None
+    # The first message (the task) is always kept, then the latest ones.
+    kept = user_messages[:1] + user_messages[1:][-LATER_MESSAGES:]
+    head = (
+        "# Earlier messages\n\n"
+        f"You are {AGENT_NAMES[to_agent]}, joining a conversation in Multi-Agent Hub. You can't see the earlier "
+        "replies; these are the user's own earlier messages, oldest first, for context."
+    )
+    if len(kept) < len(user_messages):
+        head += f" {len(user_messages) - len(kept)} messages after the first are left out."
+    return clip(head + "\n\n" + "\n\n".join(f"- {clip(m, MAX_MESSAGE)}" for m in kept), MAX_BRIEF)
+
+
 def with_brief(brief: str, text: str) -> str:
     """The first prompt of an agent that waited for the user after a handoff: the brief, then their message."""
     return f"{brief}\n\n## The user's message\n\n{text}"
