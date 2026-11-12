@@ -26,7 +26,7 @@ from app.adapters.claude import ClaudeAdapter, ClaudeCliNotFound
 from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
 from app.adapters.ollama import OllamaAdapter, OllamaUnavailable, list_models_sync, pick_model
 from app.config import get_settings
-from app.handoff import build_brief, git_state, next_in_chain, with_brief
+from app.handoff import build_brief, git_state, messages_brief, next_in_chain, with_brief
 from app.model_list import is_unavailable_model_error, record_availability, record_check
 from app.models import (
     AgentKind,
@@ -239,11 +239,12 @@ class Orchestrator:
         brief: bool = True,
         wait: bool = False,
         effort: str | None = None,
+        messages: bool = False,
     ) -> None:
         """Move the session to another agent now (the model picker, or accepting an offer).
 
         Returns once its turn is running, or with `wait` once the new agent is ready for the user's next message.
-        Without `brief` the new agent starts clean.
+        Without `brief` the new agent starts clean, or with `messages` gets only the user's earlier messages.
         """
         if self.is_running(session_id):
             raise SessionBusy("A turn is running for this session; stop it before handing off")
@@ -251,7 +252,7 @@ class Orchestrator:
             if db.get(AgentSession, session_id) is None:
                 raise SessionNotFound(session_id)
         await self._handoff(session_id, ChainEntry(agent=agent, model=model, effort=effort), StintReason.MANUAL,
-                            note, brief=brief, wait=wait)
+                            note, brief=brief, wait=wait, messages=messages)
 
     def set_effort(self, session_id: str, effort: str | None) -> None:
         """Use `effort` from the session's next turn on (the stint is saved by the caller); a running turn keeps its own."""
@@ -441,7 +442,8 @@ class Orchestrator:
                         status = SessionStatus.READY
                     else:
                         status = RESTING_STATUS.get(event.type, status)
-                    if event.type is EventType.ERROR:
+                    if event.type is EventType.ERROR and not is_unavailable_model_error(error):
+                        # Keep an unavailable-model error over a later generic one ("exited before finishing").
                         error = event.data.get("message")
                     if event.type is EventType.LIMIT_REACHED:
                         limit_reached = True
@@ -616,6 +618,7 @@ class Orchestrator:
         *,
         brief: bool = True,
         wait: bool = False,
+        messages: bool = False,
     ) -> None:
         """End the current stint, start one for `target` and run its first turn on the brief.
 
@@ -634,6 +637,15 @@ class Orchestrator:
                 ).all()
                 workdir = session_workdir(db, agent_session)
                 worktree = session_worktree(db, session_id)
+                # The brief is about the last stint that did anything: switching twice in a row must not
+                # describe the idle stint in between (which never ran a turn) instead of the real last agent.
+                ran = {e.stint_id for e in events if e.type != EventType.HANDOFF}
+                stints = db.exec(
+                    select(Stint).where(Stint.session_id == session_id).order_by(col(Stint.seq).desc())
+                ).all()
+                source = next((s for s in stints if s.id in ran), previous)
+            # Nothing to brief before the first message.
+            brief = brief and any(e.type == EventType.USER_MESSAGE for e in events)
             stint = Stint(session_id=session_id, seq=previous.seq + 1, agent=target.agent, model=target.model,
                           effort=target.effort, reason=reason)
             adapter = self._adapter_factory(agent_session, stint, workdir)  # AgentUnavailable before anything changes
@@ -642,8 +654,10 @@ class Orchestrator:
             try:
                 if brief:
                     git = await git_state(workdir, base=worktree.base_commit if worktree else None)
-                    stint.brief = build_brief(events, previous.id, previous.agent, target.agent, reason, git, note,
+                    stint.brief = build_brief(events, source.id, source.agent, target.agent, reason, git, note,
                                               wait=wait)
+                elif messages:
+                    stint.brief = messages_brief(events, target.agent)
                 with Session(self._engine) as db:
                     ended = db.get(Stint, previous.id)
                     ended.ended_at = utcnow()
@@ -658,6 +672,7 @@ class Orchestrator:
                     "reason": reason,
                     "from_stint_id": previous.id,
                     "brief": brief,
+                    "messages": not brief and stint.brief is not None,
                     "waiting": wait,
                 }))
                 if wait:

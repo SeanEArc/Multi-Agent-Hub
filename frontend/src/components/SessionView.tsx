@@ -250,9 +250,9 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
                   events={events}
                   status={status}
                   projectPath={folder}
-                  onAcceptHandoff={async (agent, model) => {
+                  onAcceptHandoff={async (agent, model, effort) => {
                     stickToBottom.current = true;
-                    await api.handoff(session.id, { agent, model });
+                    await api.handoff(session.id, { agent, model, effort });
                     onChanged();
                   }}
                   // In the split layout the card stands in for the side panel on narrow windows.

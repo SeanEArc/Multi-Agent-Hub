@@ -32,7 +32,7 @@ if mode == "hang":
 if mode == "badmodel":  # the plan can't use the model asked for, as Claude Code words it
     emit({"type": "result", "subtype": "success", "is_error": True, "num_turns": 0,
           "result": "There's an issue with the selected model (x). It may not exist or you may not have access to it. "
-                    "Run /model to pick a different model."})
+                    "Run --model to pick a different model."})
     sys.exit(1)
 if mode == "limit":
     emit({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "five_hour", "resetsAt": 4102444800}})

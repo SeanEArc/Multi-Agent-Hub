@@ -2,7 +2,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { AgentName, agentClass } from "./AgentBadge";
 import { DiffStat, DiffView, startsOpen } from "./DiffView";
 import { MarkdownText } from "./MarkdownText";
-import { AGENT_NAMES, api, type AgentKind, type SessionEvent, type SessionStatus } from "../api";
+import { AGENT_NAMES, api, type AgentKind, type Effort, type SessionEvent, type SessionStatus } from "../api";
 import { COMMAND_TOOLS, commandOutcome, editDiffs, isEditTool } from "../diffs";
 import { formatTokens, turnTokens } from "../history";
 import {
@@ -21,7 +21,7 @@ interface Props {
   status: SessionStatus;
   projectPath: string;
   // Confirms a handoff the hub offered after a usage limit (the "ask first" policy).
-  onAcceptHandoff: (agent: AgentKind, model: string | null) => Promise<void>;
+  onAcceptHandoff: (agent: AgentKind, model: string | null, effort: Effort | null) => Promise<void>;
   // Shown at the top of the transcript (the progress card).
   header?: ReactNode;
 }
@@ -70,13 +70,22 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
     switch (event.type) {
       case "handoff":
         lastUsage = null;
-        return <HandoffDivider key={event.id} sessionId={sessionId} event={event} />;
+        return (
+          <HandoffDivider
+            key={event.id}
+            sessionId={sessionId}
+            event={event}
+            // A switch that waited stops waiting once the user's next message follows it.
+            answered={events.slice(index + 1).some((e) => e.type === "user_message")}
+          />
+        );
       case "handoff_offer":
         return (
           <HandoffOffer
             key={event.id}
             agent={p.agent}
             model={p.model}
+            effort={p.effort ?? null}
             // Only the latest offer can be taken, while the session still waits on it.
             active={index === events.length - 1 && status === "waiting_for_input"}
             onAccept={onAcceptHandoff}
@@ -201,12 +210,15 @@ export function eventAnchor(eventId: number): string {
   return `event-${eventId}`;
 }
 
-function HandoffDivider({ sessionId, event }: { sessionId: string; event: SessionEvent }) {
+function HandoffDivider({ sessionId, event, answered }: { sessionId: string; event: SessionEvent; answered: boolean }) {
   const brief = useBrief(sessionId, event.stint_id);
   const p = event.payload;
   // Older events lack these: they always carried a brief and started a turn.
   const withBrief = p.brief !== false;
-  const waiting = p.waiting === true;
+  // A switch without a brief that still passed the user's own earlier messages.
+  const messagesOnly = !withBrief && p.messages === true;
+  const shown = withBrief || messagesOnly;
+  const waiting = p.waiting === true && !answered;
   const manual = p.reason === "manual";
   return (
     // The line takes the color of the agent that takes over.
@@ -225,13 +237,13 @@ function HandoffDivider({ sessionId, event }: { sessionId: string; event: Sessio
           <span className="muted">
             {p.model ? ` (${p.model})` : ""}
             {manual ? (p.from_agent ? ` · from ${agentName(p.from_agent)}` : "") : ` · ${REASONS[p.reason] ?? p.reason}`}
-            {withBrief ? "" : ", no brief"}
+            {withBrief ? "" : messagesOnly ? ", your messages only" : ", no brief"}
             {waiting ? " · waiting for your message" : ""}
           </span>
         </span>
-        {withBrief && brief.button}
+        {shown && brief.button}
       </div>
-      {withBrief && brief.panel}
+      {shown && brief.panel}
     </div>
   );
 }
@@ -277,10 +289,11 @@ interface HandoffOfferProps {
   agent: AgentKind;
   model: string | null;
   active: boolean;
-  onAccept: (agent: AgentKind, model: string | null) => Promise<void>;
+  effort: Effort | null;
+  onAccept: (agent: AgentKind, model: string | null, effort: Effort | null) => Promise<void>;
 }
 
-function HandoffOffer({ agent, model, active, onAccept }: HandoffOfferProps) {
+function HandoffOffer({ agent, model, effort, active, onAccept }: HandoffOfferProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const name = `${agentName(agent)}${model ? ` (${model})` : ""}`;
@@ -295,7 +308,7 @@ function HandoffOffer({ agent, model, active, onAccept }: HandoffOfferProps) {
             setBusy(true);
             setError(null);
             try {
-              await onAccept(agent, model);
+              await onAccept(agent, model, effort);
             } catch (e) {
               setError(e instanceof Error ? e.message : String(e));
               setBusy(false);

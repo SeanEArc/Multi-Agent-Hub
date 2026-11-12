@@ -79,3 +79,10 @@ def test_new_stints_start_with_the_default_effort(client: TestClient, tmp_path: 
     session = wait_until_idle(client, session_id)
     assert (session["agent"], session["effort"]) == ("codex", "max")
     assert 'model_reasoning_effort="max"' in last_args(client, session_id)
+
+
+def test_local_model_ignores_an_effort_change(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "ollama:ok", agent="ollama")
+    response = client.patch(f"/api/sessions/{session_id}", json={"effort": "high"})
+    assert response.status_code == 200
+    assert response.json()["effort"] is None

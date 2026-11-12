@@ -48,7 +48,7 @@ def test_claude_limit_hands_off_to_codex_with_brief(client: TestClient, tmp_path
     handoff = next(e for e in events_of(client, session_id) if e["type"] == "handoff")
     assert handoff["payload"] == {
         "from_agent": "claude", "to_agent": "codex", "model": None, "reason": "limit",
-        "from_stint_id": session["stints"][0]["id"], "brief": True, "waiting": False,
+        "from_stint_id": session["stints"][0]["id"], "brief": True, "messages": False, "waiting": False,
     }
     assert handoff["stint_id"] == session["stints"][1]["id"]
 
@@ -306,6 +306,29 @@ def test_switch_without_brief_starts_clean(client: TestClient, tmp_path: Path) -
     assert prompts_sent(client, session_id, "codex") == ["hello"]
 
 
+def test_switch_with_only_the_users_messages(client: TestClient, tmp_path: Path) -> None:
+    """Without a brief, the user can still pass their own earlier messages, but not the agents' replies."""
+    session_id = create(client, tmp_path, "ok")
+    for text in ("write the parser", "use regex"):
+        client.post(f"/api/sessions/{session_id}/messages", json={"text": text})
+        wait_until_idle(client, session_id)
+
+    client.post(f"/api/sessions/{session_id}/handoff",
+                json={"agent": "codex", "brief": False, "messages": True, "wait": True})
+    session = wait_until_idle(client, session_id)
+    handoff = next(e for e in events_of(client, session_id) if e["type"] == "handoff")
+    assert (handoff["payload"]["brief"], handoff["payload"]["messages"]) == (False, True)
+
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "now add tests"})
+    wait_until_idle(client, session_id)
+    [first] = prompts_sent(client, session_id, "codex")
+    assert first.startswith("# Earlier messages")
+    assert "- write the parser\n\n- use regex" in first
+    assert "Handoff from" not in first
+    assert first.endswith("## The user's message\n\nnow add tests")
+    assert session["status"] == "ready"
+
+
 def test_chaining_off_stops_and_waits_on_a_limit(client: TestClient, tmp_path: Path) -> None:
     settings = client.get("/api/settings").json()
     client.put("/api/settings", json={**settings, "chaining_enabled": False})
@@ -418,3 +441,39 @@ def test_next_in_chain(current: AgentKind, expected: list[str]) -> None:
 def test_next_in_chain_for_agent_outside_chain() -> None:
     chain = [ChainEntry(agent=AgentKind.CLAUDE), ChainEntry(agent=AgentKind.OLLAMA)]
     assert [e.agent for e in next_in_chain(chain, AgentKind.CODEX)] == ["claude", "ollama"]
+
+
+def test_switching_twice_briefs_from_the_last_agent_that_worked(client: TestClient, tmp_path: Path) -> None:
+    """Claude works, the user switches to Codex (waiting) and straight on to Claude: the brief is from Claude."""
+    session_id = create(client, tmp_path, "ok")
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "write the parser"})
+    wait_until_idle(client, session_id)
+    for agent in ("codex", "claude"):
+        client.post(f"/api/sessions/{session_id}/handoff", json={"agent": agent, "wait": True})
+        session = wait_until_idle(client, session_id)
+    stint = client.get(f"/api/sessions/{session_id}/stints/{session['stints'][2]['id']}").json()
+    assert stint["brief"].startswith("# Handoff from Claude Code")
+    assert "Last messages from Claude Code" in stint["brief"]
+
+
+def test_switching_before_the_first_message_has_no_brief(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "ok")
+    client.post(f"/api/sessions/{session_id}/handoff", json={"agent": "codex", "wait": True})
+    session = wait_until_idle(client, session_id)
+    stint = client.get(f"/api/sessions/{session_id}/stints/{session['stints'][1]['id']}").json()
+    assert stint["brief"] is None
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "hello"})
+    wait_until_idle(client, session_id)
+    assert prompts_sent(client, session_id, "codex") == ["hello"]
+
+
+def test_messages_brief_keeps_the_task() -> None:
+    from app.handoff import LATER_MESSAGES, messages_brief
+
+    events = [SessionEvent(session_id="s", agent=AgentKind.CLAUDE, type=EventType.USER_MESSAGE, payload={"text": f"message {i}"})
+              for i in range(LATER_MESSAGES + 5)]
+    text = messages_brief(events, AgentKind.CODEX)
+    assert "- message 0\n" in text
+    assert f"- message {LATER_MESSAGES + 4}" in text
+    assert "- message 1\n" not in text
+    assert "4 messages after the first are left out" in text

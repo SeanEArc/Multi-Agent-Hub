@@ -13,6 +13,8 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 3 | 4d: Tauri shell | Done |
 | 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c done (merged and checked in the app 2026-11-10); 5d on hold |
 | 5 | APPLICATION REVISION: Session flow (new session opens a chat, pickers under the composer, chaining switches) | Built 2026-11-10 on `revision/session-flow`; in-app checks in `TODO.md` |
+| 5b | APPLICATION REVISION 2: Model picker and reasoning effort | Built and merged 2026-11-11; test pass and in-app checks next |
+| 5c | APPLICATION REVISION 3: Skills, slash commands and tools | Planned 2026-11-12; starts with a verification step |
 | 6 | 7: Delegation | Not started, open questions settled |
 | 7 | 8: Parallel split | Not started |
 | 8 | 9: Docker isolation | Not started |
@@ -266,6 +268,35 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Acceptance: clicking **New session** opens a chat with the text box focused; the user picks Codex and a project folder under the text box and sends a message; mid-chat they switch to Claude with a brief, and Claude knows the task without being told; with auto handoff on, a simulated Claude limit (`HUB_SIMULATE_LIMIT`) hands off to the next agent at once; switched off mid-chat, the next limit offers the handoff instead; with chaining off in Settings, a limit stops the session and waits.
 - Open: whether a switch without a brief should still include the user's own earlier messages; whether the auto handoff switch's default should be its own Settings item or follow **Allow chaining**.
 
+## APPLICATION REVISION 2: Model picker and reasoning effort* (added 2026-11-11; built after the session-flow revision and before phase 7)
+- Why (the user's words): "instead of making 2 areas to click for the model, I want it to be one box by the send icon that only displays the model", with three tabs: provider, that provider's subscription models, and "the reasoning amount. Low, medium, high, extra high, and max that model provides".
+- Built (merged to `main` 2026-11-11):
+  - **New session view:** the text box sits in the middle under "What should we build today?", or "What should we build in {repo or folder name}?" once a folder is picked.
+  - **One model box by Send:** the Codex logo for ChatGPT models, the Claude logo for Claude models, "Local" for Ollama, plus the model and its effort. It opens a three-column menu: provider, models, efforts.
+  - **Reasoning effort per stint:** low, medium, high, extra high, max (Codex shows only the levels each model supports, read from its model cache). Sent as Claude's `--effort` and Codex's `model_reasoning_effort` on every turn. It can change between turns, and handoffs carry it. The menu has no "Default" row: the default for new sessions (medium) is set in Settings. None for local models.
+  - **Claude aliases removed** from the lists ("(latest)" entries), since the full names below them cover the same models.
+  - **License:** MIT, held by SeanEArc.
+- Still to do (tracked in `TODO.md`): in-app checks of all of the above; the switch dialog still has the old model dropdown with a "Default" choice and no effort; check whether every Claude model accepts every effort level (for example Haiku).
+
+## APPLICATION REVISION 3: Skills, slash commands and tools* (added 2026-11-12; to be built after revision 2's test pass and before phase 7)
+- Why (the user's words): "We need to implement the tools that claude and codex use into this application such as skills and / commands", and "I would like to implement skill and tool calling into the application as well. Tools that claude and codex can use when their model is being used in the application." This lifts the hold on skills from the session-flow revision.
+- Goal: an agent running in the hub can use the same skills, slash commands and tools it has in its own CLI, and the user can find and call them from the composer.
+- Step 1, verification (before any design is fixed): find out on this PC, with the installed CLIs, what works in headless mode:
+  - **Claude Code (`claude -p`):** whether skills (`~/.claude/skills`, `.claude/skills` in the project, plugins) load and trigger; whether `/skill-name` and custom commands (`.claude/commands`) work when sent as the prompt; which built-in commands do nothing headless; how `--allowedTools`, `--disallowedTools` and settings permissions interact with `--permission-prompts none`; whether user and project MCP servers load.
+  - **Codex (`codex exec`):** whether skills and custom prompts (`~/.codex/prompts`) work in exec mode; how MCP servers from `config.toml` load; which tools the sandbox and `approval_policy="never"` block.
+  - **What the stream reports:** how each CLI shows a skill or MCP call in its JSON events, so the transcript can show it (Codex already reports `mcp_tool_call`, shown as `mcp__server__tool`).
+- In scope (adjusted after step 1):
+  - **Slash menu in the composer:** typing `/` lists what the current agent can run: its skills and custom commands (found by reading the skill and command folders' names and descriptions, never login files), plus the hub's own commands (later `/delegate` in phase 7 and `/split` in phase 8). Picking one fills in the text box; the hub sends it to the CLI as the CLI expects.
+  - **Tool permissions:** a per-session or Settings choice of which tools the agent may use without asking (for example allow web search or MCP servers, deny shell commands), passed through each CLI's own flags or `-c` overrides. Defaults stay as today.
+  - **MCP servers:** use the servers the user already set up in each CLI, and show which ones a session has. Setting up servers stays in the CLIs.
+  - **Transcript:** skill and MCP calls show as their own rows, like tool calls today.
+  - **Handoff:** the brief notes which skills or commands were used, so the next agent knows; an agent that lacks a skill is told so instead of the command failing silently.
+- Exclusions: a hub-run marketplace or installer for skills; editing skills inside the hub; giving the local model Claude's or Codex's skills (possible later, by adding a skill's instructions to its prompt).
+- Dependencies: the session-flow revision (composer) and revision 2 (model picker).
+- Acceptance: in a Claude session the user types `/`, picks one of their own skills, and Claude runs it; in a Codex session the user calls an MCP tool they set up in Codex and the call shows in the transcript; with shell commands denied in Settings, an agent's command is refused and the transcript says why.
+- Open: what step 1 finds (some of this may not work headless at all); whether permissions are per session, per agent or global; whether the hub should list built-in CLI commands that do nothing headless or hide them.
+- Tradeoffs: skill folders and MCP configs are each CLI's own, partly undocumented formats, so a CLI update can change them; reading only names and descriptions keeps the hub away from credentials. Allowing more tools without asking makes agents more capable and less safe until phase 9's containers.
+
 **Phase 7: Delegation** (added 2026-10-25; can be built before phase 6, which is marked later. Numbered 7 so existing references to phase 6 stay valid.)
 - Goal: an orchestrator-style session. The current agent hands a sub-task to another agent, which completes it and returns control to the original agent with a report.
 - In scope: a delegate action (button or slash command such as `/delegate claude write tests for the parser`) that starts a child stint with the handoff brief plus the sub-task; the child works through as many turns as needed, and its questions reach the user as usual; on completion the hub resumes the parent stint with a return report (the sub-task, the child's final message, files changed from git, commands run); the parent agent then gives the user a brief overview and continues. Later in the phase: agent-initiated delegation, where an agent ends its turn with a marker such as `[[DELEGATE claude: ...]]` (the same mechanism as `[[NEEDS_INPUT]]`), rather than an MCP tool that would block for minutes.
@@ -350,6 +381,9 @@ The user opens the desktop app and creates a session for a project, optionally c
 - Tauri is the desktop shell (decided 2026-10-22, replacing the Electron default). Effect: smaller and lighter shell, but its main process needs some Rust; the shell itself is built in phase 4d.
 - Tailscale is the remote-access method for phase 6 (decided 2026-10-22).
 - Phase 5 engine and runtime (decided 2026-11-09): the hub's own agent loop (option B) on Ollama's native chat API, split into sub-phases 5a (chat adapter), 5b (tools and loop), 5c (robustness, handoff, chain) and 5d (other runtimes). Codex CLI with `--oss` was tested and rejected: it needs no sign-in, but a 9B model only worked after four workarounds and still struggled without a usable file-edit tool.
+- Switching agents without a brief (decided 2026-11-12, user: "Ask the user"): the switch dialog asks each time, offering **Switch with brief**, **My messages only** (the user's own earlier messages, not the agents' replies) and **Start clean**.
+- Auto handoff default (decided 2026-11-12): it stays its own Settings toggle (**Auto handoff by default**, shown when chaining is allowed), and the chat's Auto handoff switch starts from it and can be turned off (or on) in the chat.
+- Delegation attempt limits (decided 2026-11-12, user: "Sounds like a good rule"): at most 5 turns per delegate stint and 2 re-delegations of the same sub-task, adjustable in Settings.
 
 **Assumptions**
 - Windows only.

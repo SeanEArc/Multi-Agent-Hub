@@ -224,6 +224,8 @@ class HandoffCreate(SQLModel):
     note: str | None = None
     # False: the new agent starts clean, with no brief of the session so far.
     brief: bool = True
+    # With brief false: still pass the user's own earlier messages (not the agents' replies).
+    messages: bool = False
     # True: no turn starts; the new agent gets the brief (if any) with the user's next message.
     wait: bool = False
 
