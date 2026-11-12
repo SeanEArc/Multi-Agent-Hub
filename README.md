@@ -190,3 +190,7 @@ progress.md           Per-session development log
 ```
 
 See [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend/README.md) for more detail on each part.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
