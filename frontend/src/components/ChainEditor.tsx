@@ -1,4 +1,4 @@
-import { AGENT_NAMES, AVAILABLE_AGENTS, type AgentKind, type ChainEntry, type LimitPolicy } from "../api";
+import { AGENT_NAMES, AVAILABLE_AGENTS, type AgentKind, type ChainEntry } from "../api";
 import { ModelSelect, useLocalModels } from "./ModelSelect";
 
 interface Props {
@@ -89,8 +89,3 @@ export function ChainEditor({ chain, onChange }: Props) {
     </ol>
   );
 }
-
-export const POLICY_LABELS: Record<LimitPolicy, string> = {
-  auto: "Hand off automatically",
-  ask: "Ask me first",
-};

@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import field_validator
 from sqlalchemy import Enum as SAEnum
@@ -70,9 +70,20 @@ class ProgressLayout(StrEnum):
     SPLIT = "split"  # a side panel beside the transcript
 
 
+# Reasoning effort levels the hub passes to the CLIs (Claude's --effort, Codex's model_reasoning_effort).
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+
+
 class ChainEntry(SQLModel):
     agent: AgentKind
     model: str | None = None
+    # None: the CLI's own default for the model.
+    effort: Effort | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        """As stored in a chain or an offer; the effort only when set, so older rows and payloads look the same."""
+        return self.model_dump(mode="json", exclude={"effort"} if self.effort is None else None)
 
 
 # --- Sessions ---------------------------------------------------------------
@@ -110,6 +121,8 @@ class Stint(SQLModel, table=True):
     seq: int  # 1, 2, ... in the order agents took over
     agent: AgentKind = Field(sa_column=enum_column(AgentKind, nullable=False))
     model: str | None = None
+    # Reasoning effort for this stint's turns; None: the CLI's default. Can change between turns.
+    effort: str | None = None
     # The agent CLI's own session id, used to resume (e.g. `claude --resume`).
     native_session_id: str | None = None
     reason: StintReason = Field(sa_column=enum_column(StintReason, nullable=False))
@@ -182,6 +195,7 @@ class SessionCreate(SQLModel):
     project_path: str | None = None
     agent: AgentKind = AgentKind.CLAUDE
     model: str | None = None
+    effort: Effort | None = None
     chain: list[ChainEntry] | None = None
     limit_policy: LimitPolicy | None = None
     # Work in a new git worktree on its own branch. Ignored for folders that aren't in a git repository.
@@ -205,8 +219,24 @@ class MessageCreate(SQLModel):
 class HandoffCreate(SQLModel):
     agent: AgentKind
     model: str | None = None
-    # Sent to the new agent after the brief, and shown as a user message.
+    effort: Effort | None = None
+    # Sent to the new agent after the brief, and shown as a user message. Ignored with `wait`.
     note: str | None = None
+    # False: the new agent starts clean, with no brief of the session so far.
+    brief: bool = True
+    # True: no turn starts; the new agent gets the brief (if any) with the user's next message.
+    wait: bool = False
+
+
+class SessionUpdate(SQLModel):
+    """Fields of a session that can change after it is created. Only the keys sent are changed."""
+
+    title: str | None = Field(default=None, min_length=1)
+    # None means the default from Settings.
+    limit_policy: LimitPolicy | None = None
+    chain: list[ChainEntry] | None = None
+    # The current agent's reasoning effort, used from its next turn on (None: the CLI's default).
+    effort: Effort | None = None
 
 
 class StintRead(SQLModel):
@@ -214,6 +244,7 @@ class StintRead(SQLModel):
     seq: int
     agent: AgentKind
     model: str | None
+    effort: str | None = None
     native_session_id: str | None
     reason: StintReason
     parent_stint_id: int | None
@@ -254,6 +285,7 @@ class SessionRead(SQLModel):
     # The current stint's agent, model and native session id.
     agent: AgentKind
     model: str | None
+    effort: str | None = None
     native_session_id: str | None
     # The model the current agent said it used, which names a default model (`model` is None).
     reported_model: str | None
@@ -453,6 +485,7 @@ def session_read(db: Session, agent_session: AgentSession) -> SessionRead:
         **agent_session.model_dump(),
         agent=current.agent,
         model=current.model,
+        effort=current.effort,
         native_session_id=current.native_session_id,
         reported_model=(reported.payload or {}).get("model") if reported else None,
         stints=[StintRead.model_validate(s) for s in stints],
@@ -483,8 +516,16 @@ DEFAULT_CHAIN = [ChainEntry(agent=AgentKind.CLAUDE), ChainEntry(agent=AgentKind.
 
 
 class HubSettings(SQLModel):
+    # Off: a usage limit stops the session and waits for the user; no other agent takes over.
+    chaining_enabled: bool = True
     default_chain: list[ChainEntry] = Field(default_factory=lambda: list(DEFAULT_CHAIN), min_length=1)
+    # The default for each chat's Auto handoff switch.
     limit_policy: LimitPolicy = LimitPolicy.AUTO
+    # What a new chat starts with (the UI's pickers); None is the CLI's default model.
+    default_agent: AgentKind = AgentKind.CLAUDE
+    default_model: str | None = None
+    # The reasoning effort new Claude and Codex stints start with (sessions, and handoffs that don't name one).
+    default_effort: Effort = "medium"
     progress_layout: ProgressLayout = ProgressLayout.PANEL
     # The Ollama model a local stint gets when neither the session nor the chain names one. None: the
     # HUB_OLLAMA_MODEL env setting, else the first installed model that supports tools.
@@ -505,6 +546,13 @@ def stint_model(db: Session, agent: AgentKind, model: str | None) -> str | None:
     if model or agent is not AgentKind.OLLAMA:
         return model
     return load_hub_settings(db).local_model
+
+
+def stint_effort(db: Session, agent: AgentKind, effort: str | None) -> str | None:
+    """The effort a new stint records: the one asked for, else the default from Settings; none for the local model."""
+    if agent is AgentKind.OLLAMA:
+        return None
+    return effort or load_hub_settings(db).default_effort
 
 
 def save_hub_settings(db: Session, settings: HubSettings) -> None:

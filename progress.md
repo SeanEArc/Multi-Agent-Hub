@@ -1429,3 +1429,29 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [x] Decide whether 5d is needed now: on hold (user, 2026-11-10), recorded in `plan.md`.
 - [ ] Next: the APPLICATION REVISION (session flow, no phase number, drafted in `plan.md` 2026-11-10), then phase 7 (delegation), 8, 9, 10, 6 (8 moved before 9 on 2026-11-10, user).
 - [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a one-click "New chat" button; a lighter headless prompt for chats.
+
+---
+
+2026-11-10 18:19 (UTC-06:00)
+
+# Session 42: Built the APPLICATION REVISION (session flow) on `revision/session-flow` (not committed yet).
+
+## What was done
+1. **Planning:** confirmed all 4b, 4c, 4d and 5a to 5c manual checks (user); deleted the old `backend\data` copy (user ran it); moved phase 8 before phase 9; added the APPLICATION REVISION (no phase number) after phase 5 in `plan.md`, with the user's reasons. Skills are on hold.
+2. **Backend:** `HubSettings` gained `chaining_enabled` (default on), `default_agent` and `default_model`; `limit_policy` is now the default for each chat's Auto handoff switch. New `PATCH /sessions/{id}` (`SessionUpdate`: title, limit_policy, chain; only keys sent; allowed mid-turn). `POST /handoff` takes `brief` and `wait`: without a brief the new stint starts clean; with `wait` no turn starts, the status goes to `ready`, and the next message starts the agent on `with_brief(brief, text)` (`handoff.py`). The `handoff` event carries `brief` and `waiting`. With chaining off, a limit saves a `NOTICE` (`chaining_off`) and waits for input. No migration (settings are key/JSON rows). 5 new tests; 226 passed, 6 skipped.
+3. **Frontend** (built by a subagent limited to `frontend/src/`, checked here; `npm run build` passes): **New session** shows `NewChatView` (no modal; the session is created on the first send, titled from it). `ComposerControls.tsx` puts the agent and model picker, the folder picker (inline panel with recent folders and the worktree checkbox) and the Auto handoff switch under the text box; in an open session the folder is a locked chip. Changing the model opens `SwitchAgentDialog.tsx` (Switch with brief / without brief / Cancel, always `wait: true`); disabled while a turn runs. The Hand off button, `HandoffDialog.tsx` and `NewSessionDialog.tsx` are removed. Settings has the default agent and model, Allow chaining (shows the chain and Auto handoff by default when on). Transcript handoff rows say "no brief" and "waiting for your message".
+4. **Settings default model** (user): no "Default" choice under **New sessions start with**; changing the agent picks its first model (`ModelSelect` `noDefault`, `firstModel`).
+5. **Model lists that follow the user's subscription** (user asked; designed for anyone who installs the app): new `app/model_list.py` and `app/api/models.py` (`GET /api/models`, `POST /api/models/check`). Codex's list comes from the user's `~/.codex/models_cache.json` (checked against the real file: 8 models; only model entries are read). Claude Code has no list of a plan's models, so it shows aliases plus current full names, marked by what turns teach (`_learn_model`) and by the opt-in check (a tiny one-off prompt per model). Frontend by a second subagent (`frontend/src/` only): shared `useModelCatalog()`, grouped pickers, "(not on your plan)", **Other…**, and the check buttons in Settings. Fixed a race where the status was set before the model result was saved. 7 new tests; 233 passed, 6 skipped (twice); frontend builds.
+
+## Next steps
+
+**For the user**
+- [ ] Try the APPLICATION REVISION checks in `TODO.md` (4 checks, including the model lists and the Check button).
+- [ ] Carried over: confirm or change the delegation attempt-limit defaults (5 turns per delegate, 2 re-delegations).
+
+**For the agent**
+- [ ] Commit and merge `revision/session-flow` when the user agrees.
+- [ ] Next: phase 7 (delegation), then 8, 9, 10, 6.
+- [ ] Open (from `plan.md`): whether a switch without a brief should still include the user's earlier messages.
+- [ ] Keep `CLAUDE_VERSIONS` (and `CODEX_FALLBACK`) in `app/model_list.py` current when models are released or retired; confirm Claude Code's real wording for an unavailable model matches `UNAVAILABLE_MODEL` the first time it happens (seen only in the fake CLI so far).
+- [ ] Carried over: code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a lighter headless prompt for chats. (The one-click "New chat" button is covered by the revision.)

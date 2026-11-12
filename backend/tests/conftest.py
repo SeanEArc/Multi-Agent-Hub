@@ -46,12 +46,14 @@ def fake_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> Agen
             native_session_id=stint.native_session_id,
             command=[sys.executable, str(FAKE_CODEX), mode],
             codex_home=Path(session.project_path) / "codex-home",  # never the real ~/.codex
+            effort=stint.effort,
         )
     if stint.agent is AgentKind.CLAUDE:
         return ClaudeAdapter(
             cwd,
             native_session_id=stint.native_session_id,
             command=[sys.executable, str(FAKE_CLAUDE), mode],
+            effort=stint.effort,
         )
     # The local model is off unless the title gives it a mode ("ollama:ok"), so chains that end in it
     # behave as when Ollama isn't running.
@@ -76,6 +78,8 @@ def engine() -> Engine:
 def client(engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
     worktrees = tmp_path_factory.mktemp("worktrees")
     chats = tmp_path_factory.mktemp("chats")
-    app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=worktrees, chats_dir=chats)
+    codex_home = tmp_path_factory.mktemp("codex-home")  # never the real ~/.codex
+    app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=worktrees, chats_dir=chats,
+                     codex_home=codex_home)
     with make_client(app) as test_client:
         yield test_client

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type AgentSession, type HubSettings, type ProgressLayout } from "./api";
 import { Dashboard } from "./components/Dashboard";
-import { NewSessionDialog } from "./components/NewSessionDialog";
+import { NewChatView } from "./components/NewChatView";
 import { SessionView } from "./components/SessionView";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
@@ -16,7 +16,8 @@ const POLL_MS = 20000;
 export function App() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => readSelected());
-  const [creating, setCreating] = useState(false);
+  // A new session before its first message, shown instead of the selected session or the dashboard.
+  const [drafting, setDrafting] = useState(false);
   const [editingSettings, setEditingSettings] = useState(false);
   const [backendDown, setBackendDown] = useState(false);
 
@@ -30,6 +31,16 @@ export function App() {
   }, []);
 
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
+
+  function select(id: string | null) {
+    setDrafting(false);
+    setSelectedId(id);
+  }
+
+  function startNew() {
+    setSelectedId(null);
+    setDrafting(true);
+  }
 
   // Hub settings, for the progress layout; the settings dialog loads its own copy.
   const [settings, setSettings] = useState<HubSettings | null>(null);
@@ -66,7 +77,12 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar sessions={sessions} selectedId={selectedId} onSelect={setSelectedId} onNew={() => setCreating(true)}
+      <Sidebar
+        sessions={sessions}
+        selectedId={selectedId}
+        drafting={drafting}
+        onSelect={select}
+        onNew={startNew}
         onSettings={() => setEditingSettings(true)}
       />
       <main className="main">
@@ -77,11 +93,22 @@ export function App() {
             folder.
           </div>
         )}
-        {selected ? (
+        {drafting ? (
+          <NewChatView
+            settings={settings}
+            // Sessions come newest first, so the Set keeps that order.
+            recentProjects={[...new Set(sessions.filter((s) => !s.chat).map((s) => s.project_path))]}
+            onCreated={async (id) => {
+              await refresh();
+              select(id);
+            }}
+          />
+        ) : selected ? (
           <SessionView
             key={selected.id}
             session={selected}
             onChanged={() => void refresh()}
+            settings={settings}
             onDeleted={() => {
               setSelectedId(null);
               void refresh();
@@ -90,7 +117,7 @@ export function App() {
             onLayoutChange={(layout) => void changeLayout(layout)}
           />
         ) : (
-          <Dashboard sessions={sessions} onSelect={setSelectedId} onNew={() => setCreating(true)} />
+          <Dashboard sessions={sessions} onSelect={select} onNew={startNew} />
         )}
       </main>
 
@@ -99,21 +126,6 @@ export function App() {
           onClose={() => {
             setEditingSettings(false);
             loadSettings();
-          }}
-        />
-      )}
-
-      {creating && (
-        <NewSessionDialog
-          onClose={() => setCreating(false)}
-          // Sessions come newest first, so the Set keeps that order.
-          recentProjects={[...new Set(sessions.filter((s) => !s.chat).map((s) => s.project_path))]}
-          onCreate={async (body, firstMessage) => {
-            const session = await api.createSession(body);
-            if (firstMessage) await api.sendMessage(session.id, firstMessage);
-            await refresh();
-            setSelectedId(session.id);
-            setCreating(false);
           }}
         />
       )}
