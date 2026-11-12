@@ -26,7 +26,8 @@ from app.adapters.claude import ClaudeAdapter, ClaudeCliNotFound
 from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
 from app.adapters.ollama import OllamaAdapter, OllamaUnavailable, list_models_sync, pick_model
 from app.config import get_settings
-from app.handoff import build_brief, git_state, next_in_chain
+from app.handoff import build_brief, git_state, next_in_chain, with_brief
+from app.model_list import is_unavailable_model_error, record_availability, record_check
 from app.models import (
     AgentKind,
     AgentSession,
@@ -43,6 +44,7 @@ from app.models import (
     current_stint,
     load_hub_settings,
     session_worktree,
+    stint_effort,
     stint_model,
     utcnow,
 )
@@ -62,6 +64,10 @@ RESTING_STATUS = {
 }
 STOP_TIMEOUT = 10.0
 SUMMARY_TIMEOUT = 300.0
+# The model check: the CLI agents whose models it tries, how many at once, and how long each may take.
+CHECKABLE_AGENTS = {AgentKind.CLAUDE, AgentKind.CODEX}
+MODEL_CHECK_CONCURRENCY = 4
+MODEL_CHECK_TIMEOUT = 120.0
 
 
 class SessionNotFound(LookupError):
@@ -113,6 +119,7 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     model=stint.model,
                     native_session_id=stint.native_session_id,
                     permission_mode=settings.claude_permission_mode,
+                    effort=stint.effort,
                 )
             case AgentKind.CODEX:
                 return CodexAdapter(
@@ -121,6 +128,7 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     native_session_id=stint.native_session_id,
                     sandbox=settings.codex_sandbox,
                     command=[find_codex(settings.codex_path)],
+                    effort=stint.effort,
                 )
             case AgentKind.OLLAMA:
                 # Checking the server here lets the handoff chain skip the local model when Ollama is off.
@@ -165,6 +173,7 @@ class Orchestrator:
         # Sessions between two agents: the brief is being built, no turn is running.
         self._handing_off: set[str] = set()
         self._summarizing: set[str] = set()
+        self._checking: set[AgentKind] = set()
         self._listeners: dict[str, set[asyncio.Queue[StreamMessage]]] = defaultdict(set)
 
     def is_running(self, session_id: str) -> bool:
@@ -213,17 +222,42 @@ class Orchestrator:
             return
 
         self._adapters[session_id] = adapter
-        events = adapter.start_task(text) if adapter.native_session_id is None else adapter.send_reply(text)
+        if adapter.native_session_id is None:
+            # An agent that waited after a handoff (or whose first turn never started) gets its brief first.
+            events = adapter.start_task(with_brief(stint.brief, text) if stint.brief else text)
+        else:
+            events = adapter.send_reply(text)
         self._start_turn(session_id, stint, adapter, events)
 
-    async def handoff(self, session_id: str, agent: AgentKind, model: str | None, note: str | None = None) -> None:
-        """Move the session to another agent now (the hand-off button). Returns once its turn is running."""
+    async def handoff(
+        self,
+        session_id: str,
+        agent: AgentKind,
+        model: str | None,
+        note: str | None = None,
+        *,
+        brief: bool = True,
+        wait: bool = False,
+        effort: str | None = None,
+    ) -> None:
+        """Move the session to another agent now (the model picker, or accepting an offer).
+
+        Returns once its turn is running, or with `wait` once the new agent is ready for the user's next message.
+        Without `brief` the new agent starts clean.
+        """
         if self.is_running(session_id):
             raise SessionBusy("A turn is running for this session; stop it before handing off")
         with Session(self._engine) as db:
             if db.get(AgentSession, session_id) is None:
                 raise SessionNotFound(session_id)
-        await self._handoff(session_id, ChainEntry(agent=agent, model=model), StintReason.MANUAL, note)
+        await self._handoff(session_id, ChainEntry(agent=agent, model=model, effort=effort), StintReason.MANUAL,
+                            note, brief=brief, wait=wait)
+
+    def set_effort(self, session_id: str, effort: str | None) -> None:
+        """Use `effort` from the session's next turn on (the stint is saved by the caller); a running turn keeps its own."""
+        adapter = self._adapters.get(session_id)
+        if adapter is not None and hasattr(adapter, "effort"):
+            adapter.effort = effort
 
     def is_summarizing(self, session_id: str) -> bool:
         return session_id in self._summarizing
@@ -399,6 +433,7 @@ class Orchestrator:
         status = SessionStatus.FAILED  # if the turn ends without saying how
         limit_reached = False
         hand_off = False
+        error: str | None = None
         try:
             async with aclosing(events):
                 async for event in events:
@@ -406,6 +441,8 @@ class Orchestrator:
                         status = SessionStatus.READY
                     else:
                         status = RESTING_STATUS.get(event.type, status)
+                    if event.type is EventType.ERROR:
+                        error = event.data.get("message")
                     if event.type is EventType.LIMIT_REACHED:
                         limit_reached = True
                     if event.type is EventType.STARTED:
@@ -419,10 +456,86 @@ class Orchestrator:
             status = SessionStatus.FAILED
         finally:
             self._tasks.pop(session_id, None)
+            # Before the status, so whoever sees the turn end also sees what it taught about the model.
+            self._learn_model(stint, status, error)
             if not hand_off:
                 self._set_status(session_id, status)
         if hand_off:
             await self._after_limit(session_id)
+
+    def _learn_model(self, stint: Stint, status: SessionStatus, error: str | None) -> None:
+        """Remember whether the stint's chosen model worked on the user's plan, for the model pickers."""
+        if not stint.model or stint.agent not in CHECKABLE_AGENTS:
+            return
+        if status is SessionStatus.FAILED and is_unavailable_model_error(error):
+            available, note = False, error
+        elif status in (SessionStatus.COMPLETED, SessionStatus.WAITING_FOR_INPUT):
+            available, note = True, None
+        else:
+            return
+        try:
+            with Session(self._engine) as db:
+                record_availability(db, stint.agent, stint.model, available, note)
+        except Exception:
+            log.exception("Could not record whether model %s is available", stint.model)
+
+    def is_checking(self, agent: AgentKind) -> bool:
+        return agent in self._checking
+
+    async def check_models(self, agent: AgentKind, models: list[str], cwd: Path) -> None:
+        """Send each model a tiny one-off prompt and record whether the user's plan can use it.
+
+        Uses a little of the user's usage, so it runs only when asked. Raises AgentUnavailable if the
+        CLI can't run at all, SessionBusy if a check for the agent is already running.
+        """
+        if agent not in CHECKABLE_AGENTS:
+            raise AgentUnavailable(f"Models can't be checked for the {agent} agent")
+        if agent in self._checking:
+            raise SessionBusy("A model check for this agent is already running")
+        self._checking.add(agent)
+        try:
+            check_session = AgentSession(title="Model check", project_path=str(cwd))
+            # Fails fast (AgentUnavailable) when the CLI isn't installed, before any model is tried.
+            self._adapter_factory(check_session, Stint(session_id="", seq=0, agent=agent, reason=StintReason.NEW), cwd)
+            gate = asyncio.Semaphore(MODEL_CHECK_CONCURRENCY)
+
+            async def check(model: str) -> tuple[str, bool | None, str | None]:
+                async with gate:
+                    stint = Stint(session_id="", seq=0, agent=agent, model=model, reason=StintReason.NEW)
+                    try:
+                        adapter = self._adapter_factory(check_session, stint, cwd)
+                        return (model, *await self._probe(adapter))
+                    except Exception as exc:  # one model's failure must not stop the others
+                        log.exception("Model check failed for %s", model)
+                        return model, None, str(exc)
+
+            results = await asyncio.gather(*(check(m) for m in models))
+            with Session(self._engine) as db:
+                for model, available, note in results:
+                    record_availability(db, agent, model, available, note)
+                record_check(db, agent)
+        finally:
+            self._checking.discard(agent)
+
+    @staticmethod
+    async def _probe(adapter: AgentAdapter) -> tuple[bool | None, str | None]:
+        """(True, None) if the model answered, (False, why) if the plan can't use it, (None, why) if unclear."""
+        events = adapter.summarize("Reply with the single word OK.", "Reply with the single word OK and nothing else.")
+        try:
+            async with asyncio.timeout(MODEL_CHECK_TIMEOUT), aclosing(events):
+                async for event in events:
+                    match event.type:
+                        case EventType.COMPLETED | EventType.QUESTION:
+                            return True, None
+                        case EventType.LIMIT_REACHED:
+                            return None, "Out of usage during the check; try again after the limit resets."
+                        case EventType.ERROR:
+                            message = event.data.get("message") or "The model returned an error"
+                            return (False if is_unavailable_model_error(message) else None), message
+        except TimeoutError:
+            await adapter.stop()
+            return None, "The model took too long to answer."
+        return None, "The model ended without answering."
 
     async def _after_limit(self, session_id: str) -> None:
         """The current agent is out of usage: hand off to the next agent in the chain, or ask first."""
@@ -431,9 +544,25 @@ class Orchestrator:
             if agent_session is None:
                 return
             stint = current_stint(db, session_id)
+            hub = load_hub_settings(db)
             chain = self._chain(db, agent_session)
-            policy = agent_session.limit_policy or load_hub_settings(db).limit_policy
+            policy = agent_session.limit_policy or hub.limit_policy
             limited = _limited_agents(db, session_id)
+
+        if not hub.chaining_enabled:
+            # No other agent takes over; the session waits for the limit to reset or for the user to switch.
+            self._save_event(session_id, stint, AgentEvent(EventType.NOTICE, {
+                "message": "Usage limit reached. Chaining is off in Settings, so no other agent takes over. "
+                           "Wait for the limit to reset, or switch to another model below.",
+                "reason": "chaining_off",
+            }))
+            self._set_status(session_id, SessionStatus.WAITING_FOR_INPUT)
+            return
+
+        with Session(self._engine) as db:
+            agent_session = db.get(AgentSession, session_id)
+            if agent_session is None:
+                return
             candidate = next(
                 (e for e in next_in_chain(chain, stint.agent) if e.agent not in limited and self._can_run(agent_session, e)),
                 None,
@@ -445,7 +574,7 @@ class Orchestrator:
             }))
             self._set_status(session_id, SessionStatus.FAILED)
         elif policy is LimitPolicy.ASK:
-            self._save_event(session_id, stint, AgentEvent(EventType.HANDOFF_OFFER, candidate.model_dump(mode="json")))
+            self._save_event(session_id, stint, AgentEvent(EventType.HANDOFF_OFFER, candidate.to_json()))
             self._set_status(session_id, SessionStatus.WAITING_FOR_INPUT)
         else:
             try:
@@ -462,7 +591,11 @@ class Orchestrator:
     def _with_default_model(self, entry: ChainEntry) -> ChainEntry:
         """The entry with the model a new stint for it records (the default local model from Settings)."""
         with Session(self._engine) as db:
-            return ChainEntry(agent=entry.agent, model=stint_model(db, entry.agent, entry.model))
+            return ChainEntry(
+                agent=entry.agent,
+                model=stint_model(db, entry.agent, entry.model),
+                effort=stint_effort(db, entry.agent, entry.effort),
+            )
 
     def _can_run(self, agent_session: AgentSession, entry: ChainEntry) -> bool:
         entry = self._with_default_model(entry)
@@ -474,8 +607,22 @@ class Orchestrator:
             return False
         return True
 
-    async def _handoff(self, session_id: str, target: ChainEntry, reason: StintReason, note: str | None = None) -> None:
-        """End the current stint, start one for `target` and run its first turn on the brief."""
+    async def _handoff(
+        self,
+        session_id: str,
+        target: ChainEntry,
+        reason: StintReason,
+        note: str | None = None,
+        *,
+        brief: bool = True,
+        wait: bool = False,
+    ) -> None:
+        """End the current stint, start one for `target` and run its first turn on the brief.
+
+        With `wait` no turn starts (the brief goes with the user's next message); without `brief` there is none.
+        """
+        if wait:
+            note = None
         target = self._with_default_model(target)
         self._handing_off.add(session_id)
         try:
@@ -488,13 +635,15 @@ class Orchestrator:
                 workdir = session_workdir(db, agent_session)
                 worktree = session_worktree(db, session_id)
             stint = Stint(session_id=session_id, seq=previous.seq + 1, agent=target.agent, model=target.model,
-                          reason=reason)
+                          effort=target.effort, reason=reason)
             adapter = self._adapter_factory(agent_session, stint, workdir)  # AgentUnavailable before anything changes
 
             self._set_status(session_id, SessionStatus.HANDING_OFF)
             try:
-                git = await git_state(workdir, base=worktree.base_commit if worktree else None)
-                stint.brief = build_brief(events, previous.id, previous.agent, target.agent, reason, git, note)
+                if brief:
+                    git = await git_state(workdir, base=worktree.base_commit if worktree else None)
+                    stint.brief = build_brief(events, previous.id, previous.agent, target.agent, reason, git, note,
+                                              wait=wait)
                 with Session(self._engine) as db:
                     ended = db.get(Stint, previous.id)
                     ended.ended_at = utcnow()
@@ -508,10 +657,16 @@ class Orchestrator:
                     "model": target.model,
                     "reason": reason,
                     "from_stint_id": previous.id,
+                    "brief": brief,
+                    "waiting": wait,
                 }))
+                if wait:
+                    self._set_status(session_id, SessionStatus.READY)
+                    return
                 if note and note.strip():
                     self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": note.strip()}))
-                self._start_turn(session_id, stint, adapter, adapter.start_task(stint.brief))
+                first = stint.brief if stint.brief else (note.strip() if note and note.strip() else "Continue.")
+                self._start_turn(session_id, stint, adapter, adapter.start_task(first))
             except Exception as exc:
                 log.exception("Handoff failed for session %s", session_id)
                 self._save_event(session_id, previous, AgentEvent(EventType.ERROR, {"message": f"Handoff failed: {exc}"}))

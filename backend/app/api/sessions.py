@@ -22,6 +22,7 @@ from app.models import (
     SessionEvent,
     SessionRead,
     SessionSummary,
+    SessionUpdate,
     Stint,
     StintDetail,
     StintReason,
@@ -29,9 +30,11 @@ from app.models import (
     Worktree,
     WorktreeRemove,
     WorktreeStatus,
+    current_stint,
     latest_summary,
     session_read,
     session_worktree,
+    stint_effort,
     stint_model,
     summary_read,
     utcnow,
@@ -75,7 +78,7 @@ async def create_session(body: SessionCreate, db: DbSession, request: Request) -
         title=body.title,
         project_path=body.project_path or "",
         chat=body.project_path is None,
-        chain=[entry.model_dump(mode="json") for entry in body.chain] if body.chain else None,
+        chain=[entry.to_json() for entry in body.chain] if body.chain else None,
         limit_policy=body.limit_policy,
     )
     if agent_session.chat:
@@ -91,7 +94,7 @@ async def create_session(body: SessionCreate, db: DbSession, request: Request) -
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not create a worktree: {exc}") from None
     db.add(agent_session)
     db.add(Stint(session_id=agent_session.id, seq=1, agent=body.agent, model=stint_model(db, body.agent, body.model),
-                 reason=StintReason.NEW))
+                 effort=stint_effort(db, body.agent, body.effort), reason=StintReason.NEW))
     if repo is not None:
         db.add(Worktree(session_id=agent_session.id, repo_path=str(repo.root), path=str(created.path),
                         subdir=repo.subdir, branch=created.branch, base_commit=created.base_commit))
@@ -109,6 +112,35 @@ def list_sessions(db: DbSession) -> list[SessionRead]:
 @router.get("/{session_id}", response_model=SessionRead)
 def get_session_by_id(session_id: str, db: DbSession) -> SessionRead:
     return session_read(db, _get_or_404(db, session_id))
+
+
+@router.patch("/{session_id}", response_model=SessionRead)
+def update_session(session_id: str, body: SessionUpdate, db: DbSession, orchestrator: Orch) -> SessionRead:
+    """Change the title, the Auto handoff policy, the chain or the current agent's effort. Only the keys sent
+    change; null means the default.
+
+    Allowed while a turn runs: the policy and chain are read when a usage limit happens, and the effort applies
+    from the next turn.
+    """
+    agent_session = _get_or_404(db, session_id)
+    changes = body.model_dump(exclude_unset=True)
+    if "title" in changes:
+        if not body.title:
+            raise HTTPException(422, "title can't be empty")
+        agent_session.title = body.title
+    if "limit_policy" in changes:
+        agent_session.limit_policy = body.limit_policy
+    if "chain" in changes:
+        agent_session.chain = [entry.to_json() for entry in body.chain] if body.chain else None
+    if "effort" in changes:
+        stint = current_stint(db, session_id)
+        stint.effort = body.effort
+        db.add(stint)
+        orchestrator.set_effort(session_id, body.effort)
+    db.add(agent_session)
+    db.commit()
+    db.refresh(agent_session)
+    return session_read(db, agent_session)
 
 
 @router.get("/{session_id}/stints/{stint_id}", response_model=StintDetail)
@@ -160,9 +192,13 @@ async def send_message(session_id: str, body: MessageCreate, db: DbSession, orch
 
 @router.post("/{session_id}/handoff", response_model=SessionRead, status_code=status.HTTP_202_ACCEPTED)
 async def hand_off(session_id: str, body: HandoffCreate, db: DbSession, orchestrator: Orch) -> SessionRead:
-    """Move the session to another agent, which starts right away from the hub's brief."""
+    """Move the session to another agent, which starts right away from the hub's brief.
+
+    `brief: false` starts it clean; `wait: true` starts no turn, and the agent begins on the user's next message.
+    """
     try:
-        await orchestrator.handoff(session_id, body.agent, body.model, body.note)
+        await orchestrator.handoff(session_id, body.agent, body.model, body.note, brief=body.brief, wait=body.wait,
+                                   effort=body.effort)
     except SessionNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from None
     except SessionBusy as exc:

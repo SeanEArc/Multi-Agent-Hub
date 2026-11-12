@@ -85,8 +85,12 @@ def build_brief(
     reason: StintReason,
     git: GitState | None,
     note: str | None = None,
+    wait: bool = False,
 ) -> str:
-    """The first prompt for the new agent: the task so far, the last agent's state, and git."""
+    """The first prompt for the new agent: the task so far, the last agent's state, and git.
+
+    With `wait`, the agent starts on the user's next message, which `with_brief` puts after the brief.
+    """
     user_messages = [e.payload.get("text", "") for e in events if e.type == EventType.USER_MESSAGE]
     previous = [e for e in events if e.stint_id == previous_stint_id]
     agent_messages = [e.payload.get("text", "") for e in previous if e.type == EventType.MESSAGE]
@@ -124,14 +128,20 @@ def build_brief(
             f"- `{clip(c, 300)}`" for c in commands[-LAST_COMMANDS:]
         ))
 
-    closing = (
-        "## What to do now\n\n" + note.strip()
-        if note and note.strip()
-        else "## What to do now\n\nContinue the task from where the previous agent stopped."
-    )
+    if wait:
+        closing = "## What to do now\n\nThe user switched the session to you. Their next message follows this brief."
+    elif note and note.strip():
+        closing = "## What to do now\n\n" + note.strip()
+    else:
+        closing = "## What to do now\n\nContinue the task from where the previous agent stopped."
     head = "\n\n".join(sections)
     git_section = _git_section(git, MAX_BRIEF - len(head) - len(closing) - 200)
     return clip("\n\n".join([head, git_section, closing]), MAX_BRIEF)
+
+
+def with_brief(brief: str, text: str) -> str:
+    """The first prompt of an agent that waited for the user after a handoff: the brief, then their message."""
+    return f"{brief}\n\n## The user's message\n\n{text}"
 
 
 def next_in_chain(chain: Sequence[ChainEntry], current: AgentKind) -> list[ChainEntry]:

@@ -4,6 +4,13 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION: session flow
+
+- [ ] **New session opens a chat.** Restart the app (or the backend and `npm run dev`). Click **New session**: an empty chat opens with the text box focused and no dialog. Under the text box, pick Codex and a model, choose a project folder (try a git repo: the worktree checkbox appears), and send a message. The session appears in the sidebar, titled from your message, and the folder now shows as locked.
+- [ ] **Switch model with and without a brief.** In that session, pick Claude under the text box: a dialog asks about passing a brief. Choose **Switch with brief**, then send "what were we doing?": Claude should know the task. Switch again with **Switch without brief**: the next agent should not know it. The transcript rows say "no brief" and "waiting for your message".
+- [ ] **Model lists follow your plan.** Restart the app. In any model picker, Claude shows **Latest** (fable, opus, sonnet, haiku) and **Specific versions** (Fable 5.2 … Haiku 4.5); Codex shows **Your Codex models** from your account (GPT-6.1-Sol, GPT-6-Astra, …). In Settings, **New sessions start with** has no "Default" choice. Click **Check which models my plan can use** for Claude (uses a little usage, takes a minute or two): models your plan can't use become "(not on your plan)" and can't be picked. Try **Other…** and type a model name.
+- [ ] **Chaining switches.** In Settings, check that **Allow chaining** shows the chain and **Auto handoff by default**, and pick a default agent and model (a new chat should start with them). Then start the backend with `$env:HUB_SIMULATE_LIMIT="claude"`: with **Auto handoff** on in a Claude chat, the next agent takes over at once; switch it off mid-chat and the next limit offers the handoff instead; with **Allow chaining** off in Settings, a limit shows a yellow notice and the session waits.
+
 ## Phase 5c: local model robustness and choice
 
 - [x] **Model choice, notices and handoff.** Restart the backend.

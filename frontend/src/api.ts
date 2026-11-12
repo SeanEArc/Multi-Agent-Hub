@@ -57,12 +57,48 @@ export interface LocalModels {
   error: string | null;
 }
 
-// Values each CLI accepts for --model; empty means the CLI's default.
-// Codex slugs come from its model cache (codex-cli 0.164.0).
+// Offline fallback for the model pickers, used only when GET /api/models fails.
+// The "Default" choice (the CLI's own default) is added by the picker itself.
 export const MODELS: Partial<Record<AgentKind, string[]>> = {
-  claude: ["", "fable", "opus", "sonnet", "haiku"],
-  codex: ["", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"],
+  claude: ["claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+  codex: ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"],
 };
+
+/** One model a CLI accepts for --model (GET /api/models). */
+export interface ModelOption {
+  id: string;
+  label: string;
+  // Claude: aliases are "latest", full names "version"; Codex: "account" (from the account cache) or "version".
+  group: "latest" | "version" | "account";
+  // true = worked on this plan, false = the plan can't use it, null = not known yet.
+  available: boolean | null;
+  note: string | null;
+  checked_at: string | null;
+  // The reasoning efforts the model takes, lowest first (empty: none), and the CLI's default when known.
+  efforts: Effort[];
+  default_effort: Effort | null;
+}
+
+/** Reasoning effort passed to the CLI (Claude's --effort, Codex's model_reasoning_effort); null is the CLI's default. */
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
+export const EFFORT_NAMES: Record<Effort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
+
+export type CatalogAgent = "claude" | "codex";
+
+export interface ModelCatalog {
+  claude: ModelOption[];
+  codex: ModelOption[];
+  codex_source: "account" | "builtin";
+  // Last time "Check models" ran, per agent.
+  checked_at: Partial<Record<CatalogAgent, string | null>>;
+}
 
 export type StintReason = "new" | "limit" | "manual" | "delegation";
 export type LimitPolicy = "auto" | "ask";
@@ -78,6 +114,7 @@ export interface Stint {
   seq: number;
   agent: AgentKind;
   model: string | null;
+  effort?: Effort | null;
   native_session_id: string | null;
   reason: StintReason;
   parent_stint_id: number | null;
@@ -114,6 +151,8 @@ export interface AgentSession {
   // The current stint's agent, model and native session id.
   agent: AgentKind;
   model: string | null;
+  // The current agent's reasoning effort (null: the CLI's default).
+  effort?: Effort | null;
   status: SessionStatus;
   native_session_id: string | null;
   // The model the current agent said it used; names a default model (model is null).
@@ -186,6 +225,34 @@ export interface HubSettings {
   progress_layout: ProgressLayout;
   // The Ollama model local stints get when none is chosen; null: the first installed model with tools.
   local_model: string | null;
+  // Off: a usage limit stops the session and waits; no other agent takes over.
+  chaining_enabled: boolean;
+  // What a new chat starts with; a null model is the CLI's default.
+  default_agent: AgentKind;
+  default_model: string | null;
+  // The reasoning effort new Claude and Codex sessions start with.
+  default_effort?: Effort;
+}
+
+/** Fields of a session that can change after it is created; null means the Settings default. */
+export interface SessionUpdate {
+  title?: string;
+  limit_policy?: LimitPolicy | null;
+  chain?: ChainEntry[] | null;
+  // Used from the current agent's next turn on.
+  effort?: Effort | null;
+}
+
+export interface HandoffRequest {
+  agent: AgentKind;
+  model: string | null;
+  effort?: Effort | null;
+  // Not sent with wait.
+  note?: string | null;
+  // false: the new agent starts clean, without a brief of the conversation.
+  brief?: boolean;
+  // true: no turn starts; the new agent waits for the user's next message.
+  wait?: boolean;
 }
 
 export interface RunningSubagent {
@@ -214,6 +281,7 @@ export interface NewSession {
   project_path: string | null;
   agent: AgentKind;
   model: string | null;
+  effort?: Effort | null;
   chain: ChainEntry[] | null;
   limit_policy: LimitPolicy | null;
   use_worktree: boolean;
@@ -286,7 +354,9 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
   stop: (id: string) => request<AgentSession>(`/sessions/${id}/stop`, { method: "POST" }),
-  handoff: (id: string, body: { agent: AgentKind; model: string | null; note?: string | null }) =>
+  updateSession: (id: string, body: SessionUpdate) =>
+    request<AgentSession>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  handoff: (id: string, body: HandoffRequest) =>
     request<AgentSession>(`/sessions/${id}/handoff`, { method: "POST", body: JSON.stringify(body) }),
   removeWorktree: (id: string, body: { commit?: boolean; discard?: boolean } = {}) =>
     request<AgentSession>(`/sessions/${id}/worktree/remove`, { method: "POST", body: JSON.stringify(body) }),
@@ -296,6 +366,10 @@ export const api = {
   writeSummary: (id: string) => request<AgentSummary>(`/sessions/${id}/summary`, { method: "POST" }),
   getUsage: () => request<Partial<Record<AgentKind, AgentUsage>>>("/usage"),
   localModels: () => request<LocalModels>("/local/models"),
+  models: () => request<ModelCatalog>("/models"),
+  // Sends a tiny prompt to each of the agent's models and waits (can take a few minutes).
+  checkModels: (agent: CatalogAgent) =>
+    request<ModelCatalog>("/models/check", { method: "POST", body: JSON.stringify({ agent }) }),
   getSettings: () => request<HubSettings>("/settings"),
   putSettings: (body: HubSettings) =>
     request<HubSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),

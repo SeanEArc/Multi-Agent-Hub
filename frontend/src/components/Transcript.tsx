@@ -204,19 +204,34 @@ export function eventAnchor(eventId: number): string {
 function HandoffDivider({ sessionId, event }: { sessionId: string; event: SessionEvent }) {
   const brief = useBrief(sessionId, event.stint_id);
   const p = event.payload;
+  // Older events lack these: they always carried a brief and started a turn.
+  const withBrief = p.brief !== false;
+  const waiting = p.waiting === true;
+  const manual = p.reason === "manual";
   return (
     // The line takes the color of the agent that takes over.
     <div id={eventAnchor(event.id)} className={`row handoff ${agentClass(p.to_agent)}`}>
       <div className="handoff-line">
         <span>
-          <AgentName agent={p.from_agent} /> → <AgentName agent={p.to_agent} />
+          {manual ? (
+            <>
+              Switched to <AgentName agent={p.to_agent} />
+            </>
+          ) : (
+            <>
+              <AgentName agent={p.from_agent} /> → <AgentName agent={p.to_agent} />
+            </>
+          )}
           <span className="muted">
-            {p.model ? ` (${p.model})` : ""} · {REASONS[p.reason] ?? p.reason}
+            {p.model ? ` (${p.model})` : ""}
+            {manual ? (p.from_agent ? ` · from ${agentName(p.from_agent)}` : "") : ` · ${REASONS[p.reason] ?? p.reason}`}
+            {withBrief ? "" : ", no brief"}
+            {waiting ? " · waiting for your message" : ""}
           </span>
         </span>
-        {brief.button}
+        {withBrief && brief.button}
       </div>
-      {brief.panel}
+      {withBrief && brief.panel}
     </div>
   );
 }

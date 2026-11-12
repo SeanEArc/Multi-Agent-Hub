@@ -54,11 +54,14 @@ class ClaudeAdapter(CliAdapter):
         model: str | None = None,
         native_session_id: str | None = None,
         permission_mode: str = "acceptEdits",
+        effort: str | None = None,
         command: Sequence[str] | None = None,
         runner: Runner | None = None,
     ) -> None:
         super().__init__(cwd, command or [find_claude()], runner)
         self.model = model
+        # Reasoning effort for each turn (--effort); None leaves Claude Code's default. Can change between turns.
+        self.effort = effort
         self.permission_mode = permission_mode
         self._session_id = native_session_id
 
@@ -103,6 +106,8 @@ class ClaudeAdapter(CliAdapter):
         ]
         if self.model:
             args += ["--model", self.model]
+        if self.effort:
+            args += ["--effort", self.effort]
         return self._stream(args, prompt, TurnParser())
 
 

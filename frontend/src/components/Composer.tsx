@@ -1,12 +1,23 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AGENT_NAMES, type AgentKind, type SessionStatus } from "../api";
 
 interface Props {
   status: SessionStatus;
   agent: AgentKind;
-  model: string;
   onSend: (text: string) => Promise<void>;
   onStop: () => Promise<void>;
+  // Replaces the placeholder for the status (a new chat's, for example).
+  placeholder?: string;
+  // The pickers under the text box: folder, auto handoff.
+  controls?: ReactNode;
+  // The model picker, shown by the Send button.
+  picker?: ReactNode;
+  // Opened by a picker (the folder browser), between the text box and the pickers.
+  panel?: ReactNode;
+  // Hints and warnings about the pickers' choices.
+  notes?: ReactNode;
+  // A picker's choice can't be used (the local model isn't available): Send stays off.
+  sendBlocked?: boolean;
 }
 
 const PLACEHOLDERS: Partial<Record<SessionStatus, string>> = {
@@ -18,7 +29,7 @@ const PLACEHOLDERS: Partial<Record<SessionStatus, string>> = {
 // The box grows with its text up to this height, then scrolls.
 const MAX_HEIGHT = 280;
 
-export function Composer({ status, agent, model, onSend, onStop }: Props) {
+export function Composer({ status, agent, onSend, onStop, placeholder, controls, picker, panel, notes, sendBlocked }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +51,7 @@ export function Composer({ status, agent, model, onSend, onStop }: Props) {
 
   async function send() {
     const message = text.trim();
-    if (!message || working || busy) return;
+    if (!message || working || busy || sendBlocked) return;
     setBusy(true);
     setError(null);
     try {
@@ -73,11 +84,12 @@ export function Composer({ status, agent, model, onSend, onStop }: Props) {
         rows={2}
         aria-label={`Message to ${agentName}`}
         placeholder={
-          status === "handing_off"
+          placeholder ??
+          (status === "handing_off"
             ? `Handing off to ${agentName}…`
             : working
               ? `${agentName} is working…`
-              : PLACEHOLDERS[status]?.replace("{agent}", agentName)
+              : PLACEHOLDERS[status]?.replace("{agent}", agentName))
         }
         disabled={working}
         onChange={(e) => setText(e.target.value)}
@@ -88,19 +100,17 @@ export function Composer({ status, agent, model, onSend, onStop }: Props) {
           }
         }}
       />
+      {panel && <div className="composer-panel">{panel}</div>}
+      {notes && <div className="composer-notes">{notes}</div>}
       <div className="composer-actions">
-        <span className="composer-agent" title={`Messages go to ${agentName} (${model})`}>
-          <span className="agent-dot" aria-hidden="true" />
-          <span className="composer-agent-name">{agentName}</span>
-          <span className="muted">{model}</span>
-        </span>
-        <span className="composer-hint muted">Enter to send · Shift+Enter for a new line</span>
+        <div className="composer-controls">{controls}</div>
+        {picker}
         {working ? (
           <button className="button danger" onClick={() => void stop()} disabled={busy}>
             Stop
           </button>
         ) : (
-          <button className="button send" onClick={() => void send()} disabled={busy || !text.trim()}>
+          <button className="button send" onClick={() => void send()} disabled={busy || !text.trim() || sendBlocked}>
             Send
           </button>
         )}

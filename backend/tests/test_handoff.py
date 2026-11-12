@@ -48,7 +48,7 @@ def test_claude_limit_hands_off_to_codex_with_brief(client: TestClient, tmp_path
     handoff = next(e for e in events_of(client, session_id) if e["type"] == "handoff")
     assert handoff["payload"] == {
         "from_agent": "claude", "to_agent": "codex", "model": None, "reason": "limit",
-        "from_stint_id": session["stints"][0]["id"],
+        "from_stint_id": session["stints"][0]["id"], "brief": True, "waiting": False,
     }
     assert handoff["stint_id"] == session["stints"][1]["id"]
 
@@ -85,8 +85,12 @@ def test_ask_policy_offers_handoff_and_waits(client: TestClient, tmp_path: Path)
 
 def test_global_settings_apply_to_sessions_without_their_own(client: TestClient, tmp_path: Path) -> None:
     assert client.get("/api/settings").json() == {
-        "default_chain": [{"agent": "claude", "model": None}, {"agent": "codex", "model": None},
-                          {"agent": "ollama", "model": None}],
+        "chaining_enabled": True,
+        "default_agent": "claude",
+        "default_model": None,
+        "default_effort": "medium",
+        "default_chain": [{"agent": "claude", "model": None, "effort": None}, {"agent": "codex", "model": None, "effort": None},
+                          {"agent": "ollama", "model": None, "effort": None}],
         "limit_policy": "auto",
         "progress_layout": "panel",
         "local_model": None,
@@ -252,6 +256,92 @@ def test_handoff_rejected_while_running_or_unavailable(client: TestClient, tmp_p
     assert len(client.get(f"/api/sessions/{session_id}").json()["stints"]) == 1
     assert client.post("/api/sessions/missing/handoff", json={"agent": "codex"}).status_code == 404
     assert client.get(f"/api/sessions/{session_id}/stints/999").status_code == 404
+
+
+def test_switch_with_brief_waits_for_next_message(client: TestClient, tmp_path: Path) -> None:
+    """The model picker's switch: no turn starts, and the brief goes with the user's next message."""
+    session_id = create(client, tmp_path, "ok")
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "write the parser"})
+    wait_until_idle(client, session_id)
+
+    response = client.post(f"/api/sessions/{session_id}/handoff",
+                           json={"agent": "codex", "wait": True, "note": "ignored when waiting"})
+    assert response.status_code == 202
+    session = wait_until_idle(client, session_id)
+    assert (session["status"], session["agent"]) == ("ready", "codex")
+    assert prompts_sent(client, session_id, "codex") == []
+    handoff = next(e for e in events_of(client, session_id) if e["type"] == "handoff")
+    assert (handoff["payload"]["brief"], handoff["payload"]["waiting"]) == (True, True)
+    stint = client.get(f"/api/sessions/{session_id}/stints/{session['stints'][1]['id']}").json()
+    assert "Their next message follows this brief" in stint["brief"]
+
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "now add tests"})
+    wait_until_idle(client, session_id)
+    [first] = prompts_sent(client, session_id, "codex")
+    assert first.startswith("# Handoff from Claude Code")
+    assert "write the parser" in first
+    assert first.endswith("## The user's message\n\nnow add tests")
+    assert "ignored when waiting" not in first
+
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "blue"})
+    wait_until_idle(client, session_id)
+    assert prompts_sent(client, session_id, "codex")[-1] == "blue"
+
+
+def test_switch_without_brief_starts_clean(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "ok")
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "write the parser"})
+    wait_until_idle(client, session_id)
+
+    client.post(f"/api/sessions/{session_id}/handoff", json={"agent": "codex", "brief": False, "wait": True})
+    session = wait_until_idle(client, session_id)
+    assert session["status"] == "ready"
+    stint = client.get(f"/api/sessions/{session_id}/stints/{session['stints'][1]['id']}").json()
+    assert stint["brief"] is None
+    handoff = next(e for e in events_of(client, session_id) if e["type"] == "handoff")
+    assert handoff["payload"]["brief"] is False
+
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "hello"})
+    wait_until_idle(client, session_id)
+    assert prompts_sent(client, session_id, "codex") == ["hello"]
+
+
+def test_chaining_off_stops_and_waits_on_a_limit(client: TestClient, tmp_path: Path) -> None:
+    settings = client.get("/api/settings").json()
+    client.put("/api/settings", json={**settings, "chaining_enabled": False})
+    session_id = create(client, tmp_path, "claude:limit codex:ok")
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
+    session = wait_until_idle(client, session_id)
+
+    assert (session["status"], session["agent"], len(session["stints"])) == ("waiting_for_input", "claude", 1)
+    notice = events_of(client, session_id)[-1]
+    assert (notice["type"], notice["payload"]["reason"]) == ("notice", "chaining_off")
+
+
+def test_auto_handoff_switch_changes_mid_session(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "claude:ok")
+    response = client.patch(f"/api/sessions/{session_id}", json={"limit_policy": "ask", "title": "Parser"})
+    assert response.status_code == 200
+    assert (response.json()["limit_policy"], response.json()["title"]) == ("ask", "Parser")
+
+    # Only the keys sent change; null goes back to the Settings default.
+    response = client.patch(f"/api/sessions/{session_id}", json={"chain": CODEX_THEN_CLAUDE})
+    assert (response.json()["limit_policy"], response.json()["chain"][0]["agent"]) == ("ask", "codex")
+    response = client.patch(f"/api/sessions/{session_id}", json={"limit_policy": None, "chain": None})
+    assert (response.json()["limit_policy"], response.json()["chain"]) == (None, None)
+
+    assert client.patch(f"/api/sessions/{session_id}", json={"title": ""}).status_code == 422
+    assert client.patch(f"/api/sessions/{session_id}", json={"title": None}).status_code == 422
+    assert client.patch("/api/sessions/missing", json={"limit_policy": "ask"}).status_code == 404
+
+
+def test_auto_handoff_switched_off_offers_instead(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "claude:limit codex:ok")
+    client.patch(f"/api/sessions/{session_id}", json={"limit_policy": "ask"})
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
+    session = wait_until_idle(client, session_id)
+    assert (session["status"], session["agent"]) == ("waiting_for_input", "claude")
+    assert events_of(client, session_id)[-1]["type"] == "handoff_offer"
 
 
 # --- Brief and chain ----------------------------------------------------------

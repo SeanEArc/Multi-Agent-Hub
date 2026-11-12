@@ -1,13 +1,26 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AGENT_NAMES, ApiError, api, workdir, type AgentSession, type ProgressLayout, type SessionEvent } from "../api";
+import {
+  AGENT_NAMES,
+  ApiError,
+  api,
+  workdir,
+  type AgentKind,
+  type AgentSession,
+  type Effort,
+  type HubSettings,
+  type ProgressLayout,
+  type SessionEvent,
+} from "../api";
 import { deriveProgress, toolOutcomes } from "../progress";
 import { useSessionStream } from "../useSessionStream";
 import { AgentChip, agentClass } from "./AgentBadge";
 import { Composer } from "./Composer";
-import { HandoffDialog } from "./HandoffDialog";
+import { AutoHandoffSwitch, FolderLock, ModelPicker } from "./ComposerControls";
 import { HistoryView } from "./HistoryView";
 import { ProgressAside, ProgressCard } from "./ProgressPanel";
+import { useLocalModels } from "./ModelSelect";
 import { StatusBadge } from "./StatusBadge";
+import { SwitchAgentDialog } from "./SwitchAgentDialog";
 import { Transcript, eventAnchor } from "./Transcript";
 import { UsageMeters } from "./UsageMeters";
 import { WorktreeDialog } from "./WorktreeDialog";
@@ -18,14 +31,20 @@ interface Props {
   onDeleted: () => void;
   layout: ProgressLayout;
   onLayoutChange: (layout: ProgressLayout) => void;
+  // Hub settings, for the auto handoff switch's default; null until loaded.
+  settings: HubSettings | null;
 }
 
-export function SessionView({ session, onChanged, onDeleted, layout, onLayoutChange }: Props) {
+export function SessionView({ session, onChanged, onDeleted, layout, onLayoutChange, settings }: Props) {
   const { events, status: liveStatus, connected } = useSessionStream(session.id);
   const status = liveStatus ?? session.status;
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  const [handingOff, setHandingOff] = useState(false);
+  // The agent and model picked under the text box, waiting for the switch to be confirmed.
+  const [switchTo, setSwitchTo] = useState<{ agent: AgentKind; model: string | null; effort: Effort | null } | null>(null);
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const local = useLocalModels(session.agent === "ollama");
   const [showWorktree, setShowWorktree] = useState(false);
   const [view, setView] = useState<"transcript" | "history">("transcript");
   // A turn picked in the history, to scroll to once the transcript is back.
@@ -85,6 +104,32 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
   useEffect(() => {
     if (reportedModel && reportedModel !== session.reported_model) onChanged();
   }, [reportedModel, session.reported_model]);
+
+  // The session's own choice, else the Settings default; the hub reads it when a limit happens.
+  const autoHandoff = (session.limit_policy ?? settings?.limit_policy) === "auto";
+
+  async function changeAutoHandoff(on: boolean) {
+    setSavingPolicy(true);
+    setControlError(null);
+    try {
+      await api.updateSession(session.id, { limit_policy: on ? "auto" : "ask" });
+      onChanged();
+    } catch (err) {
+      setControlError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingPolicy(false);
+    }
+  }
+
+  async function changeEffort(effort: Effort | null) {
+    setControlError(null);
+    try {
+      await api.updateSession(session.id, { effort });
+      onChanged();
+    } catch (err) {
+      setControlError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function remove() {
     const files = session.chat
@@ -162,14 +207,6 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
               </button>
             ))}
           </div>
-          <button
-            className="button"
-            onClick={() => setHandingOff(true)}
-            disabled={busy}
-            title={busy ? "Stop the running turn to hand off" : "Move this session to another agent"}
-          >
-            Hand off
-          </button>
           <button className="button subtle" onClick={() => void remove()} title="Delete session">
             Delete
           </button>
@@ -228,7 +265,29 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
           <Composer
             status={status}
             agent={session.agent}
-            model={model}
+            notes={controlError ? <span className="hint warning">{controlError}</span> : undefined}
+            picker={
+              <ModelPicker
+                agent={session.agent}
+                model={session.model}
+                effort={session.effort ?? null}
+                local={local}
+                disabled={busy}
+                title={busy ? "Stop the running turn to switch" : `Messages go to ${agentName} (${model}). Pick another agent or model to switch.`}
+                onChange={(agent, model, effort) => {
+                  if (agent !== session.agent || model !== session.model) setSwitchTo({ agent, model, effort });
+                  else if (effort !== (session.effort ?? null)) void changeEffort(effort);
+                }}
+              />
+            }
+            controls={
+              <>
+                <FolderLock chat={session.chat} path={session.project_path} />
+                {settings?.chaining_enabled !== false && settings && (
+                  <AutoHandoffSwitch checked={autoHandoff} disabled={savingPolicy} onChange={(on) => void changeAutoHandoff(on)} />
+                )}
+              </>
+            }
             onSend={async (text) => {
               showView("transcript");
               await api.sendMessage(session.id, text);
@@ -253,14 +312,17 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
         />
       )}
 
-      {handingOff && (
-        <HandoffDialog
+      {switchTo && (
+        <SwitchAgentDialog
           session={session}
+          agent={switchTo.agent}
+          model={switchTo.model}
+          effort={switchTo.effort}
           onDone={() => {
             stickToBottom.current = true;
             onChanged();
           }}
-          onClose={() => setHandingOff(false)}
+          onClose={() => setSwitchTo(null)}
         />
       )}
     </section>

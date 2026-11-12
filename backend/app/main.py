@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from httpx2 import AsyncBaseTransport
 from sqlalchemy.engine import Engine
 
-from app.api import folders, health, local, sessions, settings as hub_settings, usage
+from app.api import folders, health, local, models, sessions, settings as hub_settings, usage
+from app.model_list import default_codex_home
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
 from app.db import init_db, make_engine
@@ -23,6 +24,7 @@ def create_app(
     local_dir: Path | None = None,
     ollama_url: str | None = None,
     ollama_transport: AsyncBaseTransport | None = None,
+    codex_home: Path | None = None,
 ) -> FastAPI:
     """Tests pass `token`, the folders and a fake Ollama transport; otherwise they come from the settings."""
     settings = get_settings()
@@ -50,6 +52,8 @@ def create_app(
     app.state.local_dir = local_dir or settings.local_dir
     app.state.ollama_url = ollama_url
     app.state.ollama_transport = ollama_transport
+    # Where Codex keeps the account's model list (models_cache.json); never its auth.json.
+    app.state.codex_home = codex_home or default_codex_home()
 
     app.add_middleware(
         CORSMiddleware,
@@ -67,6 +71,7 @@ def create_app(
     app.include_router(hub_settings.router, prefix="/api", dependencies=authenticated)
     app.include_router(usage.router, prefix="/api", dependencies=authenticated)
     app.include_router(local.router, prefix="/api", dependencies=authenticated)
+    app.include_router(models.router, prefix="/api", dependencies=authenticated)
     return app
 
 

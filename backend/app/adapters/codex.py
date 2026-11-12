@@ -104,9 +104,12 @@ class CodexAdapter(CliAdapter):
         command: Sequence[str] | None = None,
         runner: Runner | None = None,
         codex_home: Path | None = None,
+        effort: str | None = None,
     ) -> None:
         super().__init__(cwd, command or [find_codex()], runner)
         self.model = model
+        # Reasoning effort for each turn (model_reasoning_effort); None leaves Codex's default for the model.
+        self.effort = effort
         self.sandbox = sandbox
         self.codex_home = codex_home or Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
         self._session_id = native_session_id
@@ -131,10 +134,12 @@ class CodexAdapter(CliAdapter):
     def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
         # Read-only and not saved: no session file, so no thread to resume and no usage meter update.
         return self._stream(
-            ["exec", "--json", "--ephemeral", *self._options("read-only", instructions), "-"], prompt, TurnParser()
+            ["exec", "--json", "--ephemeral", *self._options("read-only", instructions, effort=False), "-"], prompt, TurnParser()
         )
 
-    def _options(self, sandbox: str | None = None, instructions: str = HEADLESS_PROMPT) -> list[str]:
+    def _options(
+        self, sandbox: str | None = None, instructions: str = HEADLESS_PROMPT, effort: bool = True
+    ) -> list[str]:
         options = [
             # The user picked the folder in the hub; Codex's own git-repo guard would only block non-git folders.
             "--skip-git-repo-check",
@@ -144,6 +149,8 @@ class CodexAdapter(CliAdapter):
         ]
         if self.model:
             options += ["--model", self.model]
+        if effort and self.effort:
+            options += ["-c", f"model_reasoning_effort={json.dumps(self.effort)}"]
         return options
 
     async def _on_event(self, event: AgentEvent) -> None:
