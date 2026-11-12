@@ -2,6 +2,7 @@
 name = "multi-agent-hub-backend"
 version = "0.1.0"
 description = "FastAPI backend for Multi-Agent Hub: agent sessions, events and history."
+license = "MIT"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.156",
