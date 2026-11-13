@@ -87,7 +87,10 @@ These live in the repository settings, not in files:
    for more only where needed), and for outside contributors "Require approval for first-time
    contributors".
 6. **Settings → Code security**: turn on Dependabot alerts and security updates (version updates are
-   configured in `.github/dependabot.yml`, against `staging`), secret scanning and push protection.
+   configured in `.github/dependabot.yml`, against `staging`), secret scanning and push protection, and
+   **Private vulnerability reporting** (`SECURITY.md` sends reporters there).
+7. **Your account → Settings → Emails**: tick "Keep my email addresses private" and "Block command line
+   pushes that expose my email". This repo's git config uses your `users.noreply.github.com` address.
 
 ## Later
 
