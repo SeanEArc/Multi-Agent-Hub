@@ -1,4 +1,6 @@
+import os
 import sys
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -18,6 +20,9 @@ from app.models import AgentKind, AgentSession, Stint
 from app.orchestrator import AgentUnavailable
 
 import fake_ollama
+
+# Never the user's real skill library, even for apps a test builds without passing skills_dir.
+os.environ["HUB_SKILLS_DIR"] = tempfile.mkdtemp(prefix="hub-test-skills-")
 
 FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
 FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
@@ -80,6 +85,7 @@ def client(engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
     chats = tmp_path_factory.mktemp("chats")
     codex_home = tmp_path_factory.mktemp("codex-home")  # never the real ~/.codex
     app = create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=worktrees, chats_dir=chats,
-                     codex_home=codex_home)
+                     codex_home=codex_home, skills_dir=tmp_path_factory.mktemp("skills"),
+                     claude_home=tmp_path_factory.mktemp("claude-home"), discover_native=False)
     with make_client(app) as test_client:
         yield test_client

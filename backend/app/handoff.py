@@ -86,10 +86,12 @@ def build_brief(
     git: GitState | None,
     note: str | None = None,
     wait: bool = False,
+    compact: bool = False,
 ) -> str:
     """The first prompt for the new agent: the task so far, the last agent's state, and git.
 
     With `wait`, the agent starts on the user's next message, which `with_brief` puts after the brief.
+    With `compact` (the hub's `/compact`) the same agent continues, and `note` is what to keep in focus.
     """
     user_messages = [e.payload.get("text", "") for e in events if e.type == EventType.USER_MESSAGE]
     previous = [e for e in events if e.stint_id == previous_stint_id]
@@ -97,6 +99,11 @@ def build_brief(
     files, commands = files_and_commands(events)
 
     sections = [
+        f"# Compacted conversation\n\nYou are {AGENT_NAMES[to_agent]}, continuing a task in this project. The user "
+        "compacted your earlier conversation to free up context: you cannot see it any more, and this summary, "
+        "written by Multi-Agent Hub from the session's history, is what you keep. Check the current files before "
+        "changing them, don't redo finished work, and continue from where you stopped."
+    ] if compact else [
         f"# Handoff from {AGENT_NAMES[from_agent]}\n\n"
         f"You are {AGENT_NAMES[to_agent]}, taking over a task in this project from another coding agent, "
         f"{AGENT_NAMES[from_agent]}, because {REASON_TEXT.get(reason, 'the session moved to you')}. "
@@ -128,7 +135,11 @@ def build_brief(
             f"- `{clip(c, 300)}`" for c in commands[-LAST_COMMANDS:]
         ))
 
-    if wait:
+    if compact:
+        closing = "## What to do now\n\nThe user's next message follows this summary."
+        if note and note.strip():
+            closing = "## Keep in focus\n\n" + clip(note.strip(), MAX_MESSAGE) + "\n\n" + closing
+    elif wait:
         closing = "## What to do now\n\nThe user switched the session to you. Their next message follows this brief."
     elif note and note.strip():
         closing = "## What to do now\n\n" + note.strip()

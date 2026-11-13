@@ -345,6 +345,80 @@ function errorMessage(response: Response, body: any): string {
   return `Request failed (${response.status})`;
 }
 
+// --- Skills (the hub library and each agent's `/` menu) ---
+
+export type SkillSwitches = Record<AgentKind, boolean>;
+
+export interface LibrarySkill {
+  name: string;
+  description: string;
+  // "link": read where it lives on this PC; "copy": downloaded from a git repository or a zip.
+  source: "link" | "copy";
+  path: string;
+  agents: SkillSwitches;
+  // The CLI whose own folder a linked skill is in (that CLI already has it).
+  origin: AgentKind | null;
+  repo: string | null;
+  commit: string | null;
+  present: boolean;
+  warnings: string[];
+  scripts: string[];
+}
+
+export interface FoundSkill {
+  name: string;
+  description: string;
+  path: string;
+  // The skill's folder inside a download (repository or zip), sent back when adding it.
+  subpath: string | null;
+  content: string;
+  scripts: string[];
+  warnings: string[];
+  suggested: SkillSwitches;
+  exists: boolean;
+}
+
+export interface SkillPreview {
+  staging_id: string | null;
+  kind: "folder" | "zip" | "git";
+  source: string;
+  skills: FoundSkill[];
+  problems: string[];
+}
+
+export interface ShareableSkill {
+  name: string;
+  description: string;
+  path: string;
+  agent: AgentKind;
+  linked: boolean;
+}
+
+export interface SkillUpdateCheck {
+  staging_id: string | null;
+  commit: string | null;
+  current_commit: string | null;
+  up_to_date: boolean;
+  skill_diff: string;
+  added: string[];
+  removed: string[];
+  changed: string[];
+}
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+  // "skill": the agent's own; "library": from the hub library; "builtin": a CLI command; "hub": the hub's.
+  kind: "skill" | "library" | "builtin" | "hub";
+}
+
+export interface CommandMenu {
+  agent: AgentKind;
+  commands: SlashCommand[];
+  mcp_servers: { name: string; status: string }[];
+  native_known: boolean;
+}
+
 export const api = {
   listSessions: () => request<AgentSession[]>("/sessions"),
   createSession: (body: NewSession) =>
@@ -383,4 +457,27 @@ export const api = {
     return request<FolderListing>(`/folders?${params}`);
   },
   gitInfo: (path: string) => request<GitInfo>(`/folders/git?${new URLSearchParams({ path })}`),
+  skills: () => request<{ skills: LibrarySkill[]; root: string }>("/skills"),
+  shareableSkills: () => request<{ skills: ShareableSkill[] }>("/skills/available"),
+  previewSkills: (source: string) =>
+    request<SkillPreview>("/skills/preview", { method: "POST", body: JSON.stringify({ source }) }),
+  addSkills: (body: { source: string; staging_id: string | null; picks: { path: string; agents: SkillSwitches }[] }) =>
+    request<{ added: string[]; skills: LibrarySkill[] }>("/skills", { method: "POST", body: JSON.stringify(body) }),
+  setSkillAgents: (name: string, agents: Partial<SkillSwitches>) =>
+    request<LibrarySkill>(`/skills/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify({ agents }) }),
+  removeSkill: (name: string) => request<void>(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  checkSkillUpdate: (name: string) =>
+    request<SkillUpdateCheck>(`/skills/${encodeURIComponent(name)}/update`, { method: "POST" }),
+  applySkillUpdate: (name: string, staging_id: string) =>
+    request<LibrarySkill>(`/skills/${encodeURIComponent(name)}/update/apply`, {
+      method: "POST",
+      body: JSON.stringify({ staging_id }),
+    }),
+  commands: (agent: AgentKind, where: { sessionId?: string; path?: string }, refresh = false) => {
+    const params = new URLSearchParams({ agent });
+    if (where.sessionId) params.set("session_id", where.sessionId);
+    if (where.path) params.set("path", where.path);
+    if (refresh) params.set("refresh", "true");
+    return request<CommandMenu>(`/skills/commands?${params}`);
+  },
 };

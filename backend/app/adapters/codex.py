@@ -105,8 +105,11 @@ class CodexAdapter(CliAdapter):
         runner: Runner | None = None,
         codex_home: Path | None = None,
         effort: str | None = None,
+        skill_instructions: str | None = None,
     ) -> None:
         super().__init__(cwd, command or [find_codex()], runner)
+        # The hub library's skills that are on for Codex, added to its developer instructions on each turn.
+        self.skill_instructions = skill_instructions
         self.model = model
         # Reasoning effort for each turn (model_reasoning_effort); None leaves Codex's default for the model.
         self.effort = effort
@@ -138,8 +141,10 @@ class CodexAdapter(CliAdapter):
         )
 
     def _options(
-        self, sandbox: str | None = None, instructions: str = HEADLESS_PROMPT, effort: bool = True
+        self, sandbox: str | None = None, instructions: str | None = None, effort: bool = True
     ) -> list[str]:
+        if instructions is None:
+            instructions = HEADLESS_PROMPT + (f"\n\n{self.skill_instructions}" if self.skill_instructions else "")
         options = [
             # The user picked the folder in the hub; Codex's own git-repo guard would only block non-git folders.
             "--skip-git-repo-check",

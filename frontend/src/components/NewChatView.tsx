@@ -171,6 +171,8 @@ export function NewChatView({ settings, recentProjects, onCreated }: Props) {
             <Composer
               status="ready"
               agent={agent}
+              loadCommands={async () => (await api.commands(agent, { path: projectPath.trim() || undefined })).commands}
+              commandsKey={`${agent}:${projectPath.trim()}`}
               placeholder={projectPath.trim() ? "Describe the task…" : "Ask anything…"}
               onSend={send}
               onStop={async () => undefined}

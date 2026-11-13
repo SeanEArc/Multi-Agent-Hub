@@ -23,7 +23,10 @@ elif "--resume" in args:
 else:  # a one-off call that isn't saved (--no-session-persistence)
     session_id = "00000000-0000-4000-8000-000000000000"
 
-emit({"type": "system", "subtype": "init", "session_id": session_id, "model": "fake", "permissionMode": "acceptEdits"})
+emit({"type": "system", "subtype": "init", "session_id": session_id, "model": "fake", "permissionMode": "acceptEdits",
+      "skills": ["fake-skill"], "slash_commands": ["fake-skill", "context", "doctor"],
+      "terminal_slash_commands": ["doctor"], "mcp_servers": [{"name": "fake-mcp", "status": "connected"}],
+      "tools": ["Read", "Skill"]})
 if mode == "crash":
     print("boom", file=sys.stderr)
     sys.exit(2)

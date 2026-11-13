@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     ollama_command_timeout: int = 300
     # The local model's conversations, one JSON file each: Ollama keeps no history of its own.
     local_dir: Path = APP_DATA_DIR / "local"
+    # The skill library (app.skills): skills any agent can use, their per-agent switches and downloads.
+    skills_dir: Path = APP_DATA_DIR / "skills"
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was
     # reached, so handoff can be tried with the real CLIs. The turn still runs and uses real usage.
     simulate_limit: Annotated[list[AgentKind], NoDecode] = []

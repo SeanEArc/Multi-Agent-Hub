@@ -11,9 +11,10 @@ interface Props {
   onSelect: (id: string | null) => void;
   onNew: () => void;
   onSettings: () => void;
+  onSkills: () => void;
 }
 
-export function Sidebar({ sessions, selectedId, drafting, onSelect, onNew, onSettings }: Props) {
+export function Sidebar({ sessions, selectedId, drafting, onSelect, onNew, onSettings, onSkills }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -47,9 +48,14 @@ export function Sidebar({ sessions, selectedId, drafting, onSelect, onNew, onSet
           </button>
         ))}
       </nav>
-      <button className="button subtle sidebar-settings" onClick={onSettings}>
-        Settings
-      </button>
+      <div className="sidebar-footer">
+        <button className="button subtle sidebar-settings" onClick={onSkills}>
+          Skills
+        </button>
+        <button className="button subtle sidebar-settings" onClick={onSettings}>
+          Settings
+        </button>
+      </div>
     </aside>
   );
 }
