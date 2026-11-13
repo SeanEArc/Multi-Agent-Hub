@@ -30,7 +30,7 @@ import asyncio
 import json
 import os
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -226,6 +226,8 @@ class OllamaAdapter(AgentAdapter):
         runner: Runner | None = None,
         max_rounds: int = DEFAULT_MAX_ROUNDS,
         command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
+        skill_instructions: str | None = None,
+        skill_roots: Sequence[Path] = (),
     ) -> None:
         self.cwd = Path(cwd)
         self.model = model
@@ -236,7 +238,9 @@ class OllamaAdapter(AgentAdapter):
         # False for a model without the tools capability: plain chat.
         self.use_tools = tools
         self.max_rounds = max_rounds
-        self.tools = LocalTools(self.cwd, runner, command_timeout)
+        self.tools = LocalTools(self.cwd, runner, command_timeout, read_roots=skill_roots)
+        # The hub library's skills that are on for the local model, listed in its system prompt.
+        self.skill_instructions = skill_instructions
         self._transport = transport
         self._conversation_id = native_session_id
         self._reader: asyncio.Task[None] | None = None
@@ -269,7 +273,11 @@ class OllamaAdapter(AgentAdapter):
         await self.tools.kill()
 
     def _system_prompt(self) -> str:
-        return (TOOLS_PROMPT if self.use_tools else CHAT_PROMPT).format(model=self.model, cwd=self.cwd)
+        prompt = (TOOLS_PROMPT if self.use_tools else CHAT_PROMPT).format(model=self.model, cwd=self.cwd)
+        # A model without tools can't read a SKILL.md; it still gets a skill picked from the `/` menu in full.
+        if self.use_tools and self.skill_instructions:
+            prompt += "\n" + self.skill_instructions + "\n"
+        return prompt
 
     async def _turn(self, text: str, new: bool) -> AsyncGenerator[AgentEvent]:
         """One turn: ask, run the tools the reply calls, ask again, until a reply calls none."""

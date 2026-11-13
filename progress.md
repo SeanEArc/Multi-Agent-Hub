@@ -1501,7 +1501,33 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the agent**
 - [x] Revision 3, step 1: researched 2026-11-12 (no code changed); findings and a proposed design are in `plan.md` under revision 3. Main points: both CLIs share the `SKILL.md` format; Claude's `init` event lists its skills, commands, tools and MCP servers, and `--plugin-dir` adds a skill folder for one run; Codex's exact list comes from `codex app-server` `skills/list`, and library skills can reach it through `developer_instructions` (tested).
 - [x] Revision 3 design decided (user, 2026-11-12): library in `%LOCALAPPDATA%\MultiAgentHub\skills` with shared skills linked; per-agent switches on each skill; `/` shows skills, hub commands and a checked list of working built-ins.
-- [ ] Revision 3: build it on its own branch (still open: per-session, per-agent or global tool permissions).
+- [x] Revision 3: built on `revision/skills` (session 45 below).
 - [ ] From the review, not fixed yet: (a) `stint_effort` sends the default effort (medium) to a Codex model even if its cache doesn't list medium, which the CLI may reject (use the model's own default effort); (b) after a failed first send in `NewChatView`, a retry goes to the half-created session even if the folder or agent changed (reset it, or open that session); (c) `GET /api/models` reads the Codex cache twice, and `CODEX_HOME` is looked up in two places.
 - [ ] Then phase 7 (delegation), 8, 9, 10, 6.
 - [ ] Carried over: keep `CLAUDE_VERSIONS` and `CODEX_FALLBACK` current; code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a lighter headless prompt for chats.
+
+---
+
+2026-11-12 (UTC-06:00)
+
+# Session 45: Built APPLICATION REVISION 3 (skills, slash commands and tools) on `revision/skills` (not committed yet beyond the plan).
+
+## What was done
+1. **More checks first:** Claude's `/context` run returns the full `init` event (skills, commands, MCP servers) with no model request and zero cost, so the menu can learn Claude's list for free. Headless built-ins that work: `/context`, `/cost`, `/usage`; `/status`, `/help`, `/memory`, `/release-notes` answer "isn't available in this environment". `codex app-server` `skills/list` answers in about 0.24 s. Windows junctions work without admin and `rmdir` removes only the link.
+2. **Backend:** new `app/skills.py` (library, import, delivery, menu, command expansion) and `app/api/skills.py` (`GET/POST /api/skills`, `/available`, `/preview`, `PATCH`/`DELETE /{name}`, `/{name}/update` and `/update/apply`, `/commands`). `pyyaml` is now a direct dependency. Claude gets `--plugin-dir` (adapter `plugin_dirs`), Codex `skill_instructions` in `developer_instructions`, the local model `skill_instructions` and `skill_roots` (`LocalTools.read_roots`). `Orchestrator.send` expands `/name`; Claude turns record their capabilities. 18 new tests; 261 passed, 6 skipped.
+3. **Frontend:** Skills dialog (library with Linked / From git / Copied / Missing, per-agent switches, review before adding, update with a diff, share your own Claude and Codex skills), the `/` menu in the composer for open sessions and new chats, and "Used skill" rows. Builds.
+4. **Live check** with the real CLIs and a throwaway library: Claude ran a library skill through the junction (`/hub:hub-live`), Codex ran it picked from `/` and also found it by its description alone; the app server listed Codex's 13 skills. Found and recorded: a folder made by `tempfile.mkdtemp` is owner-only on Windows (Python 3.13+), which Codex's sandbox can't read.
+5. **`/compact`** (the user found Claude's own didn't work in the hub): a hub command for every agent, listed first in the `/` menu: a fresh conversation with the same agent, model and effort, starting from the hub's brief (free, no model call) with the focus text, waiting for the next message. A hub `/clear` was built too, then removed at the user's request as redundant (a new chat does the same). Then researched revision 4 (Claude's Agent SDK commands, Codex's app server and its 61 terminal commands, none of which `codex exec` runs) and planned it in `plan.md`. 262 passed, 6 skipped.
+6. **Flaky test:** seen once more (`test_simulated_limit_with_ask_policy_offers_handoff`, a 15 s "session still working" timeout in a full run); it passes alone and in the next full run. One later full run also stopped early with only "cannot get C stack on this system" printed (probably the same hang); the next 3 runs passed (261 passed, 6 skipped). Still not tracked down.
+
+## Next steps
+
+**For the user**
+- [ ] **Reminder:** the revision 2 and session-flow checks in `TODO.md` are still waiting, plus the new revision 3 checks.
+- [ ] Commit and merge `revision/skills` when you're happy with it.
+
+**For the agent**
+- [ ] Not built yet from revision 3: tool permissions (which tools an agent may use without asking; still open whether per session, per agent or global), MCP servers shown per session (Claude's list is already recorded), and the handoff brief naming the skills used.
+- [ ] The local model with library skills wasn't tried live (Ollama); covered by unit tests only.
+- [ ] Track down the flaky handoff test; the 3 review leftovers from session 44.
+- [ ] Then phase 7 (delegation), 8, 9, 10, 6.

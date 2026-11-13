@@ -48,6 +48,7 @@ from app.models import (
     stint_model,
     utcnow,
 )
+from app.skills import SkillLibrary, cached_codex_names, expand_command, hub_command, record_capabilities
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
 log = logging.getLogger(__name__)
@@ -111,6 +112,8 @@ class StreamMessage:
 
 def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> AgentAdapter:
     settings = get_settings()
+    # The hub library's skills that are on for this agent (app.skills).
+    library = SkillLibrary(settings.skills_dir)
     try:
         match stint.agent:
             case AgentKind.CLAUDE:
@@ -120,6 +123,7 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     native_session_id=stint.native_session_id,
                     permission_mode=settings.claude_permission_mode,
                     effort=stint.effort,
+                    plugin_dirs=[d for d in [library.claude_plugin_dir()] if d],
                 )
             case AgentKind.CODEX:
                 return CodexAdapter(
@@ -129,6 +133,7 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     sandbox=settings.codex_sandbox,
                     command=[find_codex(settings.codex_path)],
                     effort=stint.effort,
+                    skill_instructions=library.instructions(AgentKind.CODEX),
                 )
             case AgentKind.OLLAMA:
                 # Checking the server here lets the handoff chain skip the local model when Ollama is off.
@@ -147,6 +152,8 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     tools=capable is not False,
                     max_rounds=settings.ollama_max_rounds,
                     command_timeout=settings.ollama_command_timeout,
+                    skill_instructions=library.instructions(AgentKind.OLLAMA),
+                    skill_roots=library.read_roots(AgentKind.OLLAMA),
                 )
     except (ClaudeCliNotFound, CodexCliNotFound, OllamaUnavailable) as exc:
         raise AgentUnavailable(str(exc)) from exc
@@ -159,9 +166,12 @@ class Orchestrator:
         engine: Engine,
         adapter_factory: AdapterFactory = default_adapter_factory,
         simulate_limit: set[AgentKind] | None = None,
+        skills: SkillLibrary | None = None,
     ) -> None:
         self._engine = engine
         self._adapter_factory = adapter_factory
+        # The skill library, for expanding a `/name` message into the prompt the agent gets.
+        self.skills = skills or SkillLibrary(get_settings().skills_dir)
         # HUB_SIMULATE_LIMIT: these agents' turns end in a usage limit (development only).
         self.simulate_limit = set(simulate_limit or ())
         if self.simulate_limit:
@@ -200,6 +210,10 @@ class Orchestrator:
         """Start the task, or reply to it if it already started. Returns once the turn is running."""
         if self.is_running(session_id):
             raise SessionBusy("A turn is already running for this session")
+        command = hub_command(text)
+        if command is not None:
+            await self._run_hub_command(session_id, *command)
+            return
 
         with Session(self._engine) as db:
             agent_session = db.get(AgentSession, session_id)
@@ -222,12 +236,33 @@ class Orchestrator:
             return
 
         self._adapters[session_id] = adapter
+        # A message starting with /name may name a skill; the agent gets it in a form it can run.
+        prompt = expand_command(stint.agent, text, self.skills, cached_codex_names())
         if adapter.native_session_id is None:
             # An agent that waited after a handoff (or whose first turn never started) gets its brief first.
-            events = adapter.start_task(with_brief(stint.brief, text) if stint.brief else text)
+            events = adapter.start_task(with_brief(stint.brief, prompt) if stint.brief else prompt)
         else:
-            events = adapter.send_reply(text)
+            events = adapter.send_reply(prompt)
         self._start_turn(session_id, stint, adapter, events)
+
+    async def _run_hub_command(self, session_id: str, name: str, rest: str) -> None:
+        """`/compact`: the same agent, model and effort start a fresh native conversation from the hub's brief,
+        with `rest` as what to keep in focus, and wait for the user's next message."""
+        with Session(self._engine) as db:
+            if db.get(AgentSession, session_id) is None:
+                raise SessionNotFound(session_id)
+            stint = current_stint(db, session_id)
+            started = db.exec(select(SessionEvent.id).where(
+                SessionEvent.session_id == session_id, SessionEvent.type == EventType.USER_MESSAGE,
+            ).limit(1)).first() is not None
+        if not started:
+            self._save_event(session_id, stint, AgentEvent(EventType.NOTICE, {
+                "message": f"Nothing to {name} yet: the conversation hasn't started.", "reason": "hub_command",
+            }))
+            return
+        target = ChainEntry(agent=stint.agent, model=stint.model, effort=stint.effort)
+        await self._handoff(session_id, target, StintReason.MANUAL, rest or None, brief=name == "compact",
+                            wait=True, command=name)
 
     async def handoff(
         self,
@@ -450,6 +485,11 @@ class Orchestrator:
                     if event.type is EventType.STARTED:
                         # Codex only reports its thread id once the turn starts; save it so replies resume it.
                         self._save_native_session_id(stint.id, event.data.get("session_id"))
+                        # Claude lists what it can use this turn (skills, commands, MCP servers): kept for the
+                        # `/` menu, not in the saved event.
+                        capabilities = event.data.pop("capabilities", None)
+                        if capabilities:
+                            self._record_capabilities(stint.agent, capabilities)
                     self._save_event(session_id, stint, event)
             hand_off = limit_reached and status is SessionStatus.FAILED
         except Exception as exc:
@@ -464,6 +504,13 @@ class Orchestrator:
                 self._set_status(session_id, status)
         if hand_off:
             await self._after_limit(session_id)
+
+    def _record_capabilities(self, agent: AgentKind, capabilities: dict[str, Any]) -> None:
+        try:
+            with Session(self._engine) as db:
+                record_capabilities(db, agent, capabilities)
+        except Exception:
+            log.exception("Could not record what %s can use", agent)
 
     def _learn_model(self, stint: Stint, status: SessionStatus, error: str | None) -> None:
         """Remember whether the stint's chosen model worked on the user's plan, for the model pickers."""
@@ -619,12 +666,14 @@ class Orchestrator:
         brief: bool = True,
         wait: bool = False,
         messages: bool = False,
+        command: str | None = None,
     ) -> None:
         """End the current stint, start one for `target` and run its first turn on the brief.
 
         With `wait` no turn starts (the brief goes with the user's next message); without `brief` there is none.
+        `command` is the hub command (`compact`) that asked for it; `/compact`'s note is its focus.
         """
-        if wait:
+        if wait and command != "compact":
             note = None
         target = self._with_default_model(target)
         self._handing_off.add(session_id)
@@ -655,7 +704,7 @@ class Orchestrator:
                 if brief:
                     git = await git_state(workdir, base=worktree.base_commit if worktree else None)
                     stint.brief = build_brief(events, source.id, source.agent, target.agent, reason, git, note,
-                                              wait=wait)
+                                              wait=wait, compact=command == "compact")
                 elif messages:
                     stint.brief = messages_brief(events, target.agent)
                 with Session(self._engine) as db:
@@ -674,6 +723,7 @@ class Orchestrator:
                     "brief": brief,
                     "messages": not brief and stint.brief is not None,
                     "waiting": wait,
+                    **({"command": command} if command else {}),
                 }))
                 if wait:
                     self._set_status(session_id, SessionStatus.READY)

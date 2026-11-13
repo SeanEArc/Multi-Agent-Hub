@@ -4,6 +4,15 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION 3: skills, slash commands and tools
+
+- [ ] **Your agents' own `/` menus.** In a Claude chat, type `/`: a list opens with your Claude skills (analyze-app, review-repo, …), then **Command** rows for `/context` and `/usage`. Arrow keys move, Enter or Tab fills in the name, Escape closes. In a Codex chat, `/` lists Codex's own skills (imagegen, pdf, …) and none of Claude's. In a local-model chat it is empty until the library has skills on for Local.
+- [ ] **Share a Claude skill with Codex and Local.** Click **Skills** in the sidebar. Under **Share your own skills**, click **Share** next to one of your Claude skills (try ez-understand). The review shows its SKILL.md, any scripts and warnings; leave the switches as suggested and click **Add**. It shows as **Linked**, with Claude marked "(its own)". In a Codex chat, type `/ez-understand what is a git worktree` and send: Codex follows the skill. Do the same in a local-model chat.
+- [ ] **Import from a repository.** In **Skills**, paste a git repository address that holds skills (for example your agentic-skills repo on GitHub) and click **Find skills**. Pick one, add it, and check it shows **From git**. Click **Update**: it says it is up to date (or shows the changes first).
+- [ ] **Switches and removal.** Turn a skill off for Codex: it disappears from Codex's `/` menu (open a new Codex chat to reload the menu). Remove a linked skill: its folder in `~/.claude/skills` is still there.
+- [ ] **`/compact`.** In a chat with a few messages, send `/compact keep the test plan`: a "Conversation compacted" row appears with **View brief** (the hub's summary, ending with your focus text). Send a question about the earlier messages: the agent answers from the summary. Try it in a Codex and a local-model chat too.
+- [ ] **Used skill rows.** When Claude uses a skill on its own (ask in plain words for something a skill covers), the chat shows a "Used skill" row with its name. Codex reading a SKILL.md shows the same.
+
 ## APPLICATION REVISION 2: model picker and reasoning effort
 
 - [ ] **Centered new session.** Click **New session**: "What should we build today?" sits above the text box in the middle. Pick a folder: it changes to "What should we build in {folder}?" (the repository's name when the folder is inside one).

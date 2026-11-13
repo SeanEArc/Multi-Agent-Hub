@@ -265,6 +265,8 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
           <Composer
             status={status}
             agent={session.agent}
+            loadCommands={async () => (await api.commands(session.agent, { sessionId: session.id })).commands}
+            commandsKey={`${session.id}:${session.agent}`}
             notes={controlError ? <span className="hint warning">{controlError}</span> : undefined}
             picker={
               <ModelPicker

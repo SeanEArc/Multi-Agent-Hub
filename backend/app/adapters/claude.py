@@ -24,6 +24,7 @@ from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, sp
 from app.adapters.diffs import claude_diffs
 from app.adapters.runner import Runner
 from app.models import AgentKind
+from app.skills import claude_capabilities
 
 # Wording of subscription-limit errors is not verified; rate_limit_event "rejected" is the primary signal.
 LIMIT_TEXT = re.compile(r"usage limit|limit reached|out of (extra )?usage", re.IGNORECASE)
@@ -57,8 +58,11 @@ class ClaudeAdapter(CliAdapter):
         effort: str | None = None,
         command: Sequence[str] | None = None,
         runner: Runner | None = None,
+        plugin_dirs: Sequence[Path] = (),
     ) -> None:
         super().__init__(cwd, command or [find_claude()], runner)
+        # Skill folders loaded for each turn (--plugin-dir): the hub library's skills that are on for Claude.
+        self.plugin_dirs = list(plugin_dirs)
         self.model = model
         # Reasoning effort for each turn (--effort); None leaves Claude Code's default. Can change between turns.
         self.effort = effort
@@ -108,6 +112,8 @@ class ClaudeAdapter(CliAdapter):
             args += ["--model", self.model]
         if self.effort:
             args += ["--effort", self.effort]
+        for folder in self.plugin_dirs:
+            args += ["--plugin-dir", str(folder)]
         return self._stream(args, prompt, TurnParser())
 
 
@@ -143,6 +149,9 @@ class TurnParser:
                             "model": raw.get("model"),
                             "permission_mode": raw.get("permissionMode"),
                             "cwd": raw.get("cwd"),
+                            # What Claude can use this turn, for the `/` menu; the orchestrator takes it
+                            # out before saving the event (the raw line keeps it).
+                            "capabilities": claude_capabilities(raw),
                         },
                     )
                 ]

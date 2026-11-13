@@ -17,7 +17,7 @@ import inspect
 import os
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -134,9 +134,11 @@ class LocalTools:
     """Runs the local model's tool calls in one working folder."""
 
     def __init__(self, cwd: Path, runner: Runner | None = None,
-                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT) -> None:
+                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, read_roots: Sequence[Path] = ()) -> None:
         self.cwd = Path(cwd)
         self.root = self.cwd.resolve()
+        # Folders outside the working folder that may be read but not changed: the hub library's skills.
+        self.read_roots = [Path(r).resolve() for r in read_roots]
         self.runner = runner or HostRunner()
         self.command_timeout = command_timeout
         self._process: RunningProcess | None = None
@@ -203,6 +205,8 @@ class LocalTools:
             raise ToolError("a path is required.")
         path = Path(raw.strip())
         resolved = (path if path.is_absolute() else self.root / path).resolve()
+        if not writing and any(resolved.is_relative_to(r) for r in self.read_roots):
+            return resolved
         if not resolved.is_relative_to(self.root):
             raise ToolError(f"{raw} is outside the working folder ({self.root}). Use a path inside it.")
         if writing and ".git" in resolved.relative_to(self.root).parts:
@@ -210,6 +214,8 @@ class LocalTools:
         return resolved
 
     def relative(self, path: Path) -> str:
+        if not path.is_relative_to(self.root):
+            return path.as_posix()  # a skill file outside the working folder
         return path.relative_to(self.root).as_posix() or "."
 
     def _read_file(self, args: dict[str, Any]) -> ToolResult:

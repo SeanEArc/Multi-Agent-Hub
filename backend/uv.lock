@@ -327,6 +327,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "pydantic-settings" },
+    { name = "pyyaml" },
     { name = "sqlmodel" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -343,6 +344,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.156" },
     { name = "httpx2", specifier = ">=2.16.0" },
     { name = "pydantic-settings", specifier = ">=2.16" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlmodel", specifier = ">=0.0.48" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54" },
 ]

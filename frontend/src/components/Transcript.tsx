@@ -220,6 +220,26 @@ function HandoffDivider({ sessionId, event, answered }: { sessionId: string; eve
   const shown = withBrief || messagesOnly;
   const waiting = p.waiting === true && !answered;
   const manual = p.reason === "manual";
+  // The hub's /compact: the same agent starts a fresh conversation from the hub's summary.
+  if (p.command === "compact") {
+    return (
+      <div id={eventAnchor(event.id)} className={`row handoff ${agentClass(p.to_agent)}`}>
+        <div className="handoff-line">
+          <span>
+            Conversation compacted
+            <span className="muted">
+              {" · "}
+              <AgentName agent={p.to_agent} />
+              {" continues from the hub's summary"}
+              {waiting ? " with your next message" : ""}
+            </span>
+          </span>
+          {brief.button}
+        </div>
+        {brief.panel}
+      </div>
+    );
+  }
   return (
     // The line takes the color of the agent that takes over.
     <div id={eventAnchor(event.id)} className={`row handoff ${agentClass(p.to_agent)}`}>
@@ -405,6 +425,19 @@ interface ToolRowProps {
   children?: ReactNode;
 }
 
+/**
+ * The skill a tool call used, if any: Claude's Skill tool, or Codex and the local model reading a SKILL.md
+ * (that is how they load a skill).
+ */
+function usedSkill(name: string, input: Record<string, any>): string | null {
+  if (name === "Skill" && typeof input.skill === "string") return input.skill;
+  const target = [input.file_path, input.path, input.command].find((v) => typeof v === "string" && /SKILL\.md/i.test(v));
+  if (!target) return null;
+  const parts = (target as string).replace(/["']/g, "").split(/[\\/]/);
+  const at = parts.findIndex((part) => /^SKILL\.md/i.test(part));
+  return at > 0 ? parts[at - 1] : null;
+}
+
 export function ToolRow({ name, input, projectPath, result, denied, pending, children }: ToolRowProps) {
   const failed = !!result?.payload.is_error;
   const state = denied ? "denied" : failed ? "failed" : result ? "done" : pending ? "running" : "done";
@@ -421,13 +454,14 @@ export function ToolRow({ name, input, projectPath, result, denied, pending, chi
   const setOpen = (value: boolean) => setToggled(value);
   const outcome = COMMAND_TOOLS.includes(name) && result ? commandOutcome(result) : null;
   const resultText = result && <ResultText content={result.payload.content} />;
+  const skill = usedSkill(name, input ?? {});
 
   return (
     <div className="row tool">
       <button className="tool-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`tool-dot tool-${state}`} aria-hidden="true" />
-        <span className="tool-name">{name}</span>
-        <span className="tool-arg">{summarize(input, projectPath)}</span>
+        <span className="tool-name">{skill ? "Used skill" : name}</span>
+        <span className="tool-arg">{skill ?? summarize(input, projectPath)}</span>
         {showDiff && <DiffStat diffs={diffs} />}
         {outcome && outcome.exitCode !== 0 && !denied && (
           <span className="tool-exit">{outcome.exitCode === null ? "failed" : `exit ${outcome.exitCode}`}</span>

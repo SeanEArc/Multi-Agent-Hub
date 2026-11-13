@@ -4,6 +4,7 @@ import { Dashboard } from "./components/Dashboard";
 import { NewChatView } from "./components/NewChatView";
 import { SessionView } from "./components/SessionView";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { SkillsDialog } from "./components/SkillsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { BackendBanner } from "./components/BackendBanner";
 import { inDesktopApp } from "./connection";
@@ -19,6 +20,7 @@ export function App() {
   // A new session before its first message, shown instead of the selected session or the dashboard.
   const [drafting, setDrafting] = useState(false);
   const [editingSettings, setEditingSettings] = useState(false);
+  const [editingSkills, setEditingSkills] = useState(false);
   const [backendDown, setBackendDown] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -84,6 +86,7 @@ export function App() {
         onSelect={select}
         onNew={startNew}
         onSettings={() => setEditingSettings(true)}
+        onSkills={() => setEditingSkills(true)}
       />
       <main className="main">
         {inDesktopApp && <BackendBanner unreachable={backendDown} />}
@@ -121,6 +124,7 @@ export function App() {
         )}
       </main>
 
+      {editingSkills && <SkillsDialog onClose={() => setEditingSkills(false)} />}
       {editingSettings && (
         <SettingsDialog
           onClose={() => {
