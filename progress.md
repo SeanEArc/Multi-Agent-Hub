@@ -1499,7 +1499,9 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] **Reminder:** try the APPLICATION REVISION 2 checks and the session-flow checks in `TODO.md` (postponed by the user on 2026-11-12; `revision/test-pass` was merged into `main` before them at the user's request).
 
 **For the agent**
-- [ ] Revision 3, step 1: verify what skills, slash commands, MCP servers and tool permissions do in headless `claude -p` and `codex exec`; then design the rest with the user.
+- [x] Revision 3, step 1: researched 2026-11-12 (no code changed); findings and a proposed design are in `plan.md` under revision 3. Main points: both CLIs share the `SKILL.md` format; Claude's `init` event lists its skills, commands, tools and MCP servers, and `--plugin-dir` adds a skill folder for one run; Codex's exact list comes from `codex app-server` `skills/list`, and library skills can reach it through `developer_instructions` (tested).
+- [x] Revision 3 design decided (user, 2026-11-12): library in `%LOCALAPPDATA%\MultiAgentHub\skills` with shared skills linked; per-agent switches on each skill; `/` shows skills, hub commands and a checked list of working built-ins.
+- [ ] Revision 3: build it on its own branch (still open: per-session, per-agent or global tool permissions).
 - [ ] From the review, not fixed yet: (a) `stint_effort` sends the default effort (medium) to a Codex model even if its cache doesn't list medium, which the CLI may reject (use the model's own default effort); (b) after a failed first send in `NewChatView`, a retry goes to the half-created session even if the folder or agent changed (reset it, or open that session); (c) `GET /api/models` reads the Codex cache twice, and `CODEX_HOME` is looked up in two places.
 - [ ] Then phase 7 (delegation), 8, 9, 10, 6.
 - [ ] Carried over: keep `CLAUDE_VERSIONS` and `CODEX_FALLBACK` current; code signing and in-app updates (possible later); the optional diff backfill for old Claude events; a lighter headless prompt for chats.

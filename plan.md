@@ -14,7 +14,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 4 | 5a to 5d: Local model (hub's own agent loop, Ollama first) | 5a to 5c done (merged and checked in the app 2026-11-10); 5d on hold |
 | 5 | APPLICATION REVISION: Session flow (new session opens a chat, pickers under the composer, chaining switches) | Built 2026-11-10 on `revision/session-flow`; in-app checks in `TODO.md` |
 | 5b | APPLICATION REVISION 2: Model picker and reasoning effort | Built and merged 2026-11-11; test pass and in-app checks next |
-| 5c | APPLICATION REVISION 3: Skills, slash commands and tools | Planned 2026-11-12; starts with a verification step |
+| 5c | APPLICATION REVISION 3: Skills, slash commands and tools | Planned 2026-11-12; step 1 research done, design decided; ready to build |
 | 6 | 7: Delegation | Not started, open questions settled |
 | 7 | 8: Parallel split | Not started |
 | 8 | 9: Docker isolation | Not started |
@@ -280,21 +280,55 @@ The user opens the desktop app and creates a session for a project, optionally c
 
 ## APPLICATION REVISION 3: Skills, slash commands and tools* (added 2026-11-12; to be built after revision 2's test pass and before phase 7)
 - Why (the user's words): "We need to implement the tools that claude and codex use into this application such as skills and / commands", and "I would like to implement skill and tool calling into the application as well. Tools that claude and codex can use when their model is being used in the application." This lifts the hold on skills from the session-flow revision.
+- More requirements (user, 2026-11-12): "The skills should have the models out of the box tool/skill set. If the model cannot use the skill, then do not include it for that models skill/tool commands. We should be able to import skills fairly easy in the application for any model to use including local. For example, I create a skill for Claude or I pull a skill from a repo, I want to be able to use that custom skill using Codex and/or local models."
 - Goal: an agent running in the hub can use the same skills, slash commands and tools it has in its own CLI, and the user can find and call them from the composer.
-- Step 1, verification (before any design is fixed): find out on this PC, with the installed CLIs, what works in headless mode:
-  - **Claude Code (`claude -p`):** whether skills (`~/.claude/skills`, `.claude/skills` in the project, plugins) load and trigger; whether `/skill-name` and custom commands (`.claude/commands`) work when sent as the prompt; which built-in commands do nothing headless; how `--allowedTools`, `--disallowedTools` and settings permissions interact with `--permission-prompts none`; whether user and project MCP servers load.
-  - **Codex (`codex exec`):** whether skills and custom prompts (`~/.codex/prompts`) work in exec mode; how MCP servers from `config.toml` load; which tools the sandbox and `approval_policy="never"` block.
-  - **What the stream reports:** how each CLI shows a skill or MCP call in its JSON events, so the transcript can show it (Codex already reports `mcp_tool_call`, shown as `mcp__server__tool`).
+- Step 1 findings (verified 2026-11-12 with Claude Code 2.1.322 and codex-cli 0.164.0, using tiny test skills in temp folders):
+  - **Both CLIs use the same skill format:** a folder with a `SKILL.md` that has `name` and `description` frontmatter (the Agent Skills format). A skill written for one loads in the other unchanged, so one skill can serve every agent.
+  - **Claude Code, headless:**
+    - Its first stream event (`system`/`init`, which the adapter already receives every turn) lists everything Claude can use right now: `tools`, `skills`, `slash_commands`, `mcp_servers` (with status such as connected or needs-auth), `agents`, `plugins`, and `terminal_slash_commands` (commands that only work in the terminal).
+    - `/skill-name` sent as the prompt runs the skill. Asked in plain words, Claude calls its `Skill` tool, which shows in the stream as a `tool_use`.
+    - Some built-in commands give useful text headless (`/model`, `/context`); others do nothing (`/compact` returned empty).
+    - `--plugin-dir <folder>` loads a folder of skills for that one run (named `<plugin>:<skill>`) without installing anything. Tested: a skill from a hub-owned folder ran in an empty project.
+    - Tool control flags exist: `--tools`, `--allowedTools`, `--disallowedTools`, `--mcp-config`, `--disable-slash-commands`.
+  - **Codex, headless (`exec`):**
+    - It loads skills from the project's `.agents/skills` or `.codex/skills`, the user's `~/.codex/skills`, plugins, and its own system skills.
+    - `$skill-name` runs a skill. Asked in plain words, Codex reads the `SKILL.md` with a shell command, which shows as a `command_execution`. There is no separate skill event.
+    - Codex's own answer to "list your skills" changes from run to run, so it can't be trusted. The app server (`codex app-server`, JSON-RPC over stdio, `skills/list`) returns the exact list with name, description, path, scope (repo, user, system) and enabled, without the hub touching any login files.
+    - `exec` has no flag or config key for extra skill folders. `skills.config` only turns skills on or off, and `--add-dir` doesn't add skills. The app server has `skills/extraRoots/set`, but only for app-server sessions.
+    - Workaround tested: listing a skill's name, description and absolute `SKILL.md` path in `developer_instructions` (which the adapter already sets) makes Codex read and follow it, even in the read-only sandbox. This is the same mechanism Codex uses for its own skills.
+    - MCP servers: `codex mcp list --json` and the app server's `mcpServerStatus/list` give names and status.
+  - **Local model:** has no skills of its own. The hub's loop can do what Codex does (names and descriptions in the system prompt, the file read on use), but `LocalTools.resolve` refuses paths outside the working folder, so the skill folder would need to be allowed for reading. Small models are less reliable at picking a skill on their own, so calling one explicitly with `/name` matters most there.
+  - **Not portable:** a skill that names a CLI's own tools (Claude's `AskUserQuestion`, `Agent` or `Skill` tool; Codex's `apply_patch`) or uses CLI-only frontmatter (Claude's `allowed-tools`, `model`, `context: fork`) still loads elsewhere, but those parts won't work. Skills with scripts need the agent to be allowed to run commands.
+- Design (from the findings; the open choices are decided below):
+  - **Each agent's own set, out of the box, and only what it can use:**
+    - Claude: the slash menu comes from the latest `init` event (cached per agent from real turns; for a fresh install, one probe run stopped right after `init`, to be checked that this costs no usage). Terminal-only commands and built-ins that do nothing headless are left out.
+    - Codex: the list comes from the app server's `skills/list` (enabled skills only).
+    - Local: only the hub's skills (below), plus the hub's own commands.
+  - **Hub skill library** (`%LOCALAPPDATA%\MultiAgentHub\skills`, one folder per skill):
+    - Import from a folder, a zip or a git repository, or pick one of the user's existing Claude or Codex skills to share with the other agents (referenced where it lives, not copied, so edits carry over).
+    - On import the hub shows the `SKILL.md` and lists any scripts before it is turned on. Nothing is run on import, because a skill is instructions an agent will follow.
+    - Each skill can be turned on per agent, and the hub warns when it names another CLI's tools.
+  - **How each agent gets library skills:**
+    - Claude: `--plugin-dir` pointing at the library (skills Claude already has natively are not passed twice).
+    - Codex: names, descriptions and paths appended to `developer_instructions`.
+    - Local: the same list in its system prompt, plus read access to the library folder.
+  - **Calling from the composer:** typing `/` lists the current agent's skills and commands. A native skill is sent in the CLI's own syntax (Claude `/name`, Codex `$name`). A library skill is sent the same way to Claude (`/hub:name`); for Codex and the local model the hub puts "use the skill *name*", the `SKILL.md` contents and its folder path in front of the message, which works without relying on the model to find it.
+  - **Transcript:** Claude's `Skill` tool calls, and Codex or local reads of a `SKILL.md`, show as a "Used skill *name*" row.
+- Decided (user, 2026-11-12, "Lets do the recommended for each"):
+  - **Library location:** `%LOCALAPPDATA%\MultiAgentHub\skills`. A shared Claude or Codex skill is **linked** (the hub reads it where it lives, so edits carry over, and it shows as missing if the original goes away). Skills from a git repository or a zip are copied in; a repository skill gets an **Update** button that shows what changed before the new version is used.
+  - **Turning skills on:** per agent, a Claude / Codex / Local switch on each skill. The hub pre-sets them: off for an agent whose tools the skill names, and off for Local when the skill runs scripts. The user can change any of them.
+  - **The `/` menu:** skills, the hub's own commands, and a short checked list of built-in CLI commands that work headless (such as `/context`). Commands that do nothing headless or only work in a terminal are hidden, and so are commands the hub has its own control for (model, effort, clearing a chat), so the two never disagree. The checked list is updated when the CLIs add commands.
+- Step 2 (to verify while building): whether stopping Claude right after `init` uses any usage; whether a local Codex plugin marketplace (`codex plugin marketplace add`) is a cleaner way to give Codex library skills than `developer_instructions`; how long `codex app-server` takes to start for a skills list.
 - In scope (adjusted after step 1):
   - **Slash menu in the composer:** typing `/` lists what the current agent can run: its skills and custom commands (found by reading the skill and command folders' names and descriptions, never login files), plus the hub's own commands (later `/delegate` in phase 7 and `/split` in phase 8). Picking one fills in the text box; the hub sends it to the CLI as the CLI expects.
   - **Tool permissions:** a per-session or Settings choice of which tools the agent may use without asking (for example allow web search or MCP servers, deny shell commands), passed through each CLI's own flags or `-c` overrides. Defaults stay as today.
   - **MCP servers:** use the servers the user already set up in each CLI, and show which ones a session has. Setting up servers stays in the CLIs.
   - **Transcript:** skill and MCP calls show as their own rows, like tool calls today.
   - **Handoff:** the brief notes which skills or commands were used, so the next agent knows; an agent that lacks a skill is told so instead of the command failing silently.
-- Exclusions: a hub-run marketplace or installer for skills; editing skills inside the hub; giving the local model Claude's or Codex's skills (possible later, by adding a skill's instructions to its prompt).
+- Exclusions: a hub-run online marketplace for skills; editing skills inside the hub (the library imports and turns them on or off; editing stays in the user's editor).
 - Dependencies: the session-flow revision (composer) and revision 2 (model picker).
-- Acceptance: in a Claude session the user types `/`, picks one of their own skills, and Claude runs it; in a Codex session the user calls an MCP tool they set up in Codex and the call shows in the transcript; with shell commands denied in Settings, an agent's command is refused and the transcript says why.
-- Open: what step 1 finds (some of this may not work headless at all); whether permissions are per session, per agent or global; whether the hub should list built-in CLI commands that do nothing headless or hide them.
+- Acceptance: in a Claude session the user types `/`, picks one of their own skills, and Claude runs it; the user shares that Claude skill (or imports one from a git repository) with the library, and Codex and the local model each run it from `/`; Codex's `/` list shows only skills Codex can use; in a Codex session the user calls an MCP tool they set up in Codex and the call shows in the transcript; with shell commands denied in Settings, an agent's command is refused and the transcript says why.
+- Open: whether tool permissions are per session, per agent or global.
 - Tradeoffs: skill folders and MCP configs are each CLI's own, partly undocumented formats, so a CLI update can change them; reading only names and descriptions keeps the hub away from credentials. Allowing more tools without asking makes agents more capable and less safe until phase 9's containers.
 
 **Phase 7: Delegation** (added 2026-10-25; can be built before phase 6, which is marked later. Numbered 7 so existing references to phase 6 stay valid.)
