@@ -1531,3 +1531,31 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] The local model with library skills wasn't tried live (Ollama); covered by unit tests only.
 - [ ] Track down the flaky handoff test; the 3 review leftovers from session 44.
 - [ ] Then phase 7 (delegation), 8, 9, 10, 6.
+
+---
+
+2026-11-12 22:04 (UTC-06:00)
+
+# Session 46: Built APPLICATION REVISION 6 (CI/CD, releases, safe upgrades) on `ci/release-pipeline`.
+
+## What was done
+1. **Decisions (user):** the project becomes open source for anyone to use with their own logins; changes reach `main` only through a `staging` branch whose CI must pass; prepare release practices now while the repo is small. Recorded as APPLICATION REVISION 6 in `plan.md` with a roadmap row.
+2. **CI** (`.github/workflows/ci.yml`): version check, Windows backend tests, Windows UI typecheck and build on every pull request and push to `staging`/`main`; a passing push to `staging` fast-forwards `main` (`promote`, the only job with write access). Actions pinned to commit SHAs (looked up with `git ls-remote`). `.github/dependabot.yml`: weekly grouped updates against `staging`.
+3. **Versions:** `scripts/version.py` (`check`, `set`, `notes`) covers 9 version lines in 8 files, including FastAPI's version in `app/main.py`; `set` round-trips cleanly. `CHANGELOG.md` added.
+4. **Safe upgrades:** `init_db` backs up an existing file database before a pending migration (`backup_before_migrating`, last 5 kept). `backend/scripts/snapshot_release_db.py` and `tests/release_dbs/v0.1.0.sql`; `tests/test_release_upgrades.py` (6 tests): every release dump upgrades to head without losing rows, backups are made and pruned, and no migration rebuilds `sessions`/`stints` or drops a history table.
+5. **Release workflow** (`.github/workflows/release.yml`): tag on `main` → checks (on main, CI passed on the commit, versions, changelog notes, release dump) → NSIS installer as an artifact → approval in the `release` environment → GitHub Release (prerelease for hyphenated tags). Not run yet.
+6. **Docs:** `RELEASING.md` (flow, release steps, database rules, one-time GitHub settings), `CONTRIBUTING.md`, `CLAUDE.md` (branch rule, commands, backups), `TODO.md` revision 6 checks.
+7. Tests: 268 passed, 6 skipped; frontend typecheck and build pass. The workflows were checked as valid YAML only (no actionlint here); their first real run is on GitHub.
+
+## Next steps
+
+**For the user**
+- [ ] Review `ci/release-pipeline`, then create `staging`, push and open the first pull request into it (`TODO.md`, revision 6).
+- [ ] Apply the GitHub settings in `RELEASING.md`.
+- [ ] **Reminder:** the revision 2, session-flow and revision 3 checks in `TODO.md` are still waiting.
+
+**For the agent**
+- [ ] Fix anything the first CI run shows (Python 3.14 on the runner, the `main` ruleset and `promote`).
+- [ ] Open-source pass: README for users, `SECURITY.md`, secret scan of the git history, decide which working notes stay public.
+- [ ] Later: Tauri auto-updater, code signing.
+- [ ] Carried over from session 45: tool permissions, MCP list per session, skills in the brief, the flaky handoff test, the 3 review leftovers; then revision 4, 5 and phase 7.

@@ -4,6 +4,14 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
+
+- [ ] **First CI run.** Push `ci/release-pipeline` and open a pull request into `staging` (create `staging` first: `git push origin main:staging`). The three checks (`Versions match`, `Backend tests (Windows)`, `UI typecheck and build`) run and pass. If the backend job can't find Python 3.14, tell the agent.
+- [ ] **GitHub settings.** Follow "One-time GitHub setup" in `RELEASING.md`: rulesets for `staging` and `main`, the `release` environment with you as reviewer, Actions and security settings.
+- [ ] **First promotion.** Merge the pull request: CI runs on `staging` and the `Promote staging to main` job moves `main` to the same commit. If the push is refused, add GitHub Actions to the `main` ruleset's bypass list and re-run the job.
+- [ ] **Database backup.** Next time a migration is added, start the app once: `%LOCALAPPDATA%\MultiAgentHub\data\backups` gets a copy of `hub.db` named after the old revision, and the app works as before.
+- [ ] **Trial release (optional).** Tag a prerelease like `v0.1.1-beta.1` after following "Releasing a version" in `RELEASING.md`: the release run builds the installer, waits for your approval, and publishes a prerelease. Delete it afterwards if it was only a trial.
+
 ## APPLICATION REVISION 3: skills, slash commands and tools
 
 - [ ] **Your agents' own `/` menus.** In a Claude chat, type `/`: a list opens with your Claude skills (analyze-app, review-repo, …), then **Command** rows for `/context` and `/usage`. Arrow keys move, Enter or Tab fills in the name, Escape closes. In a Codex chat, `/` lists Codex's own skills (imagegen, pdf, …) and none of Claude's. In a local-model chat it is empty until the library has skills on for Local.

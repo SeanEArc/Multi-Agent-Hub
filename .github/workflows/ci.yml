@@ -1,0 +1,115 @@
+# Tests every pull request and every push to staging and main. A push to staging that passes moves main
+# forward to that exact commit (the `promote` job), so main only ever holds commits that passed here.
+#
+# No secrets are used: the tests run against fake Claude, Codex and Ollama stand-ins, and the live tests
+# (which need a real login) stay opt-in on a developer's own machine. See CONTRIBUTING.md.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [staging, main]
+
+# Read-only by default; only `promote` gets write access, and only for pushes to staging.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # A newer push to a PR replaces the older run; staging and main runs always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  versions:
+    name: Versions match
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/version.py check
+
+  backend:
+    name: Backend tests (Windows)
+    # Windows only: the app relies on taskkill, junctions and powershell.exe.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Git identity for tests that commit
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.invalid"
+      - name: Install
+        # --locked fails if uv.lock is out of date with pyproject.toml.
+        run: uv sync --locked
+      - name: Test
+        run: uv run pytest -q
+
+  frontend:
+    name: UI typecheck and build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # Vite build only; the desktop installer is built by the release workflow.
+      - run: npx vite build
+
+  promote:
+    name: Promote staging to main
+    needs: [versions, backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: promote-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fast-forward main to the tested commit
+        env:
+          TESTED: ${{ github.sha }}
+        run: |
+          git fetch origin main staging
+          # Promote only the commit that was tested. If staging moved on, its own run will promote it.
+          if [ "$(git rev-parse origin/staging)" != "$TESTED" ]; then
+            echo "staging has moved past $TESTED; leaving main for the newer run."
+            exit 0
+          fi
+          if [ "$(git rev-parse origin/main)" = "$TESTED" ]; then
+            echo "main is already at $TESTED."
+            exit 0
+          fi
+          # Never rewrite main: it must be an ancestor of the tested commit.
+          if ! git merge-base --is-ancestor origin/main "$TESTED"; then
+            echo "::error::main has commits that staging doesn't. Merge main into staging, then push staging again."
+            exit 1
+          fi
+          git push origin "$TESTED:refs/heads/main"
+          echo "main is now at $TESTED."
