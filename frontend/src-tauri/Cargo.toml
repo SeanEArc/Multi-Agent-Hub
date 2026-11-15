@@ -16,7 +16,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
-getrandom = "0.3"
+getrandom = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
