@@ -17,6 +17,10 @@ workflow uses that section as the release notes and refuses a tag without one. S
 - Release workflow: a tag like `v0.2.0` on `main` builds the Windows installer and, after approval,
   publishes it as a GitHub Release with notes from this file.
 - The backend copies `hub.db` to `data\backups` before applying database migrations, keeping the last 5.
+- `SECURITY.md` (private vulnerability reporting) and `CONTRIBUTING.md`.
+
+### Changed
+- README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.
 
 ## [0.1.0] - 2026-11-12
 

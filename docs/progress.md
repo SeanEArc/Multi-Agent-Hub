@@ -1559,3 +1559,30 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Open-source pass: README for users, `SECURITY.md`, secret scan of the git history, decide which working notes stay public.
 - [ ] Later: Tauri auto-updater, code signing.
 - [ ] Carried over from session 45: tool permissions, MCP list per session, skills in the brief, the flaky handoff test, the 3 review leftovers; then revision 4, 5 and phase 7.
+
+---
+
+2026-11-13 13:01 (UTC-06:00)
+
+# Session 47: CI/CD merged and passing; open-source pass on `docs/open-source-pass`; planned revision 7 (terminal-level agent access).
+
+## What was done
+1. **CI/CD live:** PR #2 (`ci/release-pipeline`) was merged into `main` directly (no ruleset yet). CI on `main` passed all three checks (backend tests 74 s; uv found Python 3.14 on the runner). `staging` was created from `main`, then fast-forwarded to `ff5fced`; CI on `staging` passed and `promote` correctly left `main` alone. Dependabot started; its `github_actions` run failed (log needs sign-in).
+2. **History scan** (the repo is already public): pattern scan of all 93 commits (keys, tokens, private keys, credential assignments) found nothing. The Gmail address appears only in commit author fields; decided not to rewrite history. This repo's git config now uses the GitHub noreply address. The Windows username appeared only in an old README version.
+3. **Notes moved to `docs/`** (`plan.md`, `progress.md`, `TODO.md`, `Improve-Agents.md`, `colors-scheme.md`) with `git mv`; `CLAUDE.md` and agent memory point to the new paths.
+4. **README** rewritten for users (bring your own accounts, local model, skills, status and roadmap, install, data location, configuration including the Ollama settings, security and privacy, trademark note). Checked the "no telemetry" claim: the app's only network calls are to Ollama on loopback and its own API (plus git clones the user asks for).
+5. **`SECURITY.md`** (GitHub private vulnerability reporting, supported versions, scope). `RELEASING.md` setup gained private reporting and email privacy. `CHANGELOG.md` updated.
+6. **`.claude/settings.json`** kept as is (user). The user wants hub agents to work like a Claude terminal (any folder, create projects, push, web): planned as APPLICATION REVISION 7 in `docs/plan.md`, replacing revision 3's unbuilt tool-permissions item.
+
+## Next steps
+
+**For the user**
+- [ ] Commit and push `docs/open-source-pass`, open a PR into **`staging`**, merge when green: the first real promotion to `main`.
+- [ ] GitHub settings in `RELEASING.md` (rulesets, `release` environment, private vulnerability reporting, email privacy).
+- [ ] Paste the Dependabot `github_actions` error.
+- [ ] **Reminder:** the revision 2, session-flow and revision 3 checks in `docs/TODO.md`.
+
+**For the agent**
+- [ ] Fix Dependabot once the error is known.
+- [ ] Next build: the session-44 review leftovers and the flaky handoff test (small PR through `staging`), then revision 4; revision 7 needs research first (CLI flags for access levels).
+- [ ] Later: auto-updater, code signing; carried-over revision 3 items (MCP list per session, skills in the brief).

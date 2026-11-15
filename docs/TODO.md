@@ -6,9 +6,17 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 ## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
 
-- [ ] **First CI run.** Push `ci/release-pipeline` and open a pull request into `staging` (create `staging` first: `git push origin main:staging`). The three checks (`Versions match`, `Backend tests (Windows)`, `UI typecheck and build`) run and pass. If the backend job can't find Python 3.14, tell the agent.
-- [ ] **GitHub settings.** Follow "One-time GitHub setup" in `RELEASING.md`: rulesets for `staging` and `main`, the `release` environment with you as reviewer, Actions and security settings.
-- [ ] **First promotion.** Merge the pull request: CI runs on `staging` and the `Promote staging to main` job moves `main` to the same commit. If the push is refused, add GitHub Actions to the `main` ruleset's bypass list and re-run the job.
+- [x] **First CI run.** Done 2026-11-13: PR #2 was merged into `main` (not `staging`), and CI on `main` passed all three checks (backend tests in 74 s; Python 3.14 resolved on the runner). `staging` was then fast-forwarded to `main`.
+- [ ] **GitHub settings.** The steps are in "One-time GitHub setup" in `RELEASING.md`. Until the `main` ruleset exists, GitHub lets a PR merge straight into `main` (as PR #2 did), so set each PR's base to `staging`.
+  - [x] `staging` branch created (2026-11-13).
+  - [ ] **Ruleset for `staging`** (Settings → Rules → Rulesets): require a PR, require the checks `Versions match`, `Backend tests (Windows)` and `UI typecheck and build`, block force pushes, restrict deletions.
+  - [ ] **Ruleset for `main`**: the same three checks, block force pushes, restrict deletions, no PR requirement. Add GitHub Actions to the bypass list if the first promotion is refused.
+  - [ ] **`release` environment** (Settings → Environments): you as required reviewer; deployment tags limited to `v*`.
+  - [ ] **Actions** (Settings → Actions → General): workflow permissions "Read repository contents"; require approval for first-time contributors.
+  - [ ] **Code security**: Dependabot alerts and security updates, secret scanning with push protection, and **Private vulnerability reporting** (`SECURITY.md` points there).
+  - [ ] **Account email** (your account → Settings → Emails): tick "Keep my email addresses private" and "Block command line pushes that expose my email".
+- [ ] **Dependabot failure.** Its first "github_actions" update run (against `staging`) failed on 2026-11-13; the log is only visible when signed in. Open it from the **Actions** tab (or **Insights → Dependency graph → Dependabot**) and paste the error to the agent to fix `.github/dependabot.yml`.
+- [ ] **First promotion.** Merge the `docs/open-source-pass` pull request into `staging`: CI runs on `staging` and the `Promote staging to main` job moves `main` to the same commit. If the push is refused, add GitHub Actions to the `main` ruleset's bypass list and re-run the job.
 - [ ] **Database backup.** Next time a migration is added, start the app once: `%LOCALAPPDATA%\MultiAgentHub\data\backups` gets a copy of `hub.db` named after the old revision, and the app works as before.
 - [ ] **Trial release (optional).** Tag a prerelease like `v0.1.1-beta.1` after following "Releasing a version" in `RELEASING.md`: the release run builds the installer, waits for your approval, and publishes a prerelease. Delete it afterwards if it was only a trial.
 
