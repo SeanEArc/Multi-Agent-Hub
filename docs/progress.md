@@ -1586,3 +1586,28 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Fix Dependabot once the error is known.
 - [ ] Next build: the session-44 review leftovers and the flaky handoff test (small PR through `staging`), then revision 4; revision 7 needs research first (CLI flags for access levels).
 - [ ] Later: auto-updater, code signing; carried-over revision 3 items (MCP list per session, skills in the brief).
+
+---
+
+2026-11-16 09:31 (UTC-06:00)
+
+# Session 48: revision 6 finished: open-source pass merged, first automatic promotions, GitHub settings set, Dependabot sorted out.
+
+## What was done
+1. **First real promotions:** Dependabot's #7 (backend minor updates) and then #8 (`docs/open-source-pass`) were merged into `staging`; CI passed on the PR and on `staging`, and `promote` moved `main` each time (`b01eb1f`, then `d4a9371`). The README, `SECURITY.md` and `docs/` are now on `main`.
+2. **GitHub settings** (user, following a step-by-step walkthrough): rulesets for `staging` (PR plus the three checks, no force pushes or deletions) and `main` (the three checks, no PR requirement), the `release` environment (user as required reviewer, `v*` tags only), read-only workflow token, Advanced Security (GitHub's new name for Code security: private vulnerability reporting, Dependabot alerts and security updates, secret scanning with push protection) and account email privacy. `RELEASING.md` now says "Advanced Security".
+3. **Dependabot PRs had no CI:** #3 to #7 and the failed `github_actions` run were made on 2026-11-13 while `staging` was still at `5f6aa7c` (no workflows), and moving the base doesn't re-run a PR. `@dependabot rebase` gave them CI; a re-run fixed the update run. #3 (`windows-sys` 0.61), #4 (`getrandom` 0.4), #5 and #6 (`@types/node` 26) passed and are merged; the agent also built #3, #4 and #6 together locally (`cargo check`, `cargo test`, UI typecheck and build) because CI doesn't build the Rust shell. `main` and `staging` at `d5469e4`.
+4. **Security alerts:** glib 0.18.5 (Linux-only dependency of Tauri's GTK, pinned by GTK, not in the Windows dependency tree) dismissed by the user as unused code. `opentelemetry-api` 1.45.1 (GHSA-mf5v-w3w3-f6cg, medium, quadratic `traceparent` parsing; pulled in by FastAPI 0.162) is fixed by Dependabot's #9, which targets `main` because security updates always use the default branch.
+5. Discussed: open-sourcing early was the right call since the repo was already public; `staging` and `main` sharing a commit is expected (promotion fast-forwards `main`).
+
+## Next steps
+
+**For the user**
+- [x] PR #9 retargeted to `staging` and merged 2026-11-16; CI passed and `main` moved to `4274bc4`. Revision 6 is done.
+- Decided: `main` stays the default branch; retarget each Dependabot security PR to `staging` by hand (noted in `RELEASING.md`).
+- [ ] Optional: the `release` environment is ready; a trial prerelease when you want an installer.
+- [ ] **Reminder:** the revision 2, session-flow and revision 3 checks in `docs/TODO.md`.
+
+**For the agent**
+- [ ] Uncommitted on local `staging`: `docs/TODO.md` (revision 6 items ticked), `RELEASING.md` (Advanced Security), `docs/plan.md` and this recap. The user chose to hold them; they go in with the next feature branch. A local `test/dependabot-check` branch can be deleted.
+- [ ] Next build: the session-44 review leftovers and the flaky handoff test (small PR through `staging`), then revision 4; revision 7 needs research first.
