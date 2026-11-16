@@ -14,6 +14,9 @@ feature branch ──PR──► staging ──(CI passes)──► main ──(
   backend tests on Windows, the UI typecheck and build, and `scripts/version.py check`.
 - When a push to `staging` passes, CI's `promote` job fast-forwards `main` to that exact commit. `main`
   never gets merge commits of its own and only holds commits that passed.
+- `main` is the default branch, so Dependabot **security** PRs (which ignore `dependabot.yml`'s `staging`
+  target) and new PRs start with `main` as their base. Change the base to `staging` (**Edit** next to the PR
+  title) before merging.
 - If `promote` fails with "main has commits that staging doesn't", someone pushed to `main` directly.
   Merge `main` into `staging` and push `staging` again.
 
@@ -86,7 +89,7 @@ These live in the repository settings, not in files:
 5. **Settings → Actions → General**: Workflow permissions "Read repository contents" (the workflows ask
    for more only where needed), and for outside contributors "Require approval for first-time
    contributors".
-6. **Settings → Code security**: turn on Dependabot alerts and security updates (version updates are
+6. **Settings → Advanced Security** (called Code security on older pages): turn on Dependabot alerts and security updates (version updates are
    configured in `.github/dependabot.yml`, against `staging`), secret scanning and push protection, and
    **Private vulnerability reporting** (`SECURITY.md` sends reporters there).
 7. **Your account → Settings → Emails**: tick "Keep my email addresses private" and "Block command line
