@@ -17,6 +17,10 @@ feature branch ──PR──► staging ──(CI passes)──► main ──(
 - `main` is the default branch, so Dependabot **security** PRs (which ignore `dependabot.yml`'s `staging`
   target) and new PRs start with `main` as their base. Change the base to `staging` (**Edit** next to the PR
   title) before merging.
+- Never open a pull request from `staging` into `main`: `promote` moves `main` by itself, and a merge
+  through GitHub adds a merge commit that only `main` has, which blocks every later promotion. The
+  `main` ruleset refuses the push while any run of a required check on the commit is still going, so
+  `promote` retries for up to 10 minutes.
 - If `promote` fails with "main has commits that staging doesn't", someone pushed to `main` directly.
   Merge `main` into `staging` and push `staging` again.
 

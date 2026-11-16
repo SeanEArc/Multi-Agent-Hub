@@ -82,7 +82,7 @@ jobs:
     needs: [versions, backend, frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: write
     concurrency:
@@ -111,5 +111,30 @@ jobs:
             echo "::error::main has commits that staging doesn't. Merge main into staging, then push staging again."
             exit 1
           fi
-          git push origin "$TESTED:refs/heads/main"
-          echo "main is now at $TESTED."
+          # The main ruleset refuses the push while any run of a required check on this commit is still
+          # going (for example a pull request from staging into main started a second CI run). Wait for it.
+          for attempt in $(seq 1 20); do
+            if output=$(git push origin "$TESTED:refs/heads/main" 2>&1); then
+              echo "$output"
+              echo "main is now at $TESTED."
+              exit 0
+            fi
+            echo "$output"
+            if ! grep -q "is in progress\|is expected" <<<"$output"; then
+              echo "::error::The push to main was refused. See the message above."
+              exit 1
+            fi
+            echo "A required check on $TESTED is still running elsewhere; retrying in 30 s ($attempt/20)."
+            sleep 30
+            git fetch origin main staging
+            if [ "$(git rev-parse origin/staging)" != "$TESTED" ]; then
+              echo "staging has moved past $TESTED; leaving main for the newer run."
+              exit 0
+            fi
+            if [ "$(git rev-parse origin/main)" = "$TESTED" ]; then
+              echo "main is already at $TESTED."
+              exit 0
+            fi
+          done
+          echo "::error::Required checks on $TESTED were still running after 10 minutes. Re-run this job."
+          exit 1
