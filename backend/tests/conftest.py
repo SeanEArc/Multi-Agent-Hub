@@ -8,7 +8,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import StaticPool
 
 from app.adapters.base import AgentAdapter
 from app.adapters.claude import ClaudeAdapter
@@ -74,9 +73,15 @@ def fake_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> Agen
 
 
 @pytest.fixture
-def engine() -> Engine:
-    # One shared in-memory database per test; StaticPool keeps it alive across connections.
-    return make_engine("sqlite://", poolclass=StaticPool)
+def engine(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Engine]:
+    # A database file per test, so each thread gets its own connection, as in the app. A shared in-memory
+    # connection (StaticPool) let a request thread's rollback undo the orchestrator's uncommitted write of a
+    # turn's final status, leaving sessions "working" forever: the flaky handoff tests. Kept outside
+    # tmp_path, which tests use as a project folder.
+    db_file = tmp_path_factory.mktemp("db") / "hub.db"
+    engine = make_engine(f"sqlite:///{db_file.as_posix()}")
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture

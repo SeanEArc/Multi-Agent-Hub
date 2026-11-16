@@ -73,6 +73,18 @@ class ProgressLayout(StrEnum):
 # Reasoning effort levels the hub passes to the CLIs (Claude's --effort, Codex's model_reasoning_effort).
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+# Codex offers four: Light (low), Medium, High and Extra high (xhigh). Its cache also lists max and ultra,
+# which the hub doesn't offer (decided by the user, 2026-11-16).
+CODEX_EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh")
+
+
+def agent_effort(agent: "AgentKind", effort: str | None) -> str | None:
+    """The effort `agent` can be sent: none for the local model, and Codex's highest (xhigh) for a higher one."""
+    if effort is None or agent is AgentKind.OLLAMA:
+        return None
+    if agent is AgentKind.CODEX and effort not in CODEX_EFFORTS:
+        return "xhigh" if effort == "max" else None
+    return effort
 
 
 class ChainEntry(SQLModel):
@@ -551,10 +563,8 @@ def stint_model(db: Session, agent: AgentKind, model: str | None) -> str | None:
 
 
 def stint_effort(db: Session, agent: AgentKind, effort: str | None) -> str | None:
-    """The effort a new stint records: the one asked for, else the default from Settings; none for the local model."""
-    if agent is AgentKind.OLLAMA:
-        return None
-    return effort or load_hub_settings(db).default_effort
+    """The effort a new stint records: the one asked for, else the default from Settings, fitted to the agent."""
+    return agent_effort(agent, effort or load_hub_settings(db).default_effort)
 
 
 def save_hub_settings(db: Session, settings: HubSettings) -> None:

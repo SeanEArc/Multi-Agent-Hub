@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { EFFORTS, EFFORT_NAMES, api, type AgentKind, type Effort, type CatalogAgent, type HubSettings, type ModelCatalog, type ProgressLayout } from "../api";
+import { api, effortName, effortsFor, type AgentKind, type Effort, type CatalogAgent, type HubSettings, type ModelCatalog, type ProgressLayout } from "../api";
 import { useTheme } from "../theme";
 import { ChainEditor } from "./ChainEditor";
 import { AGENT_OPTIONS } from "./ComposerControls";
@@ -89,12 +89,12 @@ export function SettingsDialog({ onClose }: Props) {
                   <select
                     aria-label="Default effort"
                     title="Reasoning effort"
-                    value={settings.default_effort ?? "medium"}
+                    value={defaultEffortShown(defaultAgent, settings.default_effort)}
                     onChange={(e) => setSettings({ ...settings, default_effort: e.target.value as Effort })}
                   >
-                    {EFFORTS.map((effort) => (
+                    {effortsFor(defaultAgent).map((effort) => (
                       <option key={effort} value={effort}>
-                        {EFFORT_NAMES[effort]} effort
+                        {effortName(defaultAgent, effort)} effort
                       </option>
                     ))}
                   </select>
@@ -204,6 +204,12 @@ const CHECK_AGENTS: { agent: CatalogAgent; label: string }[] = [
 ];
 
 /** "11 available, 2 not on your plan, 1 not checked yet". */
+/** The default effort as the picker shows it: Codex stops at Extra high, as the backend does when it starts one. */
+function defaultEffortShown(agent: AgentKind, effort: Effort | null | undefined): Effort {
+  const value = effort ?? "medium";
+  return effortsFor(agent).includes(value) ? value : "xhigh";
+}
+
 function checkSummary(catalog: ModelCatalog, agent: CatalogAgent): string {
   const models = catalog[agent] ?? [];
   const yes = models.filter((m) => m.available === true).length;

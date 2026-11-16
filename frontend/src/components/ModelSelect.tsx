@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  EFFORTS,
+  effortsFor,
   MODELS,
   api,
   type AgentKind,
@@ -95,7 +95,7 @@ function fallbackCatalog(): ModelCatalog {
       available: null,
       note: null,
       checked_at: null,
-      efforts: [...EFFORTS],
+      efforts: effortsFor(agent),
       default_effort: null,
     }));
   return { claude: options("claude", "version"), codex: options("codex", "version"), codex_source: "builtin", checked_at: {} };

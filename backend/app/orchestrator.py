@@ -40,6 +40,7 @@ from app.models import (
     Stint,
     StintReason,
     WorktreeStatus,
+    agent_effort,
     current_plan,
     current_stint,
     load_hub_settings,
@@ -696,7 +697,7 @@ class Orchestrator:
             # Nothing to brief before the first message.
             brief = brief and any(e.type == EventType.USER_MESSAGE for e in events)
             stint = Stint(session_id=session_id, seq=previous.seq + 1, agent=target.agent, model=target.model,
-                          effort=target.effort, reason=reason)
+                          effort=agent_effort(target.agent, target.effort), reason=reason)
             adapter = self._adapter_factory(agent_session, stint, workdir)  # AgentUnavailable before anything changes
 
             self._set_status(session_id, SessionStatus.HANDING_OFF)

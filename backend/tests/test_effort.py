@@ -58,11 +58,14 @@ def test_handoff_carries_effort_to_codex(client: TestClient, tmp_path: Path) -> 
 def test_codex_efforts_come_from_the_cache(tmp_path: Path) -> None:
     (tmp_path / "models_cache.json").write_text(json.dumps({"models": [
         {"slug": "gpt-a", "visibility": "list", "default_reasoning_level": "medium", "supported_reasoning_levels": [
-            {"effort": "ultra"}, {"effort": "high"}, {"effort": "low"}, {"effort": "medium"}]},
+            {"effort": "ultra"}, {"effort": "max"}, {"effort": "high"}, {"effort": "low"}, {"effort": "medium"}]},
+        {"slug": "gpt-c", "visibility": "list", "default_reasoning_level": "max",
+         "supported_reasoning_levels": [{"effort": "xhigh"}, {"effort": "max"}]},
         {"slug": "gpt-b", "visibility": "list"},
     ]}), encoding="utf-8")
-    # Lowest first, "ultra" left out; a model without levels isn't listed (the catalog keeps the full set).
-    assert read_codex_efforts(tmp_path) == {"gpt-a": (["low", "medium", "high"], "medium")}
+    # Lowest first, only Codex's four (max and ultra left out); a model without levels isn't listed (the
+    # catalog gives it the four), and a default the hub doesn't offer becomes None.
+    assert read_codex_efforts(tmp_path) == {"gpt-a": (["low", "medium", "high"], "medium"), "gpt-c": (["xhigh"], None)}
     assert read_codex_efforts(tmp_path / "missing") == {}
 
 
@@ -73,12 +76,24 @@ def test_new_stints_start_with_the_default_effort(client: TestClient, tmp_path: 
     assert client.put("/api/settings", json={"default_effort": "max"}).status_code == 200
     assert client.put("/api/settings", json={"default_effort": None}).status_code == 422
 
-    # An automatic handoff names no effort, so the new agent starts with the default too.
+    # An automatic handoff names no effort, so the new agent starts with the default too; Codex stops at
+    # Extra high, so a max default reaches it as xhigh.
     session_id = create(client, tmp_path, "claude:limit codex:ok", effort="low")
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "start"})
     session = wait_until_idle(client, session_id)
-    assert (session["agent"], session["effort"]) == ("codex", "max")
-    assert 'model_reasoning_effort="max"' in last_args(client, session_id)
+    assert (session["agent"], session["effort"]) == ("codex", "xhigh")
+    assert 'model_reasoning_effort="xhigh"' in last_args(client, session_id)
+
+
+def test_codex_never_gets_max(client: TestClient, tmp_path: Path) -> None:
+    session_id = create(client, tmp_path, "ok", agent="codex", effort="max")
+    assert client.get(f"/api/sessions/{session_id}").json()["effort"] == "xhigh"
+    assert client.patch(f"/api/sessions/{session_id}", json={"effort": "max"}).json()["effort"] == "xhigh"
+    client.post(f"/api/sessions/{session_id}/handoff", json={"agent": "codex", "effort": "max", "wait": True})
+    assert client.get(f"/api/sessions/{session_id}").json()["effort"] == "xhigh"
+    # The built-in Codex list (no cache) offers the four.
+    assert {tuple(m["efforts"]) for m in client.get("/api/models").json()["codex"]} == {
+        ("low", "medium", "high", "xhigh")}
 
 
 def test_local_model_ignores_an_effort_change(client: TestClient, tmp_path: Path) -> None:
