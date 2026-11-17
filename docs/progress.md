@@ -1656,3 +1656,24 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] Revision 4, Codex part: an app-server client (`app/adapters/codex_server.py`) for `/compact` (`thread/compact/start`), `/context`, `/usage` (`account/rateLimits/read`, never `account/read`), `/review` and `/code-review` (`review/start`), plus `/status`, `/mcp`, `/diff`, `/init`.
 - [ ] Then the local model's four commands, then attachments (separate PR).
 - [ ] Open the PR into `staging` once the commands half is done (or now, if the user wants the Claude part merged first).
+
+---
+
+2026-11-17 09:29 (UTC-06:00)
+
+# Session 51: revision 4, Codex part on `revision/codex-commands`: commands through `codex app-server`.
+
+## What was done
+1. **Claude part merged** (PR #14, into `staging`; `main` promoted).
+2. **Live probe first** (codex-cli 0.164.0, throwaway repo, generated TypeScript bindings from `codex app-server generate-ts`): `thread/resume` with `excludeTurns` loads an exec thread and sends `thread/tokenUsage/updated` (context in use, of a 258.4k window), but not after a review turn; `thread/compact/start` runs as a turn with a `contextCompaction` item and its token report is the compaction call's own usage, not the new size; `review/start` runs inline (command items, `exitedReviewMode`, final `agentMessage` with [P1] findings); `account/rateLimits/read` also returns an `accountId` (dropped); `mcpServerStatus/list` wants `detail: "toolsAndAuthOnly"`.
+3. **Built:** `app/adapters/codex_server.py` (`AppServer`, JSON-RPC over stdio, refuses `account/read`), `app/adapters/codex_commands.py` (`/compact`, `/context`, `/usage`, `/status`, `/mcp`, `/code-review` and `/review` with focus text and the worktree's base commit), `CodexAdapter.run_command` and `server_config`, a keep-open `RunningProcess.write`. In `app/commands.py`, Codex's routes: `/init` sends the hub's AGENTS.md request as a turn, `/diff` is answered by the hub (`Orchestrator._answer_in_hub`, no turn), and `/clear`, `/new`, `/model`, `/fast`, `/rename`, `/skills` get notes. Commands with no model request (Claude's and Codex's `/usage`, `/context`, …) still run after a limit. The hub's own `/compact` now applies only to the local model.
+4. **Tests:** fake Codex gained an `app-server` mode; 11 new tests in `tests/test_commands.py`; full suite 287 passed, 7 skipped; UI typecheck and build pass. Opt-in live test `test_commands_through_the_app_server` passed (context, usage, compaction with the code word remembered after, inline review). Manual checks added to `docs/TODO.md`.
+
+## Next steps
+
+**For the user**
+- [x] Revision 4 (Codex part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
+
+**For the agent**
+- [ ] Revision 4, local model part: `/compact` (the local model summarizes its saved conversation), `/context` (count against `num_ctx`), `/usage` (no limits), `/code-review` (git diff plus review instructions as a turn).
+- [ ] Then attachments (separate PR).

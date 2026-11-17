@@ -66,6 +66,7 @@ RESTING_STATUS = {
     EventType.ERROR: SessionStatus.FAILED,
 }
 STOP_TIMEOUT = 10.0
+DIFF_REPLY_LIMIT = 40_000  # the hub's /diff reply
 SUMMARY_TIMEOUT = 300.0
 # The model check: the CLI agents whose models it tries, how many at once, and how long each may take.
 CHECKABLE_AGENTS = {AgentKind.CLAUDE, AgentKind.CODEX}
@@ -223,16 +224,23 @@ class Orchestrator:
             stint = current_stint(db, session_id)
             command = route(stint.agent, text, load_capabilities(db, stint.agent))
             hub = hub_command(stint.agent, text) if command is None else None
-            limit_known = _limit_already_reached(db, stint)
+            # A command answered without a model request still runs once the limit is reached (/usage then).
+            limit_known = _limit_already_reached(db, stint) and not (command is not None and command.local)
+            worktree = session_worktree(db, session_id)
             if not limit_known and hub is None and (command is None or command.action == "agent"):
                 adapter = self._adapters.get(session_id) or self._adapter_factory(
                     agent_session, stint, session_workdir(db, agent_session)
                 )
+                if worktree is not None and hasattr(adapter, "review_base"):
+                    adapter.review_base = worktree.base_commit
         if hub is not None:
             await self._run_hub_command(session_id, *hub)
             return
         if command is not None and command.action == "notice":
             self._notice(session_id, stint, command.message, "command")
+            return
+        if command is not None and command.action == "hub":
+            await self._answer_in_hub(session_id, stint, command, text)
             return
         if command is not None and command.compact and not limit_known and adapter.native_session_id is None:
             self._notice(session_id, stint, "Nothing to compact yet: the conversation hasn't started.", "command")
@@ -248,11 +256,13 @@ class Orchestrator:
             return
 
         self._adapters[session_id] = adapter
-        if command is not None:
+        if command is not None and command.prompt is None:
             events = self._command_events(adapter, stint, command, text)
         else:
-            # A message starting with /name may name a skill; the agent gets it in a form it can run.
-            prompt = expand_command(stint.agent, text, self.skills, cached_codex_names())
+            # A message starting with /name may name a skill; the agent gets it in a form it can run. A command
+            # with the hub's own request (Codex's /init) is sent as that request.
+            prompt = command.prompt if command is not None and command.prompt else (
+                expand_command(stint.agent, text, self.skills, cached_codex_names()))
             if adapter.native_session_id is None:
                 # An agent that waited after a handoff (or whose first turn never started) gets its brief first.
                 events = adapter.start_task(with_brief(stint.brief, prompt) if stint.brief else prompt)
@@ -263,9 +273,12 @@ class Orchestrator:
     @staticmethod
     def _command_events(adapter: AgentAdapter, stint: Stint, command: Route, text: str
                         ) -> AsyncGenerator[AgentEvent]:
-        """One of the agent's own commands, sent as typed: it must start the prompt, so it never goes behind a
-        brief. Before the conversation starts, a command with no model request runs as a one-off, and any other
-        gets the waiting brief after it, as its arguments (they stay in the conversation)."""
+        """One of the agent's own commands. Codex's run through its app server (`run_command`). Claude's are sent as
+        typed: a command must start the prompt, so it never goes behind a brief. Before the conversation starts, a
+        command with no model request runs as a one-off, and any other gets the waiting brief after it, as its
+        arguments (they stay in the conversation)."""
+        if command.adapter:
+            return adapter.run_command(text)
         if adapter.native_session_id is not None:
             return adapter.send_reply(text)
         if command.local:
@@ -273,6 +286,34 @@ class Orchestrator:
         if stint.brief:
             return adapter.start_task(f"{text}\n\n{stint.brief}")
         return adapter.start_task(text)
+
+    async def _answer_in_hub(self, session_id: str, stint: Stint, command: Route, text: str) -> None:
+        """A command the hub answers itself, with no agent turn and no change of status: `/diff` shows the session's
+        changes (against the worktree's base commit, so committed work on the branch shows too)."""
+        with Session(self._engine) as db:
+            agent_session = db.get(AgentSession, session_id)
+            worktree = session_worktree(db, session_id)
+            problem = ""
+            try:
+                workdir = session_workdir(db, agent_session)
+            except AgentUnavailable as exc:
+                workdir, problem = None, str(exc)
+        self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": text}))
+        git = await git_state(workdir, worktree.base_commit if worktree else None) if workdir else None
+        if workdir is None:
+            reply = f"Can't show the changes: {problem}"
+        elif git is None:
+            reply = "This folder isn't a git repository, so there are no changes to show."
+        elif not git.status.strip() and not git.diff.strip():
+            reply = "No changes: the working tree is clean."
+        else:
+            since = "the branch's starting point" if worktree else "the last commit"
+            diff = git.diff if len(git.diff) <= DIFF_REPLY_LIMIT else (
+                git.diff[:DIFF_REPLY_LIMIT] + f"\n... (cut at {DIFF_REPLY_LIMIT // 1000}k characters)")
+            reply = (f"## Changes since {since}\n\n```\n{git.status.rstrip()}\n```\n\n"
+                     + (f"```diff\n{diff.rstrip()}\n```" if diff.strip() else "No changes to tracked files."))
+        self._save_event(session_id, stint, AgentEvent(EventType.MESSAGE, {"text": reply, "parent_tool_use_id": None,
+                                                                          "command": command.name}))
 
     def _notice(self, session_id: str, stint: Stint, message: str, reason: str) -> None:
         self._save_event(session_id, stint, AgentEvent(EventType.NOTICE, {"message": message, "reason": reason}))

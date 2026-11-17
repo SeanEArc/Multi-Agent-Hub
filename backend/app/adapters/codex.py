@@ -37,6 +37,7 @@ from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
 from typing import Any
 
+from app.adapters import codex_commands
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, plan_items, split_plan
 from app.adapters.diffs import FileSnapshots
@@ -106,10 +107,13 @@ class CodexAdapter(CliAdapter):
         codex_home: Path | None = None,
         effort: str | None = None,
         skill_instructions: str | None = None,
+        review_base: str | None = None,
     ) -> None:
         super().__init__(cwd, command or [find_codex()], runner)
         # The hub library's skills that are on for Codex, added to its developer instructions on each turn.
         self.skill_instructions = skill_instructions
+        # What `/review` compares against in a worktree session: the commit its branch started from.
+        self.review_base = review_base
         self.model = model
         # Reasoning effort for each turn (model_reasoning_effort); None leaves Codex's default for the model.
         self.effort = effort
@@ -133,6 +137,27 @@ class CodexAdapter(CliAdapter):
         return self._stream(
             ["exec", "resume", "--json", *self._options(), self._session_id, "-"], reply, TurnParser()
         )
+
+    def run_command(self, command: str) -> AsyncGenerator[AgentEvent]:
+        """One of Codex's commands (`codex_commands.COMMANDS`) through its app server, which `exec` lacks."""
+        name, _, rest = command.strip().removeprefix("/").partition(" ")
+        if self._proc is not None:
+            raise RuntimeError("A turn is already running")
+        return codex_commands.run(self, name, rest.strip())
+
+    def server_config(self) -> list[str]:
+        """The same settings as a turn, as `-c` overrides for `codex app-server`."""
+        instructions = HEADLESS_PROMPT + (f"\n\n{self.skill_instructions}" if self.skill_instructions else "")
+        config = [
+            "-c", f"sandbox_mode={json.dumps(self.sandbox)}",
+            "-c", 'approval_policy="never"',
+            "-c", f"developer_instructions={json.dumps(instructions)}",
+        ]
+        if self.model:
+            config += ["-c", f"model={json.dumps(self.model)}"]
+        if self.effort:
+            config += ["-c", f"model_reasoning_effort={json.dumps(self.effort)}"]
+        return config
 
     def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
         # Read-only and not saved: no session file, so no thread to resume and no usage meter update.

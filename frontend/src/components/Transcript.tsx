@@ -172,10 +172,13 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
       case "notice":
         // The agent compacted its own conversation (/compact, or Claude on its own when the context filled).
         if (p.reason === "compacted") {
+          // Codex reports only the size before (its compaction call's usage isn't the new size).
           const tokens =
-            typeof p.pre_tokens === "number" && typeof p.post_tokens === "number"
-              ? ` · ${formatTokens(p.pre_tokens)} → ${formatTokens(p.post_tokens)} tokens`
-              : "";
+            typeof p.pre_tokens !== "number"
+              ? ""
+              : typeof p.post_tokens === "number"
+                ? ` · ${formatTokens(p.pre_tokens)} → ${formatTokens(p.post_tokens)} tokens`
+                : ` · was ${formatTokens(p.pre_tokens)} tokens`;
           return (
             <div key={event.id} className={`row handoff compacted ${agentClass(event.agent)}`}>
               <div className="handoff-line">

@@ -59,3 +59,31 @@ def test_summarize_is_one_off_and_read_only(project: Path) -> None:
     assert events[-1].data["text"].strip()
     assert any(e.type is EventType.USAGE and e.data.get("usage") for e in events)
     assert list(project.iterdir()) == []
+
+
+def test_commands_through_the_app_server(project: Path) -> None:
+    """Revision 4: /context, /usage, /compact and /code-review through `codex app-server` on an exec thread."""
+    for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "T"]):
+        subprocess.run(["git", *args], cwd=project, check=True)
+    (project / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=project, check=True)
+    adapter = CodexAdapter(project, effort="low")
+
+    async def run(events):
+        return [event async for event in events]
+
+    asyncio.run(run(adapter.start_task("Remember the code word HERON. Reply with just OK.")))
+    context = asyncio.run(run(adapter.run_command("/context")))
+    assert "tokens used" in context[-1].data["text"], context[-1]
+    usage = asyncio.run(run(adapter.run_command("/usage")))
+    assert any(e.type is EventType.RATE_LIMIT and e.data["windows"] for e in usage)
+    compacted = asyncio.run(run(adapter.run_command("/compact")))
+    assert [e.type for e in compacted] == [EventType.NOTICE, EventType.COMPLETED], compacted
+    after = asyncio.run(run(adapter.send_reply("What was the code word? One word.")))
+    [done] = [e for e in after if e.type is EventType.COMPLETED]
+    assert "heron" in done.data["text"].lower()
+
+    (project / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    review = asyncio.run(run(adapter.run_command("/code-review")))
+    assert review[-1].type is EventType.COMPLETED and review[-1].data["text"].strip(), review[-1]

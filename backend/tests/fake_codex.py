@@ -3,6 +3,9 @@
 Modes: ok, question, tools, limit, crash, hang. Echoes its args and stdin prompt back
 in the final agent message so tests can check what the adapter sent. Event shapes
 follow codex-cli 0.164.0. `tools` writes hello.txt in its cwd, like a real patch.
+
+`app-server` answers the JSON-RPC requests the hub sends (revision 4), as codex-cli 0.164.0 does; in `limit` mode
+compactions and reviews fail with the usage-limit message. `account/read` is never allowed: it exits with code 9.
 """
 
 import json
@@ -20,6 +23,69 @@ def message(item_id: str, text: str) -> None:
 
 
 mode, args = sys.argv[1], sys.argv[2:]
+LIMIT_TEXT = "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again at 3:00 PM."
+
+
+def app_server() -> None:
+    def reply(request_id, result=None, error=None):
+        emit({"id": request_id, **({"error": {"code": -1, "message": error}} if error else {"result": result or {}})})
+
+    def notify(method, params):
+        emit({"method": method, "params": params})
+
+    def turn(thread, turn_id, items):
+        notify("turn/started", {"threadId": thread, "turn": {"id": turn_id, "status": "inProgress"}})
+        for item in items:
+            notify("item/started", {"threadId": thread, "item": item})
+            notify("item/completed", {"threadId": thread, "item": item})
+        if mode == "limit":
+            notify("error", {"threadId": thread, "error": {"message": LIMIT_TEXT}})
+            notify("turn/completed", {"threadId": thread, "turn": {"id": turn_id, "status": "failed",
+                                                                   "error": {"message": LIMIT_TEXT}}})
+        else:
+            notify("turn/completed", {"threadId": thread, "turn": {"id": turn_id, "status": "completed"}})
+
+    for line in sys.stdin:
+        message = json.loads(line)
+        method, params, request_id = message.get("method"), message.get("params") or {}, message.get("id")
+        if request_id is None:
+            continue  # the `initialized` notification
+        if method == "account/read":
+            sys.exit(9)
+        if method == "initialize":
+            reply(request_id, {"userAgent": "fake"})
+        elif method == "thread/resume":
+            reply(request_id, {"thread": {"id": params["threadId"]}})
+            notify("thread/tokenUsage/updated", {"threadId": params["threadId"], "turnId": "t0", "tokenUsage": {
+                "total": {"totalTokens": 30000}, "last": {"totalTokens": 16844}, "modelContextWindow": 258400}})
+        elif method == "thread/start":
+            reply(request_id, {"thread": {"id": "ephemeral-thread"}})
+        elif method == "thread/compact/start":
+            reply(request_id, {})
+            turn(params["threadId"], "compact-1", [{"type": "contextCompaction", "id": "c1"}])
+        elif method == "review/start":
+            reply(request_id, {"turn": {"id": "review-1"}, "reviewThreadId": params["threadId"]})
+            findings = f"- [P1] Restore addition in add. target={json.dumps(params['target'])} args={json.dumps(args)}"
+            turn(params["threadId"], "review-1", [
+                {"type": "commandExecution", "id": "x1", "command": "git diff", "aggregatedOutput": "diff", "exitCode": 0},
+                {"type": "exitedReviewMode", "id": "r1", "review": findings},
+                {"type": "agentMessage", "id": "m1", "text": findings},
+            ])
+        elif method == "account/rateLimits/read":
+            reply(request_id, {"accountId": "acct-must-not-be-kept", "rateLimits": {
+                "primary": {"usedPercent": 25, "windowDurationMins": 300, "resetsAt": 4102444800},
+                "secondary": {"usedPercent": 12, "windowDurationMins": 10080, "resetsAt": 4102444800},
+                "planType": "plus", "rateLimitReachedType": None}})
+        elif method == "mcpServerStatus/list":
+            reply(request_id, {"data": [{"name": "docs", "tools": {"search": {}, "fetch": {}}, "authStatus": "unsupported"}]})
+        else:
+            reply(request_id, error=f"unknown method {method}")
+
+
+if args[:1] == ["app-server"]:
+    app_server()
+    sys.exit(0)
+
 prompt = sys.stdin.read()
 # A reply resumes the thread named just before the trailing "-"; a new task gets a new id.
 thread_id = args[-2] if args[:2] == ["exec", "resume"] else "01a17487-0000-7000-8000-000000000001"
@@ -32,7 +98,7 @@ if mode == "crash":
 if mode == "hang":
     time.sleep(60)
 if mode == "limit":
-    text = "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again at 3:00 PM."
+    text = LIMIT_TEXT
     emit({"type": "error", "message": text})
     emit({"type": "turn.failed", "error": {"message": text}})
     sys.exit(1)

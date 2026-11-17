@@ -141,8 +141,8 @@ def test_menu_lists_only_what_the_agent_can_use(tmp_path: Path) -> None:
     # Before Claude reported its commands: the four every agent has.
     assert [(c.name, c.kind) for c in claude] == [("compact", "builtin"), ("context", "builtin"), ("usage", "builtin"),
                                                   ("code-review", "builtin"), ("review", "skill"), ("greet", "library")]
-    codex = menu(AgentKind.CODEX, lib, [])
-    assert [(c.name, c.kind) for c in codex] == [("compact", "hub"), ("greet", "library")]
+    local = menu(AgentKind.OLLAMA, lib, [])
+    assert [(c.name, c.kind) for c in local] == [("compact", "hub")]
     local = menu(AgentKind.OLLAMA, lib, None, hub=False)
     assert local == []  # the skill is off for the local model, and it has no skills of its own
 
@@ -299,8 +299,8 @@ def test_claude_turns_teach_the_menu_its_skills(client: TestClient, tmp_path: Pa
 
 
 def test_compact_starts_the_same_agent_from_the_brief(client: TestClient, tmp_path: Path) -> None:
-    """The hub's own /compact, for the agents with no documented one wired in yet (Codex for now)."""
-    session_id = create(client, tmp_path, "ok", agent="codex")
+    """The hub's own /compact, for the agent with no documented one (the local model)."""
+    session_id = create(client, tmp_path, "ollama:ok", agent="ollama")
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "/compact"})
     [notice] = [e for e in events_of(client, session_id) if e["type"] == "notice"]
     assert "Nothing to compact" in notice["payload"]["message"]  # nothing started yet
@@ -310,20 +310,16 @@ def test_compact_starts_the_same_agent_from_the_brief(client: TestClient, tmp_pa
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "/compact the parser"})
     session = client.get(f"/api/sessions/{session_id}").json()
     assert session["status"] == "ready" and len(session["stints"]) == 2
-    assert session["agent"] == "codex"
+    assert session["agent"] == "ollama"
     handoff = [e for e in events_of(client, session_id) if e["type"] == "handoff"][-1]
     assert handoff["payload"]["command"] == "compact" and handoff["payload"]["brief"] is True
     brief = client.get(f"/api/sessions/{session_id}/stints/{session['stints'][-1]['id']}").json()["brief"]
     assert brief.startswith("# Compacted conversation") and "## Keep in focus\n\nthe parser" in brief
     assert "build the thing" in brief
 
-    client.post(f"/api/sessions/{session_id}/messages", json={"text": "next step"})
-    wait_until_idle(client, session_id)
-    first = prompts_sent(client, session_id, "codex")[-1]
-    assert first.startswith("# Compacted conversation") and first.endswith("next step")
 
     assert not any(e["type"] == "user_message" and e["payload"]["text"].startswith("/")
                    for e in events_of(client, session_id))  # commands aren't saved as messages
-    for agent in ("claude", "codex"):
+    for agent in ("claude", "codex", "ollama"):
         body = client.get("/api/skills/commands", params={"agent": agent}).json()
         assert "compact" not in [c["name"] for c in body["commands"]]  # a new chat has nothing to compact

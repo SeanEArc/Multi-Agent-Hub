@@ -28,6 +28,10 @@ class RunningProcess(ABC):
     async def send_input(self, data: bytes) -> None:
         """Write all of stdin and close it."""
 
+    async def write(self, data: bytes) -> None:
+        """Write to stdin and leave it open, for a CLI that keeps a conversation over stdio (`codex app-server`)."""
+        raise NotImplementedError("This runner can't keep stdin open")
+
     @abstractmethod
     def lines(self) -> AsyncIterator[bytes]:
         """stdout, one line at a time, until the process closes it."""
@@ -79,6 +83,10 @@ class HostProcess(RunningProcess):
         self._proc.stdin.write(data)
         await self._proc.stdin.drain()
         self._proc.stdin.close()
+
+    async def write(self, data: bytes) -> None:
+        self._proc.stdin.write(data)
+        await self._proc.stdin.drain()
 
     async def lines(self) -> AsyncIterator[bytes]:
         async for line in self._proc.stdout:
