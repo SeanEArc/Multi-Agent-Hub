@@ -63,3 +63,27 @@ def test_coding_task_with_tools(tmp_path: Path) -> None:
     assert "Write" in tools and "PowerShell" in tools
     assert any(e.type is EventType.TOOL_RESULT and "42" in e.data["content"] for e in events)
     assert "42" in events[-1].data["text"]
+
+
+def test_compact_keeps_what_matters(tmp_path: Path) -> None:
+    """Revision 4: the local model summarizes its own conversation, and the next turn still knows a detail."""
+    settings = get_settings()
+    model = pick_model(list_models_sync(settings.ollama_url), None, settings.ollama_model)
+    adapter = OllamaAdapter(tmp_path, model, history_dir=tmp_path / "history", base_url=settings.ollama_url,
+                            num_ctx=settings.ollama_num_ctx)
+
+    async def run(events):
+        return [event async for event in events]
+
+    first = asyncio.run(run(adapter.start_task(
+        "We are naming a new library. The name we chose is Quillfeather. Reply with just: noted")))
+    assert first[-1].type is EventType.COMPLETED, first[-1].data
+    compact = asyncio.run(run(adapter.run_command("/compact keep the library's name")))
+    notice = next(e for e in compact if e.type is EventType.NOTICE)
+    assert notice.data["by"] == "model" and notice.data["summary"], notice.data
+    assert compact[-1].type is EventType.COMPLETED
+    after = asyncio.run(run(adapter.send_reply("What name did we choose for the library? Answer in one word.")))
+    assert after[-1].type is EventType.COMPLETED, after[-1].data
+    assert "quillfeather" in after[-1].data["text"].lower()
+    context = asyncio.run(run(adapter.run_command("/context")))
+    assert "## Local model context" in context[0].data["text"]

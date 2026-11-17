@@ -1677,3 +1677,25 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the agent**
 - [ ] Revision 4, local model part: `/compact` (the local model summarizes its saved conversation), `/context` (count against `num_ctx`), `/usage` (no limits), `/code-review` (git diff plus review instructions as a turn).
 - [ ] Then attachments (separate PR).
+
+---
+
+2026-11-17 10:41 (UTC-06:00)
+
+# Session 52: revision 4, local model part on `revision/local-commands`: the hub's own four commands.
+
+## What was done
+1. **Codex part merged** (PR #15, into `staging`; `main` promoted).
+2. **`app/commands.py`:** `LOCAL_COMMANDS` (compact, context, usage through `OllamaAdapter.run_command`; code-review as a `review` route). The hub's old `/compact` for the local model (a `_handoff` to itself from the brief) is gone, with `HUB_COMMANDS`, `hub_command`, `_run_hub_command` and the handoff's `command` field; older `handoff` events with `command: "compact"` still render.
+3. **`app/adapters/local_commands.py`** (new): `/compact` has the model write a summary of its saved conversation (plain-text transcript, one-off request with no tools) and replaces the saved file with it; the hub's brief (`Orchestrator._compact_brief`) is the fallback when the model fails. `/context` estimates system prompt, tool definitions and conversation against `num_ctx`; `/usage` says there are no limits.
+4. **`/code-review`:** `Orchestrator._review_request` builds the prompt from `git_state` (worktree base when there is one) with `review_prompt`; clean trees and folders outside git get a notice.
+5. **UI:** the compacted row has **View summary** when the payload carries the summary, and says when the hub's summary was used.
+6. **Tests:** 8 new local tests in `tests/test_commands.py`, old hub-compact test replaced; full suite 295 passed, 8 skipped; UI typecheck and build pass. Opt-in live test `test_compact_keeps_what_matters` passed against the real Ollama model (the library name survived compaction).
+
+## Next steps
+
+**For the user**
+- [x] Revision 4 (local model part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
+
+**For the agent**
+- [ ] Revision 4 attachments (separate PR): composer attach, storage, per-agent delivery, video frames, handoff.

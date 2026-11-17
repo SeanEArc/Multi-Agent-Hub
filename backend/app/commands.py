@@ -11,23 +11,18 @@ Each agent's own documented commands come first; the hub builds its own only whe
   hub offers is routed to documented machinery: the app server (`/compact`, `/context`, `/usage`, `/review` and
   `/code-review`, `/status`, `/mcp`; `app.adapters.codex_commands`), a turn with the hub's own request (`/init`), or
   the hub itself (`/diff`). Codex skills go as `$name` (`expand_command`).
-- **Local model:** `/compact` is still the hub's own (a fresh conversation from the hub's brief) until its own
-  version is built.
+- **Local model:** it has no commands of its own, so the hub provides them (`LOCAL_COMMANDS`): `/compact` has the
+  model summarize its saved conversation (`app.adapters.local_commands`, the hub's brief as the fallback), `/context`
+  and `/usage` are answered from the hub's own numbers, and `/code-review` is a turn with the session's git diff.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from app.handoff import GitState
 from app.models import AgentKind
 from app.skills import CLAUDE_PLUGIN, COMMAND_PATTERN, SkillError, SkillLibrary, read_skill
-
-# The hub's own commands, run by `Orchestrator._run_hub_command` instead of sending the message
-# (phase 7 adds /delegate, phase 8 /split). Claude has its own /compact.
-HUB_COMMANDS: dict[str, str] = {
-    "compact": "Start fresh from the hub's summary of the session; add text to keep something in focus",
-}
-HUB_COMMAND_AGENTS: dict[str, set[AgentKind]] = {"compact": {AgentKind.OLLAMA}}
 
 # Claude commands that answer from Claude Code itself, with no model request. Without a conversation yet (a new
 # chat, or right after a handoff) they run as a one-off that isn't saved, so no empty conversation is left behind.
@@ -105,6 +100,26 @@ INIT_PROMPT = (
 )
 
 
+# The local model's commands, all the hub's own. `adapter`: `OllamaAdapter.run_command`; `review`: a turn with the
+# session's git diff (`review_prompt`, built by the orchestrator).
+LOCAL_COMMANDS: dict[str, tuple[str, str]] = {
+    "compact": ("adapter", "Have the local model summarize the conversation to free up context; add text to keep "
+                           "something in focus"),
+    "context": ("adapter", "Show how full the local model's context is"),
+    "usage": ("adapter", "Show usage limits (the local model has none)"),
+    "code-review": ("review", "Review the session's changes with the local model; add text to focus it"),
+}
+LOCAL_LOCAL = {"context", "usage"}  # answered with no model request
+LOCAL_REVIEW_PROMPT = (
+    "Review the code changes below for bugs. Look for mistakes in logic, unhandled errors and edge cases, security "
+    "problems, and code that doesn't do what it seems meant to do. Read the surrounding code with your tools when "
+    "the diff alone isn't enough. Don't change any files.\n\n"
+    "Answer with your findings, most severe first. For each one give the file and line, what is wrong, why it "
+    "matters, and how to fix it. Skip style nitpicks. If you find nothing worth fixing, say so."
+)
+REVIEW_DIFF_LIMIT = 20_000  # the local model's context is small; the handoff brief uses the same cap
+
+
 @dataclass
 class Command:
     name: str
@@ -121,8 +136,10 @@ class Route:
 
     `notice`: the hub answers with `message` and nothing is sent. `hub`: the hub answers it itself (Codex's
     `/diff`). `agent`: the agent runs it: as typed and never behind a brief (Claude; `local` when it answers
-    without a model request), through the adapter's `run_command` (`adapter`, Codex's app-server commands), or as
-    a normal message with `prompt` in place of what was typed. `compact` for a compaction.
+    without a model request), through the adapter's `run_command` (`adapter`: Codex's app-server commands, the
+    local model's), or as a normal message with `prompt` in place of what was typed (`review`: the orchestrator
+    builds it from the session's diff with `review_prompt`). `rest` is the text after the name. `compact` for a
+    compaction.
     """
 
     action: Literal["notice", "hub", "agent"]
@@ -131,6 +148,8 @@ class Route:
     local: bool = False
     adapter: bool = False
     prompt: str | None = None
+    review: bool = False
+    rest: str = ""
 
     @property
     def compact(self) -> bool:
@@ -143,14 +162,6 @@ def parse(text: str) -> tuple[str, str] | None:
     if not match:
         return None
     return match.group(1), (match.group(2) or "").strip()
-
-
-def hub_command(agent: AgentKind, text: str) -> tuple[str, str] | None:
-    """`(name, rest)` when the message is one of the hub's own commands for `agent`, else None."""
-    parsed = parse(text)
-    if not parsed or agent not in HUB_COMMAND_AGENTS.get(parsed[0], set()):
-        return None
-    return parsed
 
 
 def claude_commands(capabilities: dict[str, Any] | None) -> list[str]:
@@ -172,6 +183,8 @@ def route(agent: AgentKind, text: str, capabilities: dict[str, Any] | None = Non
     name, rest = parsed
     if agent is AgentKind.CODEX:
         return _codex_route(name, rest)
+    if agent is AgentKind.OLLAMA:
+        return _local_route(name, rest)
     if agent is not AgentKind.CLAUDE:
         return None
     if name in CLAUDE_HIDDEN:
@@ -196,10 +209,35 @@ def _codex_route(name: str, rest: str) -> Route | None:
     return None
 
 
+def _local_route(name: str, rest: str) -> Route | None:
+    how = LOCAL_COMMANDS.get(name, ("", ""))[0]
+    if how == "adapter":
+        return Route("agent", name, adapter=True, local=name in LOCAL_LOCAL, rest=rest)
+    if how == "review":
+        return Route("agent", name, review=True, rest=rest)
+    return None
+
+
+def review_prompt(rest: str, git: GitState, since: str) -> str:
+    """The local model's `/code-review` request: review instructions, the focus text, and the session's changes."""
+    diff = git.diff if len(git.diff) <= REVIEW_DIFF_LIMIT else (
+        git.diff[:REVIEW_DIFF_LIMIT] + f"\n... (cut at {REVIEW_DIFF_LIMIT // 1000}k characters; read the files for the "
+                                       "rest)")
+    parts = [LOCAL_REVIEW_PROMPT]
+    if rest:
+        parts.append(f"Focus on: {rest}")
+    parts.append(f"## Changes since {since}\n\n```\n{git.status.rstrip()}\n```")
+    if diff.strip():
+        parts.append(f"```diff\n{diff.rstrip()}\n```")
+    untracked = [line[3:] for line in git.status.splitlines() if line.startswith("??")]
+    if untracked:
+        parts.append("New files, not in the diff (read them): " + ", ".join(untracked))
+    return "\n\n".join(parts)
+
+
 def menu(agent: AgentKind, library: SkillLibrary, native: Sequence[dict[str, Any]] | None,
          hub: bool = True, capabilities: dict[str, Any] | None = None) -> list[Command]:
-    """The `/` menu for `agent`, each name once: the commands every agent has first, then the hub's own, the
-    agent's own skills (`native`, names and descriptions), library skills switched on for it, and the rest of its
+    """The `/` menu for `agent`, each name once: the commands every agent has first, then the agent's own skills (`native`, names and descriptions), library skills switched on for it, and the rest of its
     commands (Claude's from its recorded `init` event, `capabilities`). `hub` is false for a new chat, which has
     nothing to compact yet."""
     commands: list[Command] = []
@@ -220,12 +258,8 @@ def menu(agent: AgentKind, library: SkillLibrary, native: Sequence[dict[str, Any
             add(name, CODEX_COMMANDS[name][1], "builtin")
         elif name in claude:
             add(name, CLAUDE_DESCRIPTIONS.get(name, ""), "skill" if name in native_names else "builtin")
-        elif hub and agent in HUB_COMMAND_AGENTS.get(name, set()):
-            add(name, HUB_COMMANDS[name], "hub")
-    if hub:
-        for name, description in HUB_COMMANDS.items():
-            if agent in HUB_COMMAND_AGENTS.get(name, set()):
-                add(name, description, "hub")
+        elif agent is AgentKind.OLLAMA and name in LOCAL_COMMANDS:
+            add(name, LOCAL_COMMANDS[name][1], "hub")
     for skill in native or []:
         name = str(skill.get("name") or "")
         if agent is AgentKind.CLAUDE and name.startswith(f"{CLAUDE_PLUGIN}:"):

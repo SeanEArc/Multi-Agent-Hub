@@ -53,7 +53,6 @@ def test_route_follows_claudes_own_list() -> None:
     assert action("/__internal") is None and action("/hub:greet") is None  # internals and the hub's own plugin
     assert action("/greet") is None and action("fix /compact") is None  # a library skill, plain text
     assert action("/code-review", None) == ("agent", False)  # nothing recorded yet: the commands every agent has
-    assert route(AgentKind.OLLAMA, "/compact", CAPABILITIES) is None  # the hub's /compact for now
 
 
 def test_claude_compacts_its_own_conversation(client: TestClient, tmp_path: Path) -> None:
@@ -265,3 +264,135 @@ def test_app_server_never_asks_for_the_account(tmp_path: Path) -> None:
             return await server.request("account/rateLimits/read")
 
     assert asyncio.run(run())["rateLimits"]["planType"] == "plus"
+
+
+# --- The local model (the hub's own commands) -----------------------------------------------------
+
+
+def local_session(client: TestClient, path: Path, **extra) -> str:
+    """A local-model session that has had one turn, so it has a saved conversation."""
+    session_id = create(client, path, "ollama:ok", agent="ollama", **extra)
+    send(client, session_id, "build the thing")
+    return session_id
+
+
+def saved_conversation(path: Path, session: dict) -> list[dict]:
+    file = path / "local-history" / f"{session['native_session_id']}.json"
+    return json.loads(file.read_text(encoding="utf-8"))["messages"]
+
+
+def test_local_routes() -> None:
+    def action(text: str):
+        r = route(AgentKind.OLLAMA, text)
+        return r and (r.action, r.adapter, r.local, r.review, r.rest)
+
+    assert action("/compact the parser") == ("agent", True, False, False, "the parser")
+    assert action("/context") == ("agent", True, True, False, "")
+    assert action("/usage") == ("agent", True, True, False, "")
+    assert action("/code-review the tests") == ("agent", False, False, True, "the tests")
+    assert action("/clear") is None and action("/greet") is None  # not offered; a library skill
+
+
+def test_local_compact_replaces_the_saved_conversation(client: TestClient, tmp_path: Path) -> None:
+    session_id = local_session(client, tmp_path)
+    session = send(client, session_id, "/compact the parser")
+    assert session["status"] == "completed" and len(session["stints"]) == 1  # no handoff any more
+    [notice] = notices(client, session_id)
+    assert notice["reason"] == "compacted" and notice["by"] == "model"
+    assert notice["message"].startswith("Conversation compacted · ") and notice["post_tokens"] > 0
+    # The fake echoes the request: the transcript of the conversation and the focus text.
+    assert notice["summary"].startswith("Echo: ### User\nbuild the thing") and "the parser" in notice["summary"]
+    [compacted] = saved_conversation(tmp_path, session)
+    assert compacted["role"] == "user" and compacted["content"].startswith("# Compacted conversation")
+    assert compacted["content"].endswith("## Keep in focus\n\nthe parser")
+
+    send(client, session_id, "what next?")
+    assert last_message(client, session_id) == "Echo: what next? (3 messages)"  # system, summary, the new message
+
+
+def test_local_compact_falls_back_to_the_hubs_brief(tmp_path: Path) -> None:
+    from app.adapters.ollama import OllamaAdapter, save_history
+
+    import fake_ollama
+
+    conversation = "6f1c1d1e-0000-4000-8000-000000000001"
+    history = tmp_path / "history"
+    save_history(history / f"{conversation}.json", "m", [{"role": "user", "content": "task"},
+                                                          {"role": "assistant", "content": "done"}])
+
+    def adapter(fallback):
+        a = OllamaAdapter(tmp_path, "m", conversation, history_dir=history,
+                          transport=fake_ollama.FakeOllama("error").transport)
+        a.compact_fallback = fallback
+        return a
+
+    async def run(a):
+        return [e async for e in a.run_command("/compact")]
+
+    [error] = asyncio.run(run(adapter(None)))
+    assert error.type is EventType.ERROR and "wasn't compacted" in error.data["message"]
+
+    async def brief() -> str:
+        return "# Compacted conversation\n\nthe hub's brief"
+
+    events = asyncio.run(run(adapter(brief)))
+    notice = next(e for e in events if e.type is EventType.NOTICE)
+    assert notice.data["by"] == "hub" and "the hub's summary was used" in notice.data["message"]
+    assert events[-1].type is EventType.COMPLETED
+    saved = json.loads((history / f"{conversation}.json").read_text(encoding="utf-8"))["messages"]
+    assert saved == [{"role": "user", "content": "# Compacted conversation\n\nthe hub's brief"}]
+
+
+def test_local_compact_brief_comes_from_the_session(client: TestClient, tmp_path: Path) -> None:
+    session_id = local_session(client, tmp_path)
+    brief = asyncio.run(client.app.state.orchestrator._compact_brief(session_id, "the parser"))
+    assert brief.startswith("# Compacted conversation") and "build the thing" in brief
+    assert "## Keep in focus\n\nthe parser" in brief
+
+
+def test_local_context_and_usage(client: TestClient, tmp_path: Path) -> None:
+    fresh = create(client, tmp_path, "ollama:ok", agent="ollama")
+    session = send(client, fresh, "/context")
+    assert "## Local model context" in last_message(client, fresh) and "Conversation (0 messages)" in last_message(
+        client, fresh)
+    assert session["native_session_id"] is None  # nothing was started
+
+    (tmp_path / "second").mkdir()
+    session_id = local_session(client, tmp_path / "second")
+    send(client, session_id, "/context")
+    context = last_message(client, session_id)
+    assert "of 32.8k tokens" in context and "| Tool definitions |" in context and "Conversation (2 messages)" in context
+    send(client, session_id, "/usage")
+    assert "no usage limits" in last_message(client, session_id)
+    assert len(saved_conversation(tmp_path / "second", client.get(f"/api/sessions/{session_id}").json())) == 2
+
+
+def test_local_code_review_sends_the_diff(client: TestClient, repo: Path) -> None:  # noqa: F811
+    (repo / ".git" / "info" / "exclude").write_text("local-history/\n")  # where the test factory saves conversations
+    session_id = local_session(client, repo, use_worktree=False)
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "/code-review"})
+    assert notices(client, session_id)[-1]["message"] == "No changes to review: the working tree is clean."
+
+    (repo / "README.md").write_text("hello\nworld\n")
+    (repo / "new.py").write_text("x = 1\n")
+    send(client, session_id, "/code-review the readme")
+    request = last_message(client, session_id)
+    assert request.startswith("Echo: Review the code changes below for bugs.") and "Focus on: the readme" in request
+    assert "+world" in request and "New files, not in the diff (read them): new.py" in request
+    assert [e["payload"]["text"] for e in events_of(client, session_id) if e["type"] == "user_message"][-1] == (
+        "/code-review the readme")  # the transcript keeps what was typed
+
+
+def test_local_code_review_outside_git(client: TestClient, tmp_path: Path) -> None:
+    session_id = local_session(client, tmp_path)
+    client.post(f"/api/sessions/{session_id}/messages", json={"text": "/code-review"})
+    assert "isn't a git repository" in notices(client, session_id)[-1]["message"]
+
+
+def test_local_menu_lists_its_commands(client: TestClient, tmp_path: Path) -> None:
+    session_id = local_session(client, tmp_path)
+    body = client.get("/api/skills/commands", params={"agent": "ollama", "session_id": session_id}).json()
+    assert [(c["name"], c["kind"]) for c in body["commands"]][:4] == [
+        ("compact", "hub"), ("context", "hub"), ("usage", "hub"), ("code-review", "hub")]
+    fresh = client.get("/api/skills/commands", params={"agent": "ollama"}).json()
+    assert [c["name"] for c in fresh["commands"]] == ["context", "usage", "code-review"]
