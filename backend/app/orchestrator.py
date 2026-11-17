@@ -49,7 +49,8 @@ from app.models import (
     stint_model,
     utcnow,
 )
-from app.skills import SkillLibrary, cached_codex_names, expand_command, hub_command, record_capabilities
+from app.commands import Route, hub_command, route
+from app.skills import SkillLibrary, cached_codex_names, expand_command, load_capabilities, record_capabilities
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
 log = logging.getLogger(__name__)
@@ -208,24 +209,34 @@ class Orchestrator:
             self._set_status(session_id, SessionStatus.FAILED)
 
     async def send(self, session_id: str, text: str) -> None:
-        """Start the task, or reply to it if it already started. Returns once the turn is running."""
+        """Start the task, or reply to it if it already started. Returns once the turn is running.
+
+        A message starting with `/name` may be one of the agent's own commands (`app.commands.route`), one of the
+        hub's (`hub_command`), or a skill (`expand_command`); anything else is sent as typed.
+        """
         if self.is_running(session_id):
             raise SessionBusy("A turn is already running for this session")
-        command = hub_command(text)
-        if command is not None:
-            await self._run_hub_command(session_id, *command)
-            return
-
         with Session(self._engine) as db:
             agent_session = db.get(AgentSession, session_id)
             if agent_session is None:
                 raise SessionNotFound(session_id)
             stint = current_stint(db, session_id)
+            command = route(stint.agent, text, load_capabilities(db, stint.agent))
+            hub = hub_command(stint.agent, text) if command is None else None
             limit_known = _limit_already_reached(db, stint)
-            if not limit_known:
+            if not limit_known and hub is None and (command is None or command.action == "agent"):
                 adapter = self._adapters.get(session_id) or self._adapter_factory(
                     agent_session, stint, session_workdir(db, agent_session)
                 )
+        if hub is not None:
+            await self._run_hub_command(session_id, *hub)
+            return
+        if command is not None and command.action == "notice":
+            self._notice(session_id, stint, command.message, "command")
+            return
+        if command is not None and command.compact and not limit_known and adapter.native_session_id is None:
+            self._notice(session_id, stint, "Nothing to compact yet: the conversation hasn't started.", "command")
+            return
 
         self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": text}))
         if limit_known:
@@ -237,14 +248,34 @@ class Orchestrator:
             return
 
         self._adapters[session_id] = adapter
-        # A message starting with /name may name a skill; the agent gets it in a form it can run.
-        prompt = expand_command(stint.agent, text, self.skills, cached_codex_names())
-        if adapter.native_session_id is None:
-            # An agent that waited after a handoff (or whose first turn never started) gets its brief first.
-            events = adapter.start_task(with_brief(stint.brief, prompt) if stint.brief else prompt)
+        if command is not None:
+            events = self._command_events(adapter, stint, command, text)
         else:
-            events = adapter.send_reply(prompt)
+            # A message starting with /name may name a skill; the agent gets it in a form it can run.
+            prompt = expand_command(stint.agent, text, self.skills, cached_codex_names())
+            if adapter.native_session_id is None:
+                # An agent that waited after a handoff (or whose first turn never started) gets its brief first.
+                events = adapter.start_task(with_brief(stint.brief, prompt) if stint.brief else prompt)
+            else:
+                events = adapter.send_reply(prompt)
         self._start_turn(session_id, stint, adapter, events)
+
+    @staticmethod
+    def _command_events(adapter: AgentAdapter, stint: Stint, command: Route, text: str
+                        ) -> AsyncGenerator[AgentEvent]:
+        """One of the agent's own commands, sent as typed: it must start the prompt, so it never goes behind a
+        brief. Before the conversation starts, a command with no model request runs as a one-off, and any other
+        gets the waiting brief after it, as its arguments (they stay in the conversation)."""
+        if adapter.native_session_id is not None:
+            return adapter.send_reply(text)
+        if command.local:
+            return adapter.run_command(text)
+        if stint.brief:
+            return adapter.start_task(f"{text}\n\n{stint.brief}")
+        return adapter.start_task(text)
+
+    def _notice(self, session_id: str, stint: Stint, message: str, reason: str) -> None:
+        self._save_event(session_id, stint, AgentEvent(EventType.NOTICE, {"message": message, "reason": reason}))
 
     async def _run_hub_command(self, session_id: str, name: str, rest: str) -> None:
         """`/compact`: the same agent, model and effort start a fresh native conversation from the hub's brief,
@@ -257,9 +288,7 @@ class Orchestrator:
                 SessionEvent.session_id == session_id, SessionEvent.type == EventType.USER_MESSAGE,
             ).limit(1)).first() is not None
         if not started:
-            self._save_event(session_id, stint, AgentEvent(EventType.NOTICE, {
-                "message": f"Nothing to {name} yet: the conversation hasn't started.", "reason": "hub_command",
-            }))
+            self._notice(session_id, stint, f"Nothing to {name} yet: the conversation hasn't started.", "hub_command")
             return
         target = ChainEntry(agent=stint.agent, model=stint.model, effort=stint.effort)
         await self._handoff(session_id, target, StintReason.MANUAL, rest or None, brief=name == "compact",

@@ -170,6 +170,29 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
           </div>
         );
       case "notice":
+        // The agent compacted its own conversation (/compact, or Claude on its own when the context filled).
+        if (p.reason === "compacted") {
+          const tokens =
+            typeof p.pre_tokens === "number" && typeof p.post_tokens === "number"
+              ? ` · ${formatTokens(p.pre_tokens)} → ${formatTokens(p.post_tokens)} tokens`
+              : "";
+          return (
+            <div key={event.id} className={`row handoff compacted ${agentClass(event.agent)}`}>
+              <div className="handoff-line">
+                <span>
+                  {p.trigger === "auto" ? (
+                    <>
+                      <AgentName agent={event.agent} /> compacted the conversation on its own
+                    </>
+                  ) : (
+                    "Conversation compacted"
+                  )}
+                  <span className="muted">{tokens}</span>
+                </span>
+              </div>
+            </div>
+          );
+        }
         // A note from the hub, such as the local model's conversation being shortened to fit its context.
         return (
           <div key={event.id} className="row notice warning">
@@ -198,11 +221,19 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
       {(status === "working" || status === "handing_off") && (
         <div className="row working">
           <span className="spinner" aria-hidden="true" />{" "}
-          {status === "handing_off" ? "Writing the handoff brief…" : "Working…"}
+          {status === "handing_off" ? "Writing the handoff brief…" : compacting(events) ? "Compacting…" : "Working…"}
         </div>
       )}
     </div>
   );
+}
+
+/** Whether the running turn is a /compact: the last message the user sent starts with it. */
+function compacting(events: SessionEvent[]): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === "user_message") return /^\/compact(\s|$)/.test(String(events[i].payload.text ?? "").trim());
+  }
+  return false;
 }
 
 /** The id of a transcript row that starts a turn, so the history can scroll to it. */

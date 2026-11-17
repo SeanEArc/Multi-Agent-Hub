@@ -4,6 +4,17 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION 4: Agent commands (Claude part)
+
+- [ ] **Claude's own /compact.** In a Claude chat with a few turns, type `/compact keep the tests`.
+  - Expect: "Compacting…" while it runs, then a dashed "Conversation compacted · N → M tokens" row; no new agent divider and no brief. Ask about something from before: Claude still knows it.
+  - Why: the automated live test used a two-line conversation; this checks a real one and the UI.
+- [ ] **Claude's reports and the menu.** Type `/` in a Claude chat: compact, context, usage and code-review come first, then your skills and Claude's other commands; no clear, model or doctor. Send `/context` and `/usage`.
+  - Expect: each answers with Claude's report as a message, quickly (no model request). `/clear` and `/model` answer with a note and send nothing.
+  - Why: the menu now comes from Claude's own list instead of a fixed one.
+- [ ] **A command right after switching.** Switch a Codex chat to Claude with the model picker, then send `/code-review` as the first message.
+  - Expect: Claude runs its review and knows what the chat was about (the brief goes after the command).
+
 ## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
 
 - [x] **First CI run.** Done 2026-11-13: PR #2 was merged into `main` (not `staging`), and CI on `main` passed all three checks (backend tests in 74 s; Python 3.14 resolved on the runner). `staging` was then fast-forwarded to `main`.

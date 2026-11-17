@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.db import get_session
 from app.models import AgentKind, AgentSession
 from app.orchestrator import AgentUnavailable, session_workdir
+from app.commands import menu
 from app.skills import (
     SkillError,
     SkillLibrary,
@@ -27,7 +28,6 @@ from app.skills import (
     find_skill_folders,
     is_git_url,
     load_capabilities,
-    menu,
     probe_claude,
     read_skill,
     record_capabilities,
@@ -254,7 +254,7 @@ async def commands(
     path: str | None = None,
     refresh: Annotated[bool, Query()] = False,
 ) -> dict[str, Any]:
-    """The `/` menu for `agent`: its own skills and checked built-ins, library skills on for it, hub commands.
+    """The `/` menu for `agent`: its own commands and skills, library skills on for it, the hub's commands.
 
     Claude's list comes from its last turn's `init` event (or, with none yet or `refresh`, from a run of
     `/context`, which makes no model request). Codex's comes from its app server, for the session's folder.
@@ -263,6 +263,7 @@ async def commands(
     cwd = _cwd(db, session_id, path)
     native: list[dict[str, Any]] | None = None
     mcp: list[dict[str, Any]] = []
+    capabilities: dict[str, Any] | None = None
     if agent is AgentKind.CLAUDE:
         capabilities = load_capabilities(db, AgentKind.CLAUDE)
         if (capabilities is None or refresh) and request.app.state.discover_native:
@@ -274,7 +275,7 @@ async def commands(
         mcp = list((capabilities or {}).get("mcp_servers") or [])
     elif agent is AgentKind.CODEX:
         native = await _codex_list(request, cwd)
-    commands = menu(agent, library, native, hub=session_id is not None)
+    commands = menu(agent, library, native, hub=session_id is not None, capabilities=capabilities)
     return {"agent": agent.value, "commands": [c.to_json() for c in commands],
             "mcp_servers": mcp, "native_known": native is not None or agent is AgentKind.OLLAMA}
 

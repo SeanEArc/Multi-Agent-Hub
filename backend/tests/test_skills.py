@@ -11,7 +11,8 @@ from app.adapters.claude import ClaudeAdapter
 from app.adapters.codex import CodexAdapter
 from app.adapters.local_tools import LocalTools, ToolError
 from app.models import AgentKind
-from app.skills import SkillError, SkillLibrary, expand_command, menu, read_skill
+from app.commands import menu
+from app.skills import SkillError, SkillLibrary, expand_command, read_skill
 
 from conftest import FAKE_CLAUDE, FAKE_CODEX
 from test_handoff import events_of, prompts_sent
@@ -136,10 +137,12 @@ def test_expand_command_per_agent(tmp_path: Path) -> None:
 def test_menu_lists_only_what_the_agent_can_use(tmp_path: Path) -> None:
     lib = library(tmp_path)
     lib.link(make_skill(tmp_path / "mine" / "greet"), {"claude": True, "codex": True})
-    claude = menu(AgentKind.CLAUDE, lib, [{"name": "review", "description": "Reviews"}, {"name": "hub:greet"},
-                                          {"name": "compact"}])
-    assert [(c.name, c.kind) for c in claude] == [("compact", "hub"), ("review", "skill"),
-                                                  ("greet", "library"), ("context", "builtin"), ("usage", "builtin")]
+    claude = menu(AgentKind.CLAUDE, lib, [{"name": "review", "description": "Reviews"}, {"name": "hub:greet"}])
+    # Before Claude reported its commands: the four every agent has.
+    assert [(c.name, c.kind) for c in claude] == [("compact", "builtin"), ("context", "builtin"), ("usage", "builtin"),
+                                                  ("code-review", "builtin"), ("review", "skill"), ("greet", "library")]
+    codex = menu(AgentKind.CODEX, lib, [])
+    assert [(c.name, c.kind) for c in codex] == [("compact", "hub"), ("greet", "library")]
     local = menu(AgentKind.OLLAMA, lib, None, hub=False)
     assert local == []  # the skill is off for the local model, and it has no skills of its own
 
@@ -290,12 +293,14 @@ def test_claude_turns_teach_the_menu_its_skills(client: TestClient, tmp_path: Pa
     assert "capabilities" not in started["payload"]
 
     body = client.get("/api/skills/commands", params={"agent": "claude", "session_id": session_id}).json()
-    assert [(c["name"], c["kind"]) for c in body["commands"]][1:3] == [("fake-skill", "skill"), ("greet", "library")]
+    listed = [(c["name"], c["kind"]) for c in body["commands"]]
+    assert listed[4:6] == [("fake-skill", "skill"), ("greet", "library")]
     assert body["mcp_servers"] == [{"name": "fake-mcp", "status": "connected"}]
 
 
 def test_compact_starts_the_same_agent_from_the_brief(client: TestClient, tmp_path: Path) -> None:
-    session_id = create(client, tmp_path, "ok")
+    """The hub's own /compact, for the agents with no documented one wired in yet (Codex for now)."""
+    session_id = create(client, tmp_path, "ok", agent="codex")
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "/compact"})
     [notice] = [e for e in events_of(client, session_id) if e["type"] == "notice"]
     assert "Nothing to compact" in notice["payload"]["message"]  # nothing started yet
@@ -305,7 +310,7 @@ def test_compact_starts_the_same_agent_from_the_brief(client: TestClient, tmp_pa
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "/compact the parser"})
     session = client.get(f"/api/sessions/{session_id}").json()
     assert session["status"] == "ready" and len(session["stints"]) == 2
-    assert session["agent"] == "claude"
+    assert session["agent"] == "codex"
     handoff = [e for e in events_of(client, session_id) if e["type"] == "handoff"][-1]
     assert handoff["payload"]["command"] == "compact" and handoff["payload"]["brief"] is True
     brief = client.get(f"/api/sessions/{session_id}/stints/{session['stints'][-1]['id']}").json()["brief"]
@@ -314,10 +319,11 @@ def test_compact_starts_the_same_agent_from_the_brief(client: TestClient, tmp_pa
 
     client.post(f"/api/sessions/{session_id}/messages", json={"text": "next step"})
     wait_until_idle(client, session_id)
-    first = prompts_sent(client, session_id, "claude")[-1]
+    first = prompts_sent(client, session_id, "codex")[-1]
     assert first.startswith("# Compacted conversation") and first.endswith("next step")
 
     assert not any(e["type"] == "user_message" and e["payload"]["text"].startswith("/")
                    for e in events_of(client, session_id))  # commands aren't saved as messages
-    body = client.get("/api/skills/commands", params={"agent": "claude"}).json()
-    assert "compact" not in [c["name"] for c in body["commands"]]  # a new chat has nothing to compact
+    for agent in ("claude", "codex"):
+        body = client.get("/api/skills/commands", params={"agent": agent}).json()
+        assert "compact" not in [c["name"] for c in body["commands"]]  # a new chat has nothing to compact
