@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AGENT_NAMES, EFFORT_NAMES, api, type AgentKind, type AgentSession, type Effort } from "../api";
+import { AGENT_NAMES, api, effortName, type AgentKind, type AgentSession, type Effort } from "../api";
 import { AgentLogo } from "./AgentLogo";
 import { localProblem, orderedModels, useLocalModels, useModelCatalog } from "./ModelSelect";
 
@@ -71,7 +71,7 @@ export function SwitchAgentDialog({ session, agent, model, effort, onDone, onClo
         <div className="switch-target">
           <AgentLogo agent={agent} />
           <span>{modelLabel}</span>
-          {effort && agent !== "ollama" && <span className="model-button-effort">{EFFORT_NAMES[effort]}</span>}
+          {effort && agent !== "ollama" && <span className="model-button-effort">{effortName(agent, effort)}</span>}
         </div>
         <p className="muted small">What should {name} know about the conversation so far?</p>
         <ul className="muted small switch-options">

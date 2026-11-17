@@ -1611,3 +1611,25 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 **For the agent**
 - [ ] Uncommitted on local `staging`: `docs/TODO.md` (revision 6 items ticked), `RELEASING.md` (Advanced Security), `docs/plan.md` and this recap. The user chose to hold them; they go in with the next feature branch. A local `test/dependabot-check` branch can be deleted.
 - [ ] Next build: the session-44 review leftovers and the flaky handoff test (small PR through `staging`), then revision 4; revision 7 needs research first.
+
+---
+
+2026-11-16 14:09 (UTC-06:00)
+
+# Session 49: promote retry; flaky handoff tests fixed (shared test DB connection); Codex efforts are Light, Medium, High, Extra high.
+
+## What was done
+1. **Promotion collision:** PR #10's promotion was refused (`GH013`, "Required status check ... is in progress") because the user's PR #11 (`staging` into `main`) had started a second CI run on the same commit; merging #11 also left a merge commit only on `main`. PR #12 (`fix/promote-retry`) made `promote` retry every 30 s for up to 10 minutes while a required check is in progress or expected (re-checking `staging` and `main` each time, failing at once on other refusals), brought `main`'s commit back into `staging`, and added "never open a PR from `staging` into `main`" to `RELEASING.md`. Promotion then moved `main` to `f365df8`. PR #12's first CI run hit the flaky test; a re-run passed.
+2. **Flaky handoff tests, root cause:** `wait_until_idle` now prints the status, stints and event trail on timeout. A 16-worker stress run showed a session stuck at `working` 15 s after its `completed` event (not slow: 200 concurrent fake-CLI runs all exited within 2 s). The test engine was one in-memory SQLite connection (`StaticPool`) shared by the orchestrator's thread and FastAPI's request threads; a request session closing between the orchestrator's status `UPDATE` and its commit rolled the shared connection back, losing the final status. Reproduced deterministically with two threads (in-memory: `working`; file database: `completed`). The app uses a file database with a connection per thread, so it was never affected. Fix: the `engine` fixture is a temp database file per test. Stress: 4 failures in 240 runs before, 0 in 240 after; full suite 269 passed, 6 skipped, and faster (34 s instead of about 55 s).
+3. **Codex efforts** (user: "light, medium, high, and extra high"): `CODEX_EFFORTS` (low, medium, high, xhigh) in `models.py` and `api.ts`; `read_codex_efforts` and the built-in Codex list offer only those (Codex's cache also lists max and ultra); `agent_effort` turns max into xhigh for Codex when a session starts, on a switch, on a handoff and on `PATCH`; the UI calls Codex's low **Light** (`effortName`, `effortsFor`), including the Settings default-effort list. This also settles session 44's leftover (a): a default effort Codex can't take. New test `test_codex_never_gets_max`; a manual check added to `docs/TODO.md` (revision 2).
+4. **Session 44 leftovers (b) and (c)** (retry after a failed first send in a new chat; Codex cache read twice and `CODEX_HOME` found in three places): logged in `docs/TODO.md` for the user to look into first; no changes.
+
+## Next steps
+
+**For the user**
+- [ ] Merge this branch (`fix/handoff-flake-codex-effort`) into `staging` through a PR.
+- [ ] Try the new Codex efforts check in `docs/TODO.md` (revision 2 section).
+- [ ] Look into the two session 44 leftovers in `docs/TODO.md`.
+
+**For the agent**
+- [ ] Then revision 4; revision 7 needs research first.

@@ -31,7 +31,10 @@ def wait_until_idle(client: TestClient, session_id: str, timeout: float = 15) ->
         if body["status"] not in ("working", "handing_off"):
             return body
         time.sleep(0.05)
-    raise AssertionError("session still working")
+    events = client.get(f"/api/sessions/{session_id}/events").json()
+    trail = "\n".join(f"  {e['created_at']} {e['agent']} {e['type']}" for e in events)
+    stints = [(s["agent"], s["reason"], s["ended_at"]) for s in body["stints"]]
+    raise AssertionError(f"session still {body['status']} after {timeout} s; stints {stints}; events:\n{trail}")
 
 
 def event_types(client: TestClient, session_id: str) -> list[str]:

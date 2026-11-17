@@ -21,6 +21,13 @@ workflow uses that section as the release notes and refuses a tag without one. S
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.
+- Codex offers four reasoning efforts, as in Codex itself: Light, Medium, High and Extra high. A Max
+  effort (from Settings' default or a switch) reaches Codex as Extra high.
+
+### Fixed
+- Handoff tests that sometimes failed with "session still working": the tests shared one database
+  connection between threads, so a status update could be lost. Tests now use a database file each, as the
+  app does; the app itself wasn't affected.
 
 ## [0.1.0] - 2026-11-12
 

@@ -1,6 +1,6 @@
 // The pickers on the composer's bottom row: the model (by Send), folder, and auto handoff.
 import { useEffect, useRef, useState } from "react";
-import { AGENT_NAMES, EFFORTS, EFFORT_NAMES, type AgentKind, type CatalogAgent, type Effort, type LocalModels } from "../api";
+import { AGENT_NAMES, effortName, effortsFor, type AgentKind, type CatalogAgent, type Effort, type LocalModels } from "../api";
 import { agentClass } from "./AgentBadge";
 import { AgentLogo } from "./AgentLogo";
 import { folderName } from "./Dashboard";
@@ -99,7 +99,7 @@ export function ModelPicker({ agent, model, effort, onChange, local, disabled, t
       note: m.note,
     }));
     if (keep && !listed.some((m) => m.id === keep)) {
-      listed.unshift({ id: keep, label: keep, efforts: [...EFFORTS], custom: true });
+      listed.unshift({ id: keep, label: keep, efforts: effortsFor(of), custom: true });
     }
     return listed;
   }
@@ -125,7 +125,7 @@ export function ModelPicker({ agent, model, effort, onChange, local, disabled, t
   const targetEfforts: Effort[] =
     !target || target.agent === "ollama"
       ? []
-      : (targetChoice?.efforts ?? (target.model === null ? [...EFFORTS] : []));
+      : (targetChoice?.efforts ?? (target.model === null ? effortsFor(target.agent) : []));
   // The effort marked in the third column: the current one, if the shown model takes it.
   const markedEffort = effort && targetEfforts.includes(effort) ? effort : null;
 
@@ -141,7 +141,7 @@ export function ModelPicker({ agent, model, effort, onChange, local, disabled, t
   }
 
   const shown = label();
-  const shownEffort = effort ? EFFORT_NAMES[effort] : null;
+  const shownEffort = effort ? effortName(agent, effort) : null;
   const keep = pending?.agent === provider ? pending.model : provider === agent ? model : null;
   const models = choices(provider, keep);
   const selectedId = target && target.agent === provider ? target.model : null;
@@ -242,7 +242,7 @@ export function ModelPicker({ agent, model, effort, onChange, local, disabled, t
                     className={`model-menu-item${markedEffort === e ? " selected" : ""}`}
                     onClick={() => apply(target.agent, target.model, e)}
                   >
-                    {EFFORT_NAMES[e]}
+                    {effortName(target.agent, e)}
                   </button>
                 ))}
               </>

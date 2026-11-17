@@ -22,7 +22,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from app.models import EFFORTS, AgentKind, Setting, utcnow
+from app.models import CODEX_EFFORTS, EFFORTS, AgentKind, Setting, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def read_codex_models(codex_home: Path) -> list[tuple[str, str]] | None:
 def read_codex_efforts(codex_home: Path) -> dict[str, tuple[list[str], str | None]]:
     """Each listed Codex model's reasoning efforts (only those the hub offers, lowest first) and its default.
 
-    Levels beyond max (such as "ultra", which also delegates on its own) are left out.
+    The hub offers Codex low (shown as Light), medium, high and xhigh; max and ultra are left out.
     """
     efforts: dict[str, tuple[list[str], str | None]] = {}
     for m in _codex_entries(codex_home) or []:
@@ -127,7 +127,9 @@ def read_codex_efforts(codex_home: Path) -> dict[str, tuple[list[str], str | Non
         if not listed:
             continue
         default = m.get("default_reasoning_level")
-        efforts[str(m["slug"])] = ([e for e in EFFORTS if e in listed], default if default in EFFORTS else None)
+        efforts[str(m["slug"])] = (
+            [e for e in CODEX_EFFORTS if e in listed], default if default in CODEX_EFFORTS else None
+        )
     return efforts
 
 
@@ -187,9 +189,10 @@ def catalog(db: Session, codex_home: Path) -> ModelCatalog:
             option = ModelOption(id=model, label=label, group=group, **{
                 k: (known.get(model) or {}).get(k) for k in ("available", "note", "checked_at")
             })
-            # Claude Code takes every level for any model; Codex lists them per model in its cache.
-            if agent is AgentKind.CODEX and model in codex_efforts:
-                option.efforts, option.default_effort = codex_efforts[model]
+            # Claude Code takes every level for any model; Codex lists them per model in its cache, and
+            # without a cache entry gets the four the hub offers it.
+            if agent is AgentKind.CODEX:
+                option.efforts, option.default_effort = codex_efforts.get(model, (list(CODEX_EFFORTS), None))
             result.append(option)
         return result
 

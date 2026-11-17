@@ -30,6 +30,7 @@ from app.models import (
     Worktree,
     WorktreeRemove,
     WorktreeStatus,
+    agent_effort,
     current_stint,
     latest_summary,
     session_read,
@@ -134,8 +135,8 @@ def update_session(session_id: str, body: SessionUpdate, db: DbSession, orchestr
         agent_session.chain = [entry.to_json() for entry in body.chain] if body.chain else None
     if "effort" in changes:
         stint = current_stint(db, session_id)
-        # The local model has no effort setting.
-        stint.effort = None if stint.agent == AgentKind.OLLAMA else body.effort
+        # The local model has no effort setting, and Codex stops at xhigh.
+        stint.effort = agent_effort(stint.agent, body.effort)
         db.add(stint)
         orchestrator.set_effort(session_id, stint.effort)
     db.add(agent_session)

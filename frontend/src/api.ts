@@ -89,6 +89,18 @@ export const EFFORT_NAMES: Record<Effort, string> = {
   xhigh: "Extra high",
   max: "Max",
 };
+/** Codex offers four levels and calls the lowest one Light. */
+export const CODEX_EFFORTS: Effort[] = ["low", "medium", "high", "xhigh"];
+
+/** The levels an agent's pickers offer when the model list doesn't say. */
+export function effortsFor(agent: string): Effort[] {
+  return agent === "codex" ? [...CODEX_EFFORTS] : [...EFFORTS];
+}
+
+/** An effort's name as the agent's own app shows it. */
+export function effortName(agent: string, effort: Effort): string {
+  return agent === "codex" && effort === "low" ? "Light" : EFFORT_NAMES[effort];
+}
 
 export type CatalogAgent = "claude" | "codex";
 
