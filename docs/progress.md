@@ -1609,8 +1609,8 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [ ] **Reminder:** the revision 2, session-flow and revision 3 checks in `docs/TODO.md`.
 
 **For the agent**
-- [ ] Uncommitted on local `staging`: `docs/TODO.md` (revision 6 items ticked), `RELEASING.md` (Advanced Security), `docs/plan.md` and this recap. The user chose to hold them; they go in with the next feature branch. A local `test/dependabot-check` branch can be deleted.
-- [ ] Next build: the session-44 review leftovers and the flaky handoff test (small PR through `staging`), then revision 4; revision 7 needs research first.
+- [x] Uncommitted on local `staging`: `docs/TODO.md` (revision 6 items ticked), `RELEASING.md` (Advanced Security), `docs/plan.md` and this recap. Went in with `d79249d` ("Mark revision 6 done"). The local `test/dependabot-check` branch still exists and can be deleted.
+- [ ] Next build: the session-44 review leftovers and the flaky handoff test (small PR through `staging`), then revision 4; revision 7 needs research first. (Flaky test fixed in PR #13; revision 4 started in session 50; the session-44 leftovers are still open in `docs/TODO.md`.)
 
 ---
 
@@ -1627,12 +1627,12 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 ## Next steps
 
 **For the user**
-- [ ] Merge this branch (`fix/handoff-flake-codex-effort`) into `staging` through a PR.
+- [x] Merge this branch (`fix/handoff-flake-codex-effort`) into `staging` through a PR (PR #13).
 - [ ] Try the new Codex efforts check in `docs/TODO.md` (revision 2 section).
 - [ ] Look into the two session 44 leftovers in `docs/TODO.md`.
 
 **For the agent**
-- [ ] Then revision 4; revision 7 needs research first.
+- [x] Then revision 4 (started in session 50); revision 7 needs research first.
 
 ---
 
@@ -1653,9 +1653,9 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [x] Revision 4 (Claude part) checks passed (user, 2026-11-16); completed items removed from `docs/TODO.md`.
 
 **For the agent**
-- [ ] Revision 4, Codex part: an app-server client (`app/adapters/codex_server.py`) for `/compact` (`thread/compact/start`), `/context`, `/usage` (`account/rateLimits/read`, never `account/read`), `/review` and `/code-review` (`review/start`), plus `/status`, `/mcp`, `/diff`, `/init`.
-- [ ] Then the local model's four commands, then attachments (separate PR).
-- [ ] Open the PR into `staging` once the commands half is done (or now, if the user wants the Claude part merged first).
+- [x] Revision 4, Codex part: an app-server client (`app/adapters/codex_server.py`) for `/compact` (`thread/compact/start`), `/context`, `/usage` (`account/rateLimits/read`, never `account/read`), `/review` and `/code-review` (`review/start`), plus `/status`, `/mcp`, `/diff`, `/init` (session 51, PR #15).
+- [x] Then the local model's four commands (session 52), then attachments (separate PR, still to do).
+- [x] Open the PR into `staging` (the Claude part merged first, as PR #14).
 
 ---
 
@@ -1675,7 +1675,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 - [x] Revision 4 (Codex part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
 
 **For the agent**
-- [ ] Revision 4, local model part: `/compact` (the local model summarizes its saved conversation), `/context` (count against `num_ctx`), `/usage` (no limits), `/code-review` (git diff plus review instructions as a turn).
+- [x] Revision 4, local model part: `/compact` (the local model summarizes its saved conversation), `/context` (count against `num_ctx`), `/usage` (no limits), `/code-review` (git diff plus review instructions as a turn) (session 52).
 - [ ] Then attachments (separate PR).
 
 ---
@@ -1696,6 +1696,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 **For the user**
 - [x] Revision 4 (local model part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
+- [ ] Open the PR for `revision/local-commands` into `staging` and merge it (`gh` isn't installed, so it's done on GitHub).
 
 **For the agent**
 - [ ] Revision 4 attachments (separate PR): composer attach, storage, per-agent delivery, video frames, handoff.
