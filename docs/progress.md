@@ -1672,7 +1672,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 ## Next steps
 
 **For the user**
-- [ ] Try the revision 4 (Codex part) checks in `docs/TODO.md`.
+- [x] Revision 4 (Codex part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
 
 **For the agent**
 - [ ] Revision 4, local model part: `/compact` (the local model summarizes its saved conversation), `/context` (count against `num_ctx`), `/usage` (no limits), `/code-review` (git diff plus review instructions as a turn).
