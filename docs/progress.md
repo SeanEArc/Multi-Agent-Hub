@@ -1650,7 +1650,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 ## Next steps
 
 **For the user**
-- [ ] Try the revision 4 (Claude part) checks in `docs/TODO.md`.
+- [x] Revision 4 (Claude part) checks passed (user, 2026-11-16); completed items removed from `docs/TODO.md`.
 
 **For the agent**
 - [ ] Revision 4, Codex part: an app-server client (`app/adapters/codex_server.py`) for `/compact` (`thread/compact/start`), `/context`, `/usage` (`account/rateLimits/read`, never `account/read`), `/review` and `/code-review` (`review/start`), plus `/status`, `/mcp`, `/diff`, `/init`.
