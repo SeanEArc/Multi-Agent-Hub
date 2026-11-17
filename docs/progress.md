@@ -1695,7 +1695,7 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 ## Next steps
 
 **For the user**
-- [ ] Run the revision 4 (local model part) checks in `docs/TODO.md`, then merge the PR into `staging`.
+- [x] Revision 4 (local model part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
 
 **For the agent**
 - [ ] Revision 4 attachments (separate PR): composer attach, storage, per-agent delivery, video frames, handoff.

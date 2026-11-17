@@ -4,15 +4,6 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
-## APPLICATION REVISION 4: Agent commands (local model part, free)
-
-Open a local-model chat (Ollama running) in a git project folder.
-
-- [ ] **`/compact`.** Send a message or two (for example "our project codename is Bluefin; reply with noted"), then send `/compact keep the codename`. The spinner says "Compacting…", then a dashed "Conversation compacted · X → Y tokens" row appears with **View summary** (the model's own summary). Ask "what is our codename?": it answers Bluefin.
-- [ ] **`/context` and `/usage`.** `/context` shows a table (system prompt, tool definitions, conversation, room for the reply) and "About N of 32.8k tokens". Send it again after `/compact`: the conversation part is smaller. `/usage` says the local model has no usage limits. Both also work in a brand-new chat before any message.
-- [ ] **`/code-review`.** With a clean folder, `/code-review` shows "No changes to review". Change a file (add an obvious bug, such as dividing by zero), then send `/code-review`: the model reviews the change and names the bug. `/code-review only the new function` focuses it.
-- [ ] **Menu.** In the local-model chat, `/` lists compact, context, usage and code-review first. In a new local-model chat before the first message, compact isn't listed.
-
 ## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
 
 - [ ] **Database backup.** Next time a migration is added, start the app once: `%LOCALAPPDATA%\MultiAgentHub\data\backups` gets a copy of `hub.db` named after the old revision, and the app works as before.
