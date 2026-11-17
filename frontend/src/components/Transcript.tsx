@@ -180,20 +180,20 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
                 ? ` · ${formatTokens(p.pre_tokens)} → ${formatTokens(p.post_tokens)} tokens`
                 : ` · was ${formatTokens(p.pre_tokens)} tokens`;
           return (
-            <div key={event.id} className={`row handoff compacted ${agentClass(event.agent)}`}>
-              <div className="handoff-line">
-                <span>
-                  {p.trigger === "auto" ? (
-                    <>
-                      <AgentName agent={event.agent} /> compacted the conversation on its own
-                    </>
-                  ) : (
-                    "Conversation compacted"
-                  )}
-                  <span className="muted">{tokens}</span>
-                </span>
-              </div>
-            </div>
+            <CompactedRow key={event.id} event={event}>
+              {p.trigger === "auto" ? (
+                <>
+                  <AgentName agent={event.agent} /> compacted the conversation on its own
+                </>
+              ) : (
+                "Conversation compacted"
+              )}
+              <span className="muted">
+                {tokens}
+                {/* The local model's /compact: the hub's summary when the model couldn't write one. */}
+                {p.by === "hub" ? " · the hub's summary (the local model couldn't write one)" : ""}
+              </span>
+            </CompactedRow>
           );
         }
         // A note from the hub, such as the local model's conversation being shortened to fit its context.
@@ -231,6 +231,29 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
   );
 }
 
+/** A compaction divider, with the summary the conversation continues from when the hub has it (the local model's). */
+function CompactedRow({ event, children }: { event: SessionEvent; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const summary = typeof event.payload.summary === "string" ? event.payload.summary : null;
+  return (
+    <div className={`row handoff compacted ${agentClass(event.agent)}`}>
+      <div className="handoff-line">
+        <span>{children}</span>
+        {summary !== null && (
+          <button className="button subtle" onClick={() => setOpen(!open)} aria-expanded={open}>
+            {open ? "Hide summary" : "View summary"}
+          </button>
+        )}
+      </div>
+      {open && summary !== null && (
+        <div className="handoff-brief">
+          <MarkdownText>{summary}</MarkdownText>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Whether the running turn is a /compact: the last message the user sent starts with it. */
 function compacting(events: SessionEvent[]): boolean {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -254,7 +277,8 @@ function HandoffDivider({ sessionId, event, answered }: { sessionId: string; eve
   const shown = withBrief || messagesOnly;
   const waiting = p.waiting === true && !answered;
   const manual = p.reason === "manual";
-  // The hub's /compact: the same agent starts a fresh conversation from the hub's summary.
+  // The hub's earlier /compact (before revision 4), still in older sessions: the same agent started a fresh
+  // conversation from the hub's summary.
   if (p.command === "compact") {
     return (
       <div id={eventAnchor(event.id)} className={`row handoff ${agentClass(p.to_agent)}`}>

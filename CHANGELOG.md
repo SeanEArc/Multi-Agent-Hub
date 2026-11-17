@@ -25,11 +25,14 @@ workflow uses that section as the release notes and refuses a tag without one. S
   with optional focus text) run through Codex's own app server, so a review's findings stay in Codex's
   conversation and "fix those" works next. `/diff` shows the session's changes and `/init` asks Codex for
   an `AGENTS.md`.
+- Local model commands: `/compact` has the local model summarize its own conversation (the hub's summary if it
+  can't), with **View summary** on the "Conversation compacted" row; `/context` shows how full its context is;
+  `/usage` says it has no limits; `/code-review` asks it to review the session's git changes.
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.
-- `/compact` in a Claude or Codex chat uses the agent's own compaction, so the conversation continues
-  instead of starting fresh from the hub's summary. `/clear`, `/model` and `/rename` answer with where to
+- `/compact` compacts the agent's own conversation (Claude's and Codex's own compaction, the local model's
+  own summary), so the conversation continues instead of starting fresh from the hub's summary. `/clear`, `/model` and `/rename` answer with where to
   find that in the hub.
 - Codex offers four reasoning efforts, as in Codex itself: Light, Medium, High and Extra high. A Max
   effort (from Settings' default or a switch) reaches Codex as Extra high.

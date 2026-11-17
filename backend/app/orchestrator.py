@@ -14,7 +14,8 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +50,7 @@ from app.models import (
     stint_model,
     utcnow,
 )
-from app.commands import Route, hub_command, route
+from app.commands import Route, review_prompt, route
 from app.skills import SkillLibrary, cached_codex_names, expand_command, load_capabilities, record_capabilities
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
@@ -212,8 +213,8 @@ class Orchestrator:
     async def send(self, session_id: str, text: str) -> None:
         """Start the task, or reply to it if it already started. Returns once the turn is running.
 
-        A message starting with `/name` may be one of the agent's own commands (`app.commands.route`), one of the
-        hub's (`hub_command`), or a skill (`expand_command`); anything else is sent as typed.
+        A message starting with `/name` may be one of the agent's commands (`app.commands.route`; the hub's own for
+        the local model) or a skill (`expand_command`); anything else is sent as typed.
         """
         if self.is_running(session_id):
             raise SessionBusy("A turn is already running for this session")
@@ -223,19 +224,15 @@ class Orchestrator:
                 raise SessionNotFound(session_id)
             stint = current_stint(db, session_id)
             command = route(stint.agent, text, load_capabilities(db, stint.agent))
-            hub = hub_command(stint.agent, text) if command is None else None
             # A command answered without a model request still runs once the limit is reached (/usage then).
             limit_known = _limit_already_reached(db, stint) and not (command is not None and command.local)
             worktree = session_worktree(db, session_id)
-            if not limit_known and hub is None and (command is None or command.action == "agent"):
+            if not limit_known and (command is None or command.action == "agent"):
                 adapter = self._adapters.get(session_id) or self._adapter_factory(
                     agent_session, stint, session_workdir(db, agent_session)
                 )
                 if worktree is not None and hasattr(adapter, "review_base"):
                     adapter.review_base = worktree.base_commit
-        if hub is not None:
-            await self._run_hub_command(session_id, *hub)
-            return
         if command is not None and command.action == "notice":
             self._notice(session_id, stint, command.message, "command")
             return
@@ -245,6 +242,14 @@ class Orchestrator:
         if command is not None and command.compact and not limit_known and adapter.native_session_id is None:
             self._notice(session_id, stint, "Nothing to compact yet: the conversation hasn't started.", "command")
             return
+        if command is not None and command.review and not limit_known:
+            prompt, problem = await self._review_request(session_id, command.rest)
+            if prompt is None:
+                self._notice(session_id, stint, problem, "command")
+                return
+            command = replace(command, prompt=prompt)
+        if command is not None and command.compact and hasattr(adapter, "compact_fallback"):
+            adapter.compact_fallback = partial(self._compact_brief, session_id, command.rest)
 
         self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": text}))
         if limit_known:
@@ -318,22 +323,37 @@ class Orchestrator:
     def _notice(self, session_id: str, stint: Stint, message: str, reason: str) -> None:
         self._save_event(session_id, stint, AgentEvent(EventType.NOTICE, {"message": message, "reason": reason}))
 
-    async def _run_hub_command(self, session_id: str, name: str, rest: str) -> None:
-        """`/compact`: the same agent, model and effort start a fresh native conversation from the hub's brief,
-        with `rest` as what to keep in focus, and wait for the user's next message."""
+    async def _review_request(self, session_id: str, rest: str) -> tuple[str | None, str]:
+        """The local model's `/code-review` request with the session's changes (against the worktree's base
+        commit), or `(None, why)` when there is nothing to review."""
         with Session(self._engine) as db:
-            if db.get(AgentSession, session_id) is None:
-                raise SessionNotFound(session_id)
+            agent_session = db.get(AgentSession, session_id)
+            worktree = session_worktree(db, session_id)
+            try:
+                workdir = session_workdir(db, agent_session)
+            except AgentUnavailable as exc:
+                return None, f"Can't review the changes: {exc}"
+        git = await git_state(workdir, worktree.base_commit if worktree else None)
+        if git is None:
+            return None, "This folder isn't a git repository, so there are no changes to review."
+        if not git.status.strip() and not git.diff.strip():
+            return None, "No changes to review: the working tree is clean."
+        since = "the branch's starting point" if worktree else "the last commit"
+        return review_prompt(rest, git, since), ""
+
+    async def _compact_brief(self, session_id: str, focus: str) -> str:
+        """The hub's own summary of the session, for when the local model can't write one for `/compact`."""
+        with Session(self._engine) as db:
+            agent_session = db.get(AgentSession, session_id)
             stint = current_stint(db, session_id)
-            started = db.exec(select(SessionEvent.id).where(
-                SessionEvent.session_id == session_id, SessionEvent.type == EventType.USER_MESSAGE,
-            ).limit(1)).first() is not None
-        if not started:
-            self._notice(session_id, stint, f"Nothing to {name} yet: the conversation hasn't started.", "hub_command")
-            return
-        target = ChainEntry(agent=stint.agent, model=stint.model, effort=stint.effort)
-        await self._handoff(session_id, target, StintReason.MANUAL, rest or None, brief=name == "compact",
-                            wait=True, command=name)
+            events = db.exec(
+                select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(col(SessionEvent.id))
+            ).all()
+            workdir = session_workdir(db, agent_session)
+            worktree = session_worktree(db, session_id)
+        git = await git_state(workdir, base=worktree.base_commit if worktree else None)
+        return build_brief(events, stint.id, stint.agent, stint.agent, StintReason.MANUAL, git, focus or None,
+                           compact=True)
 
     async def handoff(
         self,
@@ -737,14 +757,12 @@ class Orchestrator:
         brief: bool = True,
         wait: bool = False,
         messages: bool = False,
-        command: str | None = None,
     ) -> None:
         """End the current stint, start one for `target` and run its first turn on the brief.
 
         With `wait` no turn starts (the brief goes with the user's next message); without `brief` there is none.
-        `command` is the hub command (`compact`) that asked for it; `/compact`'s note is its focus.
         """
-        if wait and command != "compact":
+        if wait:
             note = None
         target = self._with_default_model(target)
         self._handing_off.add(session_id)
@@ -775,7 +793,7 @@ class Orchestrator:
                 if brief:
                     git = await git_state(workdir, base=worktree.base_commit if worktree else None)
                     stint.brief = build_brief(events, source.id, source.agent, target.agent, reason, git, note,
-                                              wait=wait, compact=command == "compact")
+                                              wait=wait)
                 elif messages:
                     stint.brief = messages_brief(events, target.agent)
                 with Session(self._engine) as db:
@@ -794,7 +812,6 @@ class Orchestrator:
                     "brief": brief,
                     "messages": not brief and stint.brief is not None,
                     "waiting": wait,
-                    **({"command": command} if command else {}),
                 }))
                 if wait:
                     self._set_status(session_id, SessionStatus.READY)

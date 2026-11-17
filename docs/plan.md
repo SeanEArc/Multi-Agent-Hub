@@ -15,7 +15,7 @@ Phases are listed in build order. The numbers are stable labels, not the order: 
 | 5 | APPLICATION REVISION: Session flow (new session opens a chat, pickers under the composer, chaining switches) | Built 2026-11-10 on `revision/session-flow`; in-app checks in `TODO.md` |
 | 5b | APPLICATION REVISION 2: Model picker and reasoning effort | Built and merged 2026-11-11; test pass and in-app checks next |
 | 5c | APPLICATION REVISION 3: Skills, slash commands and tools | Planned 2026-11-12; Built 2026-11-12 on `revision/skills`; in-app checks in `TODO.md` |
-| 5d | APPLICATION REVISION 4: Agent commands (/compact, /context, /usage, /code-review) and attachments | Researched and planned 2026-11-12; ready to build |
+| 5d | APPLICATION REVISION 4: Agent commands (/compact, /context, /usage, /code-review) and attachments | Commands built for all three agents (2026-11-16 to 11-17); attachments next |
 | 5e | APPLICATION REVISION 5: Image generation | Researched and planned 2026-11-12; after revision 4 |
 | 5f | APPLICATION REVISION 6: CI/CD, releases and open-source readiness | Done 2026-11-15: CI/CD and open-source pass merged (PR #8, first automatic promotion), GitHub settings set; trial release optional |
 | 5g | APPLICATION REVISION 7: Terminal-level agent access | Added 2026-11-13; research first |

@@ -4,6 +4,15 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION 4: Agent commands (local model part, free)
+
+Open a local-model chat (Ollama running) in a git project folder.
+
+- [ ] **`/compact`.** Send a message or two (for example "our project codename is Bluefin; reply with noted"), then send `/compact keep the codename`. The spinner says "Compacting…", then a dashed "Conversation compacted · X → Y tokens" row appears with **View summary** (the model's own summary). Ask "what is our codename?": it answers Bluefin.
+- [ ] **`/context` and `/usage`.** `/context` shows a table (system prompt, tool definitions, conversation, room for the reply) and "About N of 32.8k tokens". Send it again after `/compact`: the conversation part is smaller. `/usage` says the local model has no usage limits. Both also work in a brand-new chat before any message.
+- [ ] **`/code-review`.** With a clean folder, `/code-review` shows "No changes to review". Change a file (add an obvious bug, such as dividing by zero), then send `/code-review`: the model reviews the change and names the bug. `/code-review only the new function` focuses it.
+- [ ] **Menu.** In the local-model chat, `/` lists compact, context, usage and code-review first. In a new local-model chat before the first message, compact isn't listed.
+
 ## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
 
 - [ ] **Database backup.** Next time a migration is added, start the app once: `%LOCALAPPDATA%\MultiAgentHub\data\backups` gets a copy of `hub.db` named after the old revision, and the app works as before.
@@ -16,11 +25,10 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 ## APPLICATION REVISION 3: skills, slash commands and tools
 
-- [ ] **Your agents' own `/` menus.** In a Claude chat, type `/`: a list opens with compact, context, usage and code-review, then your Claude skills (analyze-app, review-repo, …) and Claude's other commands. Arrow keys move, Enter or Tab fills in the name, Escape closes. In a Codex chat, `/` lists Codex's own skills (imagegen, pdf, …) and none of Claude's. In a local-model chat it is empty until the library has skills on for Local.
+- [ ] **Your agents' own `/` menus.** In a Claude chat, type `/`: a list opens with compact, context, usage and code-review, then your Claude skills (analyze-app, review-repo, …) and Claude's other commands. Arrow keys move, Enter or Tab fills in the name, Escape closes. In a Codex chat, `/` lists Codex's own skills (imagegen, pdf, …) and none of Claude's. In a local-model chat it lists the hub's commands and the library skills that are on for Local.
 - [ ] **Share a Claude skill with Codex and Local.** Click **Skills** in the sidebar. Under **Share your own skills**, click **Share** next to one of your Claude skills (try ez-understand). The review shows its SKILL.md, any scripts and warnings; leave the switches as suggested and click **Add**. It shows as **Linked**, with Claude marked "(its own)". In a Codex chat, type `/ez-understand what is a git worktree` and send: Codex follows the skill. Do the same in a local-model chat.
 - [ ] **Import from a repository.** In **Skills**, paste a git repository address that holds skills (for example your agentic-skills repo on GitHub) and click **Find skills**. Pick one, add it, and check it shows **From git**. Click **Update**: it says it is up to date (or shows the changes first).
 - [ ] **Switches and removal.** Turn a skill off for Codex: it disappears from Codex's `/` menu (open a new Codex chat to reload the menu). Remove a linked skill: its folder in `~/.claude/skills` is still there.
-- [ ] **The hub's `/compact` (Codex and local model).** In a Codex chat with a few messages, send `/compact keep the test plan`: a "Conversation compacted" row appears with **View brief** (the hub's summary, ending with your focus text). Send a question about the earlier messages: the agent answers from the summary. Try it in a local-model chat too. (Claude now uses its own compaction, checked under revision 4.)
 - [ ] **Used skill rows.** When Claude uses a skill on its own (ask in plain words for something a skill covers), the chat shows a "Used skill" row with its name. Codex reading a SKILL.md shows the same.
 
 ## APPLICATION REVISION 2: model picker and reasoning effort

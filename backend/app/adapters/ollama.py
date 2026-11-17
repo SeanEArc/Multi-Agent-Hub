@@ -30,12 +30,13 @@ import asyncio
 import json
 import os
 import uuid
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import httpx2 as httpx
 
+from app.adapters import local_commands
 from app.adapters.base import AgentAdapter, AgentEvent, EventType
 from app.adapters.local_context import fit, prompt_budget
 from app.adapters.local_tools import (
@@ -242,6 +243,8 @@ class OllamaAdapter(AgentAdapter):
         # The hub library's skills that are on for the local model, listed in its system prompt.
         self.skill_instructions = skill_instructions
         self._transport = transport
+        # Set by the orchestrator before `/compact`: builds the hub's brief, used if the model can't summarize.
+        self.compact_fallback: Callable[[], Awaitable[str]] | None = None
         self._conversation_id = native_session_id
         self._reader: asyncio.Task[None] | None = None
         self._stopping = False
@@ -264,6 +267,11 @@ class OllamaAdapter(AgentAdapter):
 
     def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
         return self._one_off(instructions, prompt)
+
+    def run_command(self, command: str) -> AsyncGenerator[AgentEvent]:
+        """The hub's `/compact`, `/context` and `/usage` for the local model (`app.adapters.local_commands`)."""
+        name, _, rest = command.strip().lstrip("/").partition(" ")
+        return local_commands.run(self, name, rest.strip())
 
     async def stop(self) -> None:
         # The loop checks the flag between steps; a request or a command in progress is ended now.
