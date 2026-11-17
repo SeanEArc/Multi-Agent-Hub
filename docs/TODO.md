@@ -4,6 +4,16 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION 4: Agent commands (Codex part)
+
+- [ ] **Codex's menu and reports.** In a Codex chat with a turn or two, type `/`: compact, context, usage and code-review come first, then review, status, mcp, diff and init (no model or clear). Send `/context`, `/usage`, `/status` and `/mcp`.
+  - Expect: each answers in a few seconds with a short report (context used of the model's window, the 5-hour and weekly windows with reset times, the model/effort/sandbox/folder, your MCP servers). The usage meter updates after `/usage`.
+- [ ] **Codex's own /compact.** Send `/compact`.
+  - Expect: "Compacting…", then a dashed "Conversation compacted · was N tokens" row; no new agent divider. Ask about something from before: Codex still knows it.
+- [ ] **Review, then fix.** In a Codex chat on a git project, make a small mistake in a file yourself (or ask Codex to), then send `/code-review`.
+  - Expect: Shell rows for the commands Codex's reviewer runs, then its findings ([P1], [P2] …). Then send "fix those": Codex fixes what it found (the findings are in its conversation). In a worktree session the review also covers what was committed on the session's branch. `/review only the tests` focuses it.
+- [ ] **/diff and /init.** Send `/diff`: the session's changes as a diff, at once, with no turn. Send `/init` in a project without an `AGENTS.md`: Codex writes one.
+
 ## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
 
 - [ ] **Database backup.** Next time a migration is added, start the app once: `%LOCALAPPDATA%\MultiAgentHub\data\backups` gets a copy of `hub.db` named after the old revision, and the app works as before.

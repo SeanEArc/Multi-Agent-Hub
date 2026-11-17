@@ -7,8 +7,12 @@ Each agent's own documented commands come first; the hub builds its own only whe
   Those are passed through unchanged, except the few the hub does with its own controls (`CLAUDE_HIDDEN`).
   Verified with Claude Code 2.1.323: `/compact [focus]` compacts the saved conversation (a `compact_boundary`
   event with the token counts); `/context`, `/usage` and `/cost` answer with no model request.
-- **Codex** and the **local model:** `/compact` is still the hub's own (a fresh conversation from the hub's
-  brief) until their documented versions are wired in.
+- **Codex:** `codex exec` handles none of Codex's slash commands (they reach the model as text), so each one the
+  hub offers is routed to documented machinery: the app server (`/compact`, `/context`, `/usage`, `/review` and
+  `/code-review`, `/status`, `/mcp`; `app.adapters.codex_commands`), a turn with the hub's own request (`/init`), or
+  the hub itself (`/diff`). Codex skills go as `$name` (`expand_command`).
+- **Local model:** `/compact` is still the hub's own (a fresh conversation from the hub's brief) until its own
+  version is built.
 """
 
 from collections.abc import Sequence
@@ -23,7 +27,7 @@ from app.skills import CLAUDE_PLUGIN, COMMAND_PATTERN, SkillError, SkillLibrary,
 HUB_COMMANDS: dict[str, str] = {
     "compact": "Start fresh from the hub's summary of the session; add text to keep something in focus",
 }
-HUB_COMMAND_AGENTS: dict[str, set[AgentKind]] = {"compact": {AgentKind.CODEX, AgentKind.OLLAMA}}
+HUB_COMMAND_AGENTS: dict[str, set[AgentKind]] = {"compact": {AgentKind.OLLAMA}}
 
 # Claude commands that answer from Claude Code itself, with no model request. Without a conversation yet (a new
 # chat, or right after a handoff) they run as a one-off that isn't saved, so no empty conversation is left behind.
@@ -70,6 +74,36 @@ CLAUDE_DESCRIPTIONS: dict[str, str] = {
 }
 CLAUDE_FALLBACK = ["compact", "context", "usage", "code-review"]  # before any `init` event was recorded
 
+# Codex's commands the hub runs (OpenAI documents them for its terminal app). `server`: through the app server
+# (`CodexAdapter.run_command`); `prompt`: a turn with the hub's own request; `hub`: answered by the hub.
+CODEX_COMMANDS: dict[str, tuple[str, str]] = {
+    "compact": ("server", "Summarize the conversation to free up context"),
+    "context": ("server", "Show how full the context window is"),
+    "usage": ("server", "Show your plan's usage"),
+    "code-review": ("server", "Review the current changes with Codex's reviewer; add text to focus it"),
+    "review": ("server", "Review the current changes with Codex's reviewer; add text to focus it"),
+    "status": ("server", "Show the model, effort, sandbox, context and usage"),
+    "mcp": ("server", "List Codex's MCP servers"),
+    "diff": ("hub", "Show the session's changes"),
+    "init": ("prompt", "Create an AGENTS.md describing this project"),
+}
+CODEX_LOCAL = {"context", "usage", "status", "mcp"}  # answered with no model request
+CODEX_HIDDEN: dict[str, str] = {
+    "clear": CLAUDE_HIDDEN["clear"],
+    "new": "Start a new chat from the sidebar for a fresh conversation.",
+    "model": CLAUDE_HIDDEN["model"],
+    "fast": CLAUDE_HIDDEN["fast"],
+    "rename": CLAUDE_HIDDEN["rename"],
+    "skills": "Type / to see the skills Codex can use here.",
+}
+# The terminal app's /init is a built-in request like this one.
+INIT_PROMPT = (
+    "Create an AGENTS.md file in the root of this project with instructions for AI coding agents working in it. "
+    "Look through the repository first. Cover: the project's purpose and layout, how to install, build, run and "
+    "test it (the exact commands), code style and conventions, and anything an agent must not do. Keep it short and "
+    "specific to this project. If an AGENTS.md already exists, improve it instead of replacing what is still true."
+)
+
 
 @dataclass
 class Command:
@@ -85,14 +119,18 @@ class Command:
 class Route:
     """How the current agent runs a `/name` message.
 
-    `notice`: the hub answers with `message` and nothing is sent. `agent`: the message is sent as typed, never
-    behind a brief; `local` when the agent answers it without a model request; `compact` for a compaction.
+    `notice`: the hub answers with `message` and nothing is sent. `hub`: the hub answers it itself (Codex's
+    `/diff`). `agent`: the agent runs it: as typed and never behind a brief (Claude; `local` when it answers
+    without a model request), through the adapter's `run_command` (`adapter`, Codex's app-server commands), or as
+    a normal message with `prompt` in place of what was typed. `compact` for a compaction.
     """
 
-    action: Literal["notice", "agent"]
+    action: Literal["notice", "hub", "agent"]
     name: str
     message: str = ""
     local: bool = False
+    adapter: bool = False
+    prompt: str | None = None
 
     @property
     def compact(self) -> bool:
@@ -129,15 +167,32 @@ def route(agent: AgentKind, text: str, capabilities: dict[str, Any] | None = Non
     """How `agent` runs the message, or None when it isn't one of the agent's commands (it is then sent as a
     normal message, with library skills expanded by `expand_command`)."""
     parsed = parse(text)
-    if parsed is None or agent is not AgentKind.CLAUDE:
+    if parsed is None:
         return None
-    name = parsed[0]
+    name, rest = parsed
+    if agent is AgentKind.CODEX:
+        return _codex_route(name, rest)
+    if agent is not AgentKind.CLAUDE:
+        return None
     if name in CLAUDE_HIDDEN:
         return Route("notice", name, CLAUDE_HIDDEN[name])
     if name in set((capabilities or {}).get("terminal_slash_commands") or []):
         return Route("notice", name, f"/{name} only works in Claude Code's own terminal.")
     if name in claude_commands(capabilities):
         return Route("agent", name, local=name in CLAUDE_LOCAL)
+    return None
+
+
+def _codex_route(name: str, rest: str) -> Route | None:
+    if name in CODEX_HIDDEN:
+        return Route("notice", name, CODEX_HIDDEN[name])
+    how = CODEX_COMMANDS.get(name, ("", ""))[0]
+    if how == "server":
+        return Route("agent", name, adapter=True, local=name in CODEX_LOCAL)
+    if how == "hub":
+        return Route("hub", name)
+    if how == "prompt":
+        return Route("agent", name, prompt=INIT_PROMPT + (f"\n\n{rest}" if rest else ""))
     return None
 
 
@@ -157,10 +212,13 @@ def menu(agent: AgentKind, library: SkillLibrary, native: Sequence[dict[str, Any
 
     native_names = {str(s.get("name") or "") for s in native or []}
     claude = claude_commands(capabilities) if agent is AgentKind.CLAUDE else []
+    codex = list(CODEX_COMMANDS) if agent is AgentKind.CODEX else []
     for name in CORE_COMMANDS:
         if name == "compact" and not hub:
             continue
-        if name in claude:
+        if name in codex:
+            add(name, CODEX_COMMANDS[name][1], "builtin")
+        elif name in claude:
             add(name, CLAUDE_DESCRIPTIONS.get(name, ""), "skill" if name in native_names else "builtin")
         elif hub and agent in HUB_COMMAND_AGENTS.get(name, set()):
             add(name, HUB_COMMANDS[name], "hub")
@@ -181,4 +239,7 @@ def menu(agent: AgentKind, library: SkillLibrary, native: Sequence[dict[str, Any
     for name in claude:
         if hub or name != "compact":
             add(name, CLAUDE_DESCRIPTIONS.get(name, ""), "builtin")
+    for name in codex:
+        if hub or name not in ("compact", "diff"):
+            add(name, CODEX_COMMANDS[name][1], "builtin")
     return commands

@@ -21,12 +21,16 @@ workflow uses that section as the release notes and refuses a tag without one. S
 - Claude's own commands in the `/` menu: every command Claude Code supports without a terminal, such as
   `/context`, `/usage` and `/code-review`, is sent to Claude as typed. A "Conversation compacted" row shows
   the token drop, including when Claude compacts on its own.
+- Codex commands: `/compact`, `/context`, `/usage`, `/status`, `/mcp` and `/code-review` (also `/review`,
+  with optional focus text) run through Codex's own app server, so a review's findings stay in Codex's
+  conversation and "fix those" works next. `/diff` shows the session's changes and `/init` asks Codex for
+  an `AGENTS.md`.
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.
-- `/compact` in a Claude chat uses Claude's own compaction, so the conversation continues instead of
-  starting fresh from the hub's summary. `/clear`, `/model` and `/rename` answer with where to find that
-  in the hub.
+- `/compact` in a Claude or Codex chat uses the agent's own compaction, so the conversation continues
+  instead of starting fresh from the hub's summary. `/clear`, `/model` and `/rename` answer with where to
+  find that in the hub.
 - Codex offers four reasoning efforts, as in Codex itself: Light, Medium, High and Extra high. A Max
   effort (from Settings' default or a switch) reaches Codex as Extra high.
 
