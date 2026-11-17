@@ -44,3 +44,26 @@ def test_summarize_is_one_off_and_writes_nothing(tmp_path: Path) -> None:
     assert any(e.type is EventType.USAGE and e.data.get("usage") for e in events)
     assert not any(e.type is EventType.TOOL_USE for e in events)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_compact_and_context_commands(tmp_path: Path) -> None:
+    """Revision 4: commands sent as the prompt. `/compact` compacts the saved conversation, which still resumes."""
+    adapter = ClaudeAdapter(tmp_path, model="haiku")
+
+    async def run(events):
+        return [event async for event in events]
+
+    asyncio.run(run(adapter.start_task("Remember the code word PELICAN. Reply with just OK.")))
+    compacted = asyncio.run(run(adapter.send_reply("/compact")))
+    assert compacted[-1].type is EventType.COMPLETED, compacted[-1]
+    [notice] = [e for e in compacted if e.type is EventType.NOTICE]
+    assert notice.data["reason"] == "compacted" and notice.data["pre_tokens"] > notice.data["post_tokens"]
+
+    after = asyncio.run(run(adapter.send_reply("What was the code word? One word.")))
+    assert "pelican" in after[-1].data["text"].lower()
+
+    fresh = ClaudeAdapter(tmp_path, model="haiku")
+    report = asyncio.run(run(fresh.run_command("/context")))
+    assert report[-1].type is EventType.COMPLETED and "context" in report[-1].data["text"].lower()
+    assert fresh.native_session_id is None
+    assert not any(e.type is EventType.STARTED and e.data.get("session_id") for e in report)

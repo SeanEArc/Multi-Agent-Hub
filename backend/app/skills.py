@@ -64,20 +64,6 @@ TOOL_HINTS: dict[AgentKind, re.Pattern[str]] = {
 CLAUDE_FRONTMATTER = {"allowed-tools", "model", "context", "agent", "hooks", "disable-model-invocation",
                       "user-invocable", "argument-hint"}
 
-# Built-in commands that work headless, checked against Claude Code 2.1.322 (`/status`, `/help`, `/memory`
-# and others answer "isn't available in this environment"; `/compact` has the hub's own for now; `/clear` is
-# left out (the user decided it is redundant in the hub: a new chat does the same); `/model` has the hub's picker).
-CLAUDE_BUILTINS = {
-    "context": "Show how full the context window is",
-    "usage": "Show your plan's usage",
-}
-# The hub's own commands, for every agent (phase 7 adds /delegate, phase 8 /split). `Orchestrator.send` runs
-# them instead of sending the message; they come first in the menu, so a skill can't hide them.
-HUB_COMMANDS: dict[str, str] = {
-    "compact": "Start fresh from the hub's summary of the session; add text to keep something in focus",
-}
-
-
 class SkillError(ValueError):
     """A skill or import the user should be told about (shown as a 400)."""
 
@@ -699,49 +685,7 @@ def cached_codex_names() -> set[str]:
     return {s["name"] for _, skills in _codex_cache.values() for s in skills}
 
 
-# --- The `/` menu and sending a command ----------------------------------------------------------
-
-
-@dataclass
-class Command:
-    name: str
-    description: str
-    kind: str  # "skill" (the agent's own), "library", "builtin" or "hub"
-
-    def to_json(self) -> dict[str, str]:
-        return {"name": self.name, "description": self.description, "kind": self.kind}
-
-
-def menu(agent: AgentKind, library: SkillLibrary, native: Sequence[dict[str, Any]] | None,
-         hub: bool = True) -> list[Command]:
-    """The `/` menu for `agent`: the hub's commands (with `hub`; a new chat has nothing to compact), its own
-    skills (`native`, names and descriptions), library skills switched on for it and its checked built-in
-    commands. Each name once."""
-    commands: list[Command] = []
-    seen: set[str] = set()
-
-    def add(name: str, description: str, kind: str) -> None:
-        if name and name not in seen:
-            seen.add(name)
-            commands.append(Command(name, description, kind))
-
-    if hub:
-        for name, description in HUB_COMMANDS.items():
-            add(name, description, "hub")
-    for skill in native or []:
-        name = str(skill.get("name") or "")
-        if agent is AgentKind.CLAUDE and name.startswith(f"{CLAUDE_PLUGIN}:"):
-            continue  # the library's own plugin, listed below under its plain name
-        add(name, str(skill.get("description") or ""), "skill")
-    for skill in library.for_agent(agent):
-        try:
-            add(skill.name, read_skill(skill.path).description, "library")
-        except SkillError:
-            continue
-    if agent is AgentKind.CLAUDE:
-        for name, description in CLAUDE_BUILTINS.items():
-            add(name, description, "builtin")
-    return commands
+# --- Sending a skill as a command --------------------------------------------------------------
 
 
 def claude_native(capabilities: dict[str, Any] | None, claude_home: Path) -> list[dict[str, Any]]:
@@ -760,14 +704,6 @@ def claude_native(capabilities: dict[str, Any] | None, claude_home: Path) -> lis
 
 
 COMMAND_PATTERN = re.compile(r"^/([A-Za-z0-9][\w.:-]*)(?:\s+(.*))?$", re.DOTALL)
-
-
-def hub_command(text: str) -> tuple[str, str] | None:
-    """`(name, rest)` when the message is one of the hub's own commands, else None."""
-    match = COMMAND_PATTERN.match(text.strip())
-    if not match or match.group(1) not in HUB_COMMANDS:
-        return None
-    return match.group(1), (match.group(2) or "").strip()
 
 
 def expand_command(agent: AgentKind, text: str, library: SkillLibrary,

@@ -63,6 +63,11 @@ class AgentAdapter(ABC):
         """
         raise NotImplementedError(f"The {self.kind} agent can't write summaries")
 
+    def run_command(self, command: str) -> AsyncGenerator[AgentEvent]:
+        """Run one of the agent's own commands that needs no conversation (Claude's `/context`, `/usage`) as a
+        one-off that isn't saved, for a session whose conversation hasn't started yet."""
+        raise NotImplementedError(f"The {self.kind} agent has no commands of its own to run")
+
     @abstractmethod
     async def stop(self) -> None:
         """Stop the running turn, including any child processes."""

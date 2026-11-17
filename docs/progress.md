@@ -1633,3 +1633,26 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 **For the agent**
 - [ ] Then revision 4; revision 7 needs research first.
+
+---
+
+2026-11-16 21:58 (UTC-06:00)
+
+# Session 50: revision 4 started on `revision/agent-commands`: Claude's own commands (pass-through, native /compact, menu from `init`).
+
+## What was done
+1. **Live check first** (Claude Code 2.1.323, Haiku, throwaway folder): `/compact` on a one-turn conversation still compacts (`status compacting`, `compact_boundary` with `pre_tokens` 28812 → `post_tokens` 7124, an empty successful result with 0 turns); `/context` with `--no-session-persistence` answers as a synthetic assistant message, cost 0.
+2. **`app/commands.py`** (new; the `/` menu moved here from `skills.py`, `CLAUDE_BUILTINS` removed): `route()` passes every Claude command from its recorded `init` list through as typed; `/clear`, `/model`, `/effort`, `/fast`, `/rename` and terminal-only commands get a `NOTICE` and send nothing. The hub's `/compact` (a fresh conversation from the brief) now only applies to Codex and the local model.
+3. **Orchestrator:** commands never go behind a waiting brief. Before a conversation exists, `/context`, `/usage`, `/cost` run as a one-off (`ClaudeAdapter.run_command`, not saved), `/compact` gets "Nothing to compact yet", and other commands start the conversation with the brief after the command as its arguments (an appended system prompt was rejected: it would only apply to that one process, and a 40k brief is over the Windows command-line limit).
+4. **Parser and UI:** `compact_boundary` becomes a `NOTICE` (`reason: compacted`, manual or auto, token counts), shown as a dashed divider "Conversation compacted · 28.8k → 7.1k tokens" (or "Claude compacted the conversation on its own"); the spinner says "Compacting…" during a `/compact`.
+5. **Tests:** `tests/test_commands.py` (7 tests), fake Claude answers `/compact`; full suite 276 passed, 6 skipped; UI typecheck and build pass. New opt-in live test `test_compact_and_context_commands` passed against the real CLI (the code word survived compaction). Manual checks added to `docs/TODO.md`.
+
+## Next steps
+
+**For the user**
+- [x] Revision 4 (Claude part) checks passed (user, 2026-11-16); completed items removed from `docs/TODO.md`.
+
+**For the agent**
+- [ ] Revision 4, Codex part: an app-server client (`app/adapters/codex_server.py`) for `/compact` (`thread/compact/start`), `/context`, `/usage` (`account/rateLimits/read`, never `account/read`), `/review` and `/code-review` (`review/start`), plus `/status`, `/mcp`, `/diff`, `/init`.
+- [ ] Then the local model's four commands, then attachments (separate PR).
+- [ ] Open the PR into `staging` once the commands half is done (or now, if the user wants the Claude part merged first).

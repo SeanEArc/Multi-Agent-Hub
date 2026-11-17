@@ -24,7 +24,8 @@ else:  # a one-off call that isn't saved (--no-session-persistence)
     session_id = "00000000-0000-4000-8000-000000000000"
 
 emit({"type": "system", "subtype": "init", "session_id": session_id, "model": "fake", "permissionMode": "acceptEdits",
-      "skills": ["fake-skill"], "slash_commands": ["fake-skill", "context", "doctor"],
+      "skills": ["fake-skill"], "slash_commands": ["fake-skill", "compact", "context", "usage", "code-review", "clear", "model", "doctor",
+                         "__internal"],
       "terminal_slash_commands": ["doctor"], "mcp_servers": [{"name": "fake-mcp", "status": "connected"}],
       "tools": ["Read", "Skill"]})
 if mode == "crash":
@@ -41,6 +42,13 @@ if mode == "limit":
     emit({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "five_hour", "resetsAt": 4102444800}})
     emit({"type": "result", "subtype": "success", "is_error": True, "result": "You've hit your limit", "num_turns": 1})
     sys.exit(1)
+
+if prompt.startswith("/compact"):  # as Claude Code 2.1.323 reports a compaction
+    emit({"type": "system", "subtype": "status", "status": "compacting", "session_id": session_id})
+    emit({"type": "system", "subtype": "compact_boundary", "session_id": session_id,
+          "compact_metadata": {"trigger": "manual", "pre_tokens": 28812, "post_tokens": 7124}})
+    emit({"type": "result", "subtype": "success", "is_error": False, "result": "", "num_turns": 0})
+    sys.exit(0)
 
 emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"echo: {prompt}"}]}, "parent_tool_use_id": None})
 text = json.dumps({"args": args, "prompt": prompt, "cwd": os.getcwd()})

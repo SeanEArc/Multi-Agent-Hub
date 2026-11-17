@@ -1656,6 +1656,12 @@ textarea:focus,
   padding-top: 8px;
 }
 
+/* A compaction: the same agent goes on, so a lighter line than a handoff. */
+.handoff.compacted {
+  border-top-style: dashed;
+  border-top-width: 1px;
+}
+
 .handoff-line {
   display: flex;
   align-items: center;

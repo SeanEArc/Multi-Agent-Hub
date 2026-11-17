@@ -9,6 +9,10 @@ Behavior verified against Claude Code 2.1.305:
 - With `--permission-prompts none`, anything that needs approval is denied and
   reported as a `system/permission_denied` event instead of hanging the run.
 - Every turn carries a `rate_limit_event` with usage-window status.
+- A command is sent as the prompt (2.1.323): `/compact` emits `system/status` `compacting`, then
+  `system/compact_boundary` (`compact_metadata`: `trigger`, `pre_tokens`, `post_tokens`) and an empty result;
+  Claude's own compaction when the context fills has `trigger: auto`. `/context` and `/usage` answer as an
+  assistant message with no model request.
 """
 
 import json
@@ -84,6 +88,10 @@ class ClaudeAdapter(CliAdapter):
             raise RuntimeError("No task started; use start_task")
         return self._run(["--resume", self._session_id], reply)
 
+    def run_command(self, command: str) -> AsyncGenerator[AgentEvent]:
+        # Not saved, so no empty conversation is left behind; the parser drops the throwaway session id.
+        return self._run(["--no-session-persistence"], command, TurnParser(save_session=False))
+
     def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
         # No tools, not saved, and a short system prompt in place of Claude Code's own (fewer tokens).
         args = [
@@ -98,7 +106,8 @@ class ClaudeAdapter(CliAdapter):
             args += ["--model", self.model]
         return self._stream(args, prompt, TurnParser())
 
-    def _run(self, session_args: list[str], prompt: str) -> AsyncGenerator[AgentEvent]:
+    def _run(self, session_args: list[str], prompt: str, parser: "TurnParser | None" = None
+             ) -> AsyncGenerator[AgentEvent]:
         args = [
             "-p",
             "--output-format", "stream-json",
@@ -114,13 +123,15 @@ class ClaudeAdapter(CliAdapter):
             args += ["--effort", self.effort]
         for folder in self.plugin_dirs:
             args += ["--plugin-dir", str(folder)]
-        return self._stream(args, prompt, TurnParser())
+        return self._stream(args, prompt, parser or TurnParser())
 
 
 class TurnParser:
     """Turns Claude stream-json lines into shared AgentEvents for one turn."""
 
-    def __init__(self) -> None:
+    def __init__(self, save_session: bool = True) -> None:
+        # False for a one-off run that isn't saved: its session id must not become the stint's.
+        self.save_session = save_session
         self.finished = False
         self._limit_reported = False
         self._last_plan: list[dict[str, str]] | None = None
@@ -145,7 +156,7 @@ class TurnParser:
                     AgentEvent(
                         EventType.STARTED,
                         {
-                            "session_id": raw.get("session_id"),
+                            "session_id": raw.get("session_id") if self.save_session else None,
                             "model": raw.get("model"),
                             "permission_mode": raw.get("permissionMode"),
                             "cwd": raw.get("cwd"),
@@ -166,6 +177,8 @@ class TurnParser:
                         },
                     )
                 ]
+            case "system", "compact_boundary":
+                return [compacted_notice(raw.get("compact_metadata") or {})]
             case "assistant", _:
                 return self._assistant(raw)
             case "user", _:
@@ -277,6 +290,21 @@ class TurnParser:
                 )
             )
         return events
+
+
+def compacted_notice(meta: dict[str, Any]) -> AgentEvent:
+    """A `NOTICE` for a compaction: `/compact` (trigger manual) or Claude's own when the context fills (auto)."""
+    trigger = meta.get("trigger") or "manual"
+    before, after = meta.get("pre_tokens"), meta.get("post_tokens")
+    message = "Conversation compacted" if trigger == "manual" else "Claude compacted the conversation on its own"
+    if isinstance(before, int) and isinstance(after, int):
+        message += f" · {_tokens(before)} → {_tokens(after)} tokens"
+    return AgentEvent(EventType.NOTICE, {"message": message, "reason": "compacted", "trigger": trigger,
+                                         "pre_tokens": before, "post_tokens": after})
+
+
+def _tokens(count: int) -> str:
+    return f"{count / 1000:.1f}k" if count >= 1000 else str(count)
 
 
 def _content_blocks(raw: dict[str, Any]) -> list[dict[str, Any]]:
