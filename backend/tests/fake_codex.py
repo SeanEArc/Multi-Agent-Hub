@@ -87,6 +87,21 @@ if args[:1] == ["app-server"]:
     sys.exit(0)
 
 prompt = sys.stdin.read()
+# `--image`/`-i` is greedy, as clap parses it in codex-cli 0.164.0 (`num_args(1..)`): every following argument up to
+# the next flag is an image, a lone `-` included. The real CLI doesn't fail on an image it can't read; it puts an
+# error text in the model's input, so the fake records it in `image_errors`.
+images: list[str] = []
+image_errors: list[str] = []
+index = 0
+while index < len(args):
+    if args[index] in ("--image", "-i"):
+        index += 1
+        while index < len(args) and not (args[index].startswith("-") and args[index] != "-"):
+            images.append(args[index])
+            index += 1
+        continue
+    index += 1
+image_errors = [image for image in images if not Path(image).is_file()]
 # A reply resumes the thread named just before the trailing "-"; a new task gets a new id.
 thread_id = args[-2] if args[:2] == ["exec", "resume"] else "01a17487-0000-7000-8000-000000000001"
 
@@ -112,7 +127,7 @@ if mode == "tools":
     emit({"type": "item.completed", "item": {"id": "item_2", "type": "file_change", "status": "completed",
                                              "changes": [{"path": "hello.txt", "kind": "add"}]}})
 
-text = json.dumps({"args": args, "prompt": prompt})
+text = json.dumps({"args": args, "prompt": prompt, "images": images, "image_errors": image_errors})
 if mode == "question":
     text += "\n[[NEEDS_INPUT]]"
 message("item_9", text)

@@ -24,9 +24,16 @@ Behavior verified against Ollama 0.40.15:
   (`[{function: {name, arguments}}]`, arguments as an object) in a streamed chunk. Results go
   back as `{role: "tool", content, tool_name}` messages after the assistant message that made
   the calls. A model without the tools capability answers HTTP 400 to a request with tools.
+- A user message's `images` (base64, no data: prefix) are seen by models with the `vision` capability.
+
+Attachments (revision 4): a vision model gets the current message's images in `images`; the saved conversation
+keeps only their paths (`hub_images`, never sent), so the file stays small and older images aren't sent again.
+Text copies (and text files) go inline in the message, where `fit()` shortens them like any long message, and
+the session's attachments folder is one of `LocalTools`' read roots.
 """
 
 import asyncio
+import base64
 import json
 import os
 import uuid
@@ -47,6 +54,7 @@ from app.adapters.local_tools import (
     plan_from_args,
 )
 from app.adapters.runner import Runner
+from app.attachments import Attachment, with_files
 from app.models import AgentKind
 
 DEFAULT_URL = "http://127.0.0.1:11434"
@@ -126,6 +134,7 @@ def models_from_tags(body: Any) -> list[dict[str, Any]]:
             # None when this Ollama version doesn't report capabilities.
             "tools": "tools" in capabilities if isinstance(capabilities, list) else None,
             "thinking": "thinking" in capabilities if isinstance(capabilities, list) else None,
+            "vision": "vision" in capabilities if isinstance(capabilities, list) else None,
         })
     return models
 
@@ -229,6 +238,8 @@ class OllamaAdapter(AgentAdapter):
         command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
         skill_instructions: str | None = None,
         skill_roots: Sequence[Path] = (),
+        vision: bool | None = None,
+        attachments_dir: Path | None = None,
     ) -> None:
         self.cwd = Path(cwd)
         self.model = model
@@ -239,7 +250,11 @@ class OllamaAdapter(AgentAdapter):
         # False for a model without the tools capability: plain chat.
         self.use_tools = tools
         self.max_rounds = max_rounds
-        self.tools = LocalTools(self.cwd, runner, command_timeout, read_roots=skill_roots)
+        # The model sees images (Ollama's `vision` capability); None when this Ollama doesn't say, treated as no.
+        self.vision = bool(vision)
+        # Read-only besides the working folder: the library's skills and the session's attachments.
+        roots = [*skill_roots, *([attachments_dir] if attachments_dir else [])]
+        self.tools = LocalTools(self.cwd, runner, command_timeout, read_roots=roots)
         # The hub library's skills that are on for the local model, listed in its system prompt.
         self.skill_instructions = skill_instructions
         self._transport = transport
@@ -253,17 +268,17 @@ class OllamaAdapter(AgentAdapter):
     def native_session_id(self) -> str | None:
         return self._conversation_id
 
-    def start_task(self, prompt: str) -> AsyncGenerator[AgentEvent]:
+    def start_task(self, prompt: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._conversation_id is not None:
             raise RuntimeError("Task already started; use send_reply")
         # Chosen up front like Claude's, so the orchestrator saves it when the turn starts.
         self._conversation_id = str(uuid.uuid4())
-        return self._turn(prompt, new=True)
+        return self._turn(prompt, new=True, attachments=attachments)
 
-    def send_reply(self, reply: str) -> AsyncGenerator[AgentEvent]:
+    def send_reply(self, reply: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._conversation_id is None:
             raise RuntimeError("No task started; use start_task")
-        return self._turn(reply, new=False)
+        return self._turn(reply, new=False, attachments=attachments)
 
     def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:
         return self._one_off(instructions, prompt)
@@ -287,7 +302,7 @@ class OllamaAdapter(AgentAdapter):
             prompt += "\n" + self.skill_instructions + "\n"
         return prompt
 
-    async def _turn(self, text: str, new: bool) -> AsyncGenerator[AgentEvent]:
+    async def _turn(self, text: str, new: bool, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         """One turn: ask, run the tools the reply calls, ask again, until a reply calls none."""
         path = history_path(self.history_dir, self._conversation_id)
         if new:
@@ -306,8 +321,24 @@ class OllamaAdapter(AgentAdapter):
         yield AgentEvent(EventType.STARTED, {"session_id": self._conversation_id, "model": self.model,
                                              "cwd": str(self.cwd)})
         system = {"role": "system", "content": self._system_prompt()}
+        images = [a for a in attachments if a.is_image]
+        seen = images if self.vision else []
+        if images and not self.vision:
+            names = ", ".join(a.name for a in images)
+            yield AgentEvent(EventType.NOTICE, {
+                "message": f"{self.model} can't see images, so it was only told where {names} "
+                           f"{'is' if len(images) == 1 else 'are'} saved. Pick a local model with vision, or "
+                           "switch to Claude or Codex, to have the image looked at.",
+                "reason": "no_vision",
+            })
+        user: dict[str, Any] = {"role": "user", "content": with_files(
+            text, attachments, attached={a.id for a in seen}, inline_text=True)}
+        if seen:
+            user["hub_images"] = [a.path for a in seen]
+        # The current message's images, base64 for Ollama, read once per turn.
+        encoded = await asyncio.to_thread(_encode_images, user.get("hub_images") or [])
         # This turn's messages, saved after the history when the turn ends.
-        added: list[dict[str, Any]] = [{"role": "user", "content": text}]
+        added: list[dict[str, Any]] = [user]
         usage = _Usage()
         turn = uuid.uuid4().hex[:8]
         calls_made = 0
@@ -338,7 +369,8 @@ class OllamaAdapter(AgentAdapter):
                                                     "shortened": fitted.shortened, "dropped": fitted.dropped,
                                                     "cut_prompt": fitted.cut_prompt})
             try:
-                reply, tool_calls, final = await self._ask([*fitted.messages, *([nudge] if nudge else [])])
+                reply, tool_calls, final = await self._ask(
+                    [*_with_images(fitted.messages, encoded), *([nudge] if nudge else [])])
             except _Stopped as stopped:
                 if stopped.partial:
                     # Keep what the user saw, so the next message follows on from it.
@@ -554,6 +586,30 @@ class OllamaAdapter(AgentAdapter):
             queue.put_nowait(OllamaError("Ollama took too long to answer."))
         except httpx.HTTPError as exc:
             queue.put_nowait(OllamaError(f"The request to Ollama failed: {exc}"))
+
+
+def _encode_images(paths: Sequence[str]) -> list[str]:
+    images = []
+    for path in paths:
+        try:
+            images.append(base64.b64encode(Path(path).read_bytes()).decode("ascii"))
+        except OSError:
+            pass  # gone from disk: the message still names it
+    return images
+
+
+def _with_images(messages: list[dict[str, Any]], images: list[str]) -> list[dict[str, Any]]:
+    """What is sent: no message keeps the hub's `hub_images` paths, and the latest user message (this turn's) gets
+    its images. Earlier images aren't sent again; their messages still say where the files are."""
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    sent = []
+    for index, message in enumerate(messages):
+        if "hub_images" in message:
+            message = {k: v for k, v in message.items() if k != "hub_images"}
+            if index == last_user and images:
+                message["images"] = images
+        sent.append(message)
+    return sent
 
 
 def _error_text(status: int, body: bytes, model: str) -> str:

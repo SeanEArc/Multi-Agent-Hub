@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AGENT_NAMES, type AgentKind, type SessionStatus, type SlashCommand } from "../api";
+import { ACCEPT, attachProblem, namePasted } from "../attachments";
+import { PendingChips } from "./Attachments";
 import { SlashMenu, matchCommands } from "./SlashMenu";
 
 interface Props {
   status: SessionStatus;
   agent: AgentKind;
-  onSend: (text: string) => Promise<void>;
+  // `files` were attached in the composer (button, paste or drop); the caller uploads them with the message.
+  onSend: (text: string, files: File[]) => Promise<void>;
   onStop: () => Promise<void>;
   // Replaces the placeholder for the status (a new chat's, for example).
   placeholder?: string;
@@ -33,6 +36,8 @@ const PLACEHOLDERS: Partial<Record<SessionStatus, string>> = {
 };
 // The box grows with its text up to this height, then scrolls.
 const MAX_HEIGHT = 280;
+// Files per message (the backend allows 20).
+const MAX_FILES = 20;
 
 export function Composer({
   status,
@@ -93,6 +98,59 @@ export function Composer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // Attached files, sent with the next message; a drag over the window shows the drop hint.
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const filePicker = useRef<HTMLInputElement>(null);
+  const filesRef = useRef<File[]>(files);
+  filesRef.current = files;
+
+  function addFiles(list: Iterable<File>) {
+    const problems: string[] = [];
+    const accepted: File[] = [];
+    for (const file of list) {
+      const problem = attachProblem(file);
+      if (problem) problems.push(problem);
+      else accepted.push(file);
+    }
+    // The drop listener is set up once, so the current count comes from a ref, not this render's state.
+    const room = Math.max(0, MAX_FILES - filesRef.current.length);
+    if (accepted.length > room) problems.push(`Up to ${MAX_FILES} files can go with one message.`);
+    const added = accepted.slice(0, room);
+    filesRef.current = [...filesRef.current, ...added];
+    setFiles(filesRef.current);
+    setError(problems.length ? problems.join(" ") : null);
+  }
+
+  // Dropping files anywhere on the window attaches them (and keeps the browser from opening them).
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDragging(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!e.relatedTarget) setDragging(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDragging(false);
+      addFiles(Array.from(e.dataTransfer?.files ?? []));
+      input.current?.focus();
+    };
+    window.addEventListener("dragenter", over);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", over);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
   const working = status === "working" || status === "handing_off";
   const agentName = AGENT_NAMES[agent] ?? agent;
 
@@ -110,12 +168,13 @@ export function Composer({
 
   async function send() {
     const message = text.trim();
-    if (!message || working || busy || sendBlocked) return;
+    if ((!message && !files.length) || working || busy || sendBlocked) return;
     setBusy(true);
     setError(null);
     try {
-      await onSend(message);
+      await onSend(message, files);
       setText("");
+      setFiles([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -135,8 +194,14 @@ export function Composer({
   }
 
   return (
-    <div className={`composer${status === "waiting_for_input" ? " attention" : ""}`}>
+    <div className={`composer${status === "waiting_for_input" ? " attention" : ""}${dragging ? " dragging" : ""}`}>
+      {dragging && (
+        <div className="drop-overlay" aria-hidden="true">
+          <span>Drop files to attach them</span>
+        </div>
+      )}
       {error && <div className="composer-error">{error}</div>}
+      <PendingChips files={files} disabled={busy} onRemove={(index) => setFiles((current) => current.filter((_, i) => i !== index))} />
       {menuOpen && (
         <SlashMenu commands={commands} error={commandsError} query={query} active={active} onPick={pick} onHover={setActive} />
       )}
@@ -155,6 +220,13 @@ export function Composer({
         }
         disabled={working}
         onChange={(e) => setText(e.target.value)}
+        onPaste={(e) => {
+          // A screenshot or files copied in Explorer; plain text pastes as usual.
+          const pasted = Array.from(e.clipboardData.files);
+          if (!pasted.length) return;
+          e.preventDefault();
+          addFiles(pasted.map(namePasted));
+        }}
         onKeyDown={(e) => {
           if (menuOpen && matches.length > 0) {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -183,6 +255,36 @@ export function Composer({
       {panel && <div className="composer-panel">{panel}</div>}
       {notes && <div className="composer-notes">{notes}</div>}
       <div className="composer-actions">
+        <button
+          type="button"
+          className="attach-button"
+          title="Attach files: images, PDF, Word, Excel, CSV, text or code (or paste a screenshot, or drop files here)"
+          aria-label="Attach files"
+          disabled={busy}
+          onClick={() => filePicker.current?.click()}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+              d="M21.4 11.1l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <input
+          ref={filePicker}
+          type="file"
+          multiple
+          accept={ACCEPT}
+          hidden
+          onChange={(e) => {
+            addFiles(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
         <div className="composer-controls">{controls}</div>
         {picker}
         {working ? (
@@ -190,8 +292,12 @@ export function Composer({
             Stop
           </button>
         ) : (
-          <button className="button send" onClick={() => void send()} disabled={busy || !text.trim() || sendBlocked}>
-            Send
+          <button
+            className="button send"
+            onClick={() => void send()}
+            disabled={busy || (!text.trim() && !files.length) || sendBlocked}
+          >
+            {busy && files.length ? "Uploading…" : "Send"}
           </button>
         )}
       </div>

@@ -23,6 +23,8 @@ class LocalModel(BaseModel):
     # None when the server doesn't report capabilities.
     tools: bool | None = None
     thinking: bool | None = None
+    # Sees images attached to a message.
+    vision: bool | None = None
 
 
 class LocalModels(BaseModel):

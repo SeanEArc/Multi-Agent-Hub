@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shutil
 from collections.abc import AsyncIterator
@@ -9,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, col, select
 
 from app.adapters.ollama import delete_history
+from app.attachments import AttachmentError
 from app.db import get_session
 from app.handoff import git_state
 from app.models import (
@@ -158,7 +160,8 @@ def get_stint(session_id: str, stint_id: int, db: DbSession) -> Stint:
 async def delete_session(session_id: str, db: DbSession, orchestrator: Orch, request: Request) -> None:
     """Delete the session and its history. Its worktree is removed too (branch kept), but only if it is clean.
 
-    A chat's folder and the local model's conversation files belong to the hub and are deleted with it.
+    A chat's folder, the local model's conversation files and the attached files belong to the hub and are deleted
+    with it.
     """
     agent_session = _get_or_404(db, session_id)
     await orchestrator.forget(session_id)
@@ -176,15 +179,23 @@ async def delete_session(session_id: str, db: DbSession, orchestrator: Orch, req
     for conversation_id in local_conversations:
         if conversation_id:
             delete_history(request.app.state.local_dir, conversation_id)
+    # Off the event loop: it may wait and retry once for a file that is still open.
+    await asyncio.to_thread(orchestrator.attachments.delete_session, session_id)
 
 
 @router.post("/{session_id}/messages", response_model=SessionRead, status_code=status.HTTP_202_ACCEPTED)
 async def send_message(session_id: str, body: MessageCreate, db: DbSession, orchestrator: Orch) -> SessionRead:
-    """Start the session's task, or reply to it. The turn runs in the background; follow /stream."""
+    """Start the session's task, or reply to it. The turn runs in the background; follow /stream.
+
+    `attachments` are ids from POST /sessions/{id}/attachments.
+    """
     try:
-        await orchestrator.send(session_id, body.text)
+        await orchestrator.send(session_id, body.text, body.attachments)
     except SessionNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from None
+    except AttachmentError as exc:
+        # An unknown id is the request's fault here, not a missing page.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST if exc.status == 404 else exc.status, str(exc)) from None
     except SessionBusy as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     except AgentUnavailable as exc:

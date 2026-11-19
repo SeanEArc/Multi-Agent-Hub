@@ -1696,7 +1696,114 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 **For the user**
 - [x] Revision 4 (local model part) checks passed (user, 2026-11-17); removed from `docs/TODO.md`.
-- [ ] Open the PR for `revision/local-commands` into `staging` and merge it (`gh` isn't installed, so it's done on GitHub).
+- [x] Open the PR for `revision/local-commands` into `staging` and merge it (PR #17, merged).
 
 **For the agent**
-- [ ] Revision 4 attachments (separate PR): composer attach, storage, per-agent delivery, video frames, handoff.
+- [x] Revision 4 attachments PR 1 (session 53). Video frames moved to phase 11 in the 2026-11-17 redesign.
+
+---
+
+2026-11-18 16:54 (UTC-06:00)
+
+# Session 53: revision 4, attachments PR 1 on `revision/attachments`: attaching and reading files, built by a subagent loop (engineer → DevOps tests → QA review, three rounds).
+
+Claude session: https://claude.ai/code/session_018PBEGAnVeYQw3xpLKHrkf2
+
+## How the work was run
+At the user's request the coordinator delegated to three subagents and looped until QA passed: a **senior software engineer** (builds the code and its tests), a **senior DevOps engineer** (tests the code and checks CI fitness), and a **senior QA reviewer** (checks the spec, reviews and runs everything, and gives a verdict). Round 1 was rated INCOMPLETE (2 blocking bugs), round 2 COMPLETE with 2 should-fix items, and round 3 fixed those. The coordinator re-ran everything at the end: **446 passed, 10 skipped**, UI typecheck and build pass, version check passes. Nothing is committed.
+
+## What was done
+
+### Round 1: senior engineer (build)
+1. **Live probe first** (Claude Code 2.1.323 on Haiku, codex-cli 0.164.0, throwaway folders, about $0.02 plus 3 tiny Codex turns):
+   - Claude reads PNG and PDF content blocks over `--input-format stream-json`, also on `--resume`.
+   - A slash command still works when it is the first text block.
+   - `--add-dir` keeps the working folder.
+   - 21 MB, 2700 px and 9000×50 px images are accepted; the CLI downsizes them itself.
+   - `codex exec -i` and `exec resume -i` both work.
+2. **Modules**, built separately so adapters only receive `Attachment` objects through the existing interface and the per-agent file list (`with_files`) is written once:
+   - `app/attachments.py`: types, caps, safe names, a magic-byte check, the store.
+   - `app/extract.py` with `app/extract_worker.py`: a worker that imports nothing from the hub.
+   - `app/api/attachments.py`: the routes.
+   - Frontend: `src/attachments.ts`, `components/Attachments.tsx`.
+3. **Decisions and why:**
+   - **No migration:** metadata lives in the `user_message` payload, plus a sidecar the server trusts; the client only ever sends ids, never paths.
+   - **Upload at Send:** a new chat has no session until its first message, so this gives one path for new and existing chats.
+   - **Raw-body upload:** avoids adding `python-multipart`, and streams to disk, stopping at the type's cap.
+   - **Folder layout `<session>/<id>/<name>`:** agents see the real file name, and two files with the same name don't collide.
+   - **One stream-json input path for every Claude call:** turns, commands and summaries all go the same way, so nothing can drift apart.
+   - **PDFs as blocks only within the API's limits:** a rejected block fails the whole turn.
+   - **Images shown through `apiFetch` blob URLs:** an `<img>` tag can't carry the auth header in the desktop app.
+   - **Opening files:** scripts are revealed in Explorer instead of opened, so nothing attached can run.
+   - **No smaller copies and no Pillow:** the live probe showed both CLIs downsize images themselves.
+
+### Round 1: senior DevOps (tests)
+4. **`tests/test_attachments_hardening.py`, 56 tests.** The areas, and why each was chosen:
+   - Auth on all 5 routes, path traversal, Windows reserved names, mismatched contents, the streaming cap: client-supplied names and ids become paths on disk, and files are handed to a browser or to Windows.
+   - Corrupt, encrypted and huge files, plus a crashing or hanging worker: parsers face untrusted files, and the plan promises that a failure only means "no text copy".
+   - The PDF block edge cases and `--add-dir`: one bad block fails a whole Claude turn.
+   - The `fit()` and image interplay: those would be silent bugs.
+   - Every handoff path: that is the acceptance sentence.
+   - A frontend/backend parity check of caps and types: there is no frontend test runner, and the lists are duplicated by hand.
+5. **Bugs fixed:**
+   - A timeout could raise WinError 32 while deleting the `.part` file, because the venv launcher's child was still dying (about 1 run in 12). Fixed with a retrying `_discard`.
+   - pypdf's `decrypt()` returns 0 instead of raising, so password-protected PDFs got the wrong note.
+
+### Round 1: senior QA → INCOMPLETE
+6. QA ran the suite twice, smoke-tested a backend started from source over HTTP (temp folders, no CLI calls) and probed the real binaries. **Blocking:**
+   - `codex exec --image` takes several values in a row, so the prompt's trailing `-` was sent as a second image. This was seen in the rollout file. Resumed turns were fine, and the fake didn't mimic the parsing.
+   - Under `uv run` the venv `python.exe` is a launcher, and the real interpreter often started before the memory job was assigned, so it ran uncapped. A docx bomb was parsed fully on a cold run.
+   - QA also raised 6 should-fix items: Claude's limits checked per file instead of per request, Claude able to overwrite originals, no Protected View when opening, blank formulas, unsent uploads never cleaned up, and docs. Plus 3 cheap notes.
+
+### Round 2: senior engineer (fixes)
+7. **Codex:** images now come right after `--json`, so a flag always ends the list. The fake now parses like clap, and a test with two images fails on the old order. One real Codex turn confirmed the fix.
+8. **Memory cap:** the worker caps itself (`cap_memory`, its own job: 512 MB, one process) after reading the request and before parsing, and refuses to parse if that fails.
+   - Why not launch `sys._base_executable` directly: the venv's packages wouldn't be importable under `-I`, while a cap set from inside holds however the process was started.
+   - An unmocked test allocates 600 MB under a 256 MB cap. The bundled exe stopped the bomb 3 times out of 3.
+9. **Per-request Claude budget** (100 PDF pages, 32 MB; images counted as at most 5 MB because the CLI downsizes them). Live check (about $0.51): Haiku accepted 120 pages in one request, and earlier blocks are re-sent on `--resume` without being refused. The documented limits were kept as a safe budget for every model.
+10. **The other fixes, and why:**
+    - Originals and text copies are made read-only: Claude's Edit and Write are auto-accepted inside `--add-dir`.
+    - A `Zone.Identifier` stream (zone 3) on originals: Office then opens them in Protected View, like a download.
+    - xlsx text copies fall back to the formula text through two streaming reads, so memory stays flat.
+    - A startup sweep removes unsent uploads older than 24 h.
+    - Text copies get a longer fence when they contain backticks.
+    - `Semaphore(2)` limits text copies to two at a time.
+    - Session delete retries and logs files it couldn't remove.
+
+### Round 2: senior DevOps (tests)
+11. **`tests/test_attachments_fixes.py`, 45 tests:**
+    - The Codex argument order (0, 1 and 6 images, new and resumed turns, names starting with `-`).
+    - The worker failing closed and still being killed at the timeout (its own job doesn't kill on close), plus the bundled `--extract-worker` path.
+    - Off-by-one edges of the budget, because an off-by-one either drops files silently or fails the turn.
+    - Read-only files, the Mark of the Web, shared and array formulas (hand-written, since openpyxl can't write them), the sweep's edge cases, and semaphore timing.
+12. **Bugs fixed:**
+    - The sweep crashed on metadata that wasn't an object, which stopped the backend from starting.
+    - Foreign metadata gave a 500 error instead of 404.
+
+### Round 2: senior QA → COMPLETE
+13. QA repeated its probes:
+    - Codex with 2 images, new and resumed turns: no `-` image.
+    - The bomb was stopped 6/6, and 4/4 with the hub's job deliberately assigned 1 s late.
+    - Read-only files, Mark of the Web and formula text were confirmed live.
+    - Every PR 1 spec item is done.
+    - The deviations were judged justified: no smaller copies (the CLIs downsize themselves); preview is PR 3; opening files is Windows-only.
+14. **Two should-fix items** (QA rated them should-fix, not blocking, because each needs an unusual trigger and is a one-line fix):
+    - A session folder that couldn't be listed stopped startup with exit code 3, which the desktop shell reads as "another backend is running". Reproduced with an ACL.
+    - The synchronous session delete blocked the event loop for 0.5 s when a file was held open.
+
+### Round 3: senior engineer
+15. Folder listings in the sweep are now guarded, and the startup call is wrapped so a cleanup never stops startup (3 tests). Session delete runs through `asyncio.to_thread`. Empty folders of deleted sessions are removed at startup, using `rmdir` only, so no file can be deleted.
+
+### Coordinator
+16. Re-ran everything (446 passed, 10 skipped; typecheck, build and version check pass). Updated `docs/plan.md` (revision 4: PR 1 built, its deviations and open items).
+
+## Next steps
+
+**For the user**
+- [ ] Run the attachments manual checks in `docs/TODO.md`. The UI (chips, paste, drop, inline images, opening files) hasn't been run in a browser or the desktop app yet.
+- [x] Decided (2026-11-19): no `cryptography` package for now; AES-encrypted PDFs keep the note.
+- [x] Committed and pushed `revision/attachments`, and opened the PR into `staging`.
+
+**For the agent**
+- [ ] Revision 4 attachments PR 2: the document toolkit (BetterOffice for Excel and Word's formatting report, outputs folder, Office detection).
+- [ ] Then PR 3 (preview pane) and PR 4 (third-party notices; required before the first release). Revision 5 (image generation) can follow PR 1 at any time.

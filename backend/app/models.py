@@ -4,7 +4,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import UniqueConstraint, false, func
 from sqlmodel import JSON, Column, Field, Session, SQLModel, col, select
@@ -225,7 +225,16 @@ class SessionCreate(SQLModel):
 
 
 class MessageCreate(SQLModel):
-    text: str = Field(min_length=1)
+    # May be empty when files are attached.
+    text: str = ""
+    # Ids of files uploaded for this message (POST /sessions/{id}/attachments), in the order shown.
+    attachments: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "MessageCreate":
+        if not self.text.strip() and not self.attachments:
+            raise ValueError("A message needs text or an attached file")
+        return self
 
 
 class HandoffCreate(SQLModel):

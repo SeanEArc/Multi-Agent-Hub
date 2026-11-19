@@ -90,7 +90,7 @@ class CliAdapter(AgentAdapter):
         """Hook for extra events once a turn has ended, such as state the CLI only writes to disk."""
         return []
 
-    async def _stream(self, args: list[str], prompt: str, parser: LineParser) -> AsyncGenerator[AgentEvent]:
+    async def _stream(self, args: list[str], prompt: str | bytes, parser: LineParser) -> AsyncGenerator[AgentEvent]:
         if self._proc is not None:
             raise RuntimeError("A turn is already running")
 
@@ -100,7 +100,8 @@ class CliAdapter(AgentAdapter):
         stderr_task = asyncio.create_task(proc.read_stderr())
         try:
             # The prompt goes over stdin, so its length and characters never hit Windows quoting.
-            await proc.send_input(prompt.encode("utf-8"))
+            # Claude's is a stream-json line (bytes) that can carry images and documents.
+            await proc.send_input(prompt if isinstance(prompt, bytes) else prompt.encode("utf-8"))
 
             async for line in proc.lines():
                 for event in parser.feed(line):

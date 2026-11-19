@@ -4,6 +4,22 @@ Tests to run by hand with real agents. The automated tests use fake agents, and 
 
 **Before you start:** restart the backend (`uv run python -m app.main` in `backend/`, or `python -m app.main` if the backend's virtual environment is active and `uv` isn't on that terminal's PATH) so it serves the new fields, then run `npm run dev` in `frontend/` and open http://localhost:5173. The backend applies database migrations itself on start.
 
+## APPLICATION REVISION 4: attachments, PR 1 (attaching and reading files)
+
+Have ready: a screenshot (press Win+Shift+S), a short PDF, a small Excel sheet (.xlsx), a short Word document (.docx). For the local model, a vision model helps (for example `ollama pull qwen2.5vl:7b`); without one, it reads only the text copies.
+
+- [ ] **Attach three ways.** In a Claude chat: click the paperclip and pick the PDF; paste the screenshot into the text box (Ctrl+V); drag the Excel and Word files from Explorer onto the window (a dashed "Drop files to attach them" hint covers the window while you drag). Each shows as a chip above the text box, the screenshot with a thumbnail, named `screenshot-<date>-<time>.png`. Remove one with its ×, then add it back.
+- [ ] **Refused files.** Try attaching a `.exe` or `.zip`: a red note says the type can't be attached and no chip appears.
+- [ ] **Claude answers from the files.** With the four files attached, ask "What is in the screenshot, what is the PDF about, what is the total in the sheet, and what is the Word document's first heading?" and send. Send says "Uploading…" briefly. The transcript shows your message with the screenshot inline and the three files as rows (PDF shows its page count; each says "text copy made"). Claude answers about all four.
+- [ ] **Open from the transcript.** Click the screenshot: it opens in your image viewer. Click the PDF and Word rows: they open in their own apps, and Word shows the yellow Protected View bar (the hub marks attachments as downloaded). Attach a `.ps1` or `.py` file in a later message and click its row: Explorer opens with the file selected (scripts are never run).
+- [ ] **Codex.** Start a Codex chat and do the same with the same four files: Codex describes the screenshot and answers from the PDF, sheet and document (it reads them, or their text copies, with its shell).
+- [ ] **Local model.** In a local-model chat, attach the PDF, the Excel sheet and the Word document and ask about all three: it answers from the text copies (a sheet whose formulas Excel never calculated shows the formulas, such as `=SUM(B2:B9)`). Attach the screenshot: with a vision model it describes it; without one a yellow note says the model can't see images.
+- [ ] **After a handoff.** In the Claude chat with the files, switch to Codex (**Switch with brief**) and ask "What was in the screenshot I sent, and what does the PDF say?": Codex can answer (the brief lists the files and the screenshot comes again with your message). Also try it with an automatic handoff: start the backend with `$env:HUB_SIMULATE_LIMIT="claude"`, attach a screenshot in a Claude chat and ask about it; Codex takes over and answers about the screenshot.
+- [ ] **Light and dark.** Switch the theme in Settings: chips, file rows and the drop hint stay readable in both.
+- [ ] **Desktop app.** In the desktop app (`npm run tauri dev`), dropping files from Explorer onto the window attaches them, and images show in the transcript (they load through the app's token).
+- [ ] **Originals stay unchanged.** In the Claude chat, ask "Fix the typo in the Word document I attached": Claude can't change the attached file (it is read-only) and should write a new copy elsewhere or explain. The original opens unchanged.
+- [ ] **Deleted with the session.** Note a file's folder (`%LOCALAPPDATA%\MultiAgentHub\attachments\<session id>`), delete the session: the folder is gone.
+
 ## APPLICATION REVISION 6: CI/CD and releases (GitHub, no agent usage)
 
 - [ ] **Database backup.** Next time a migration is added, start the app once: `%LOCALAPPDATA%\MultiAgentHub\data\backups` gets a copy of `hub.db` named after the old revision, and the app works as before.

@@ -18,6 +18,8 @@ Behavior verified against codex-cli 0.164.0 (ChatGPT login, Windows):
   command with exit code 1 and "Access denied". There is no separate denied event.
 - `workspace-write` also allows writes to %TEMP% unless
   `sandbox_workspace_write.exclude_tmpdir_env_var` is set.
+- `exec -i <file>` and `exec resume -i <file>` attach images to the turn's prompt; Codex downsizes large ones
+  itself (a 21 MB PNG was taken).
 - No rate-limit status is printed, so the only limit signal in the stream is the error
   text ("You've hit your usage limit...", taken from the binary; not seen live).
 - The session file `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`
@@ -42,6 +44,7 @@ from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, plan_items, split_plan
 from app.adapters.diffs import FileSnapshots
 from app.adapters.runner import Runner
+from app.attachments import Attachment, with_files
 from app.models import AgentKind
 
 LIMIT_TEXT = re.compile(
@@ -126,17 +129,32 @@ class CodexAdapter(CliAdapter):
     def native_session_id(self) -> str | None:
         return self._session_id
 
-    def start_task(self, prompt: str) -> AsyncGenerator[AgentEvent]:
+    def start_task(self, prompt: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._session_id is not None:
             raise RuntimeError("Task already started; use send_reply")
-        return self._stream(["exec", "--json", *self._options(), "-"], prompt, TurnParser())
+        images, prompt = self._attach(prompt, attachments)
+        return self._stream(["exec", "--json", *images, *self._options(), "-"], prompt, TurnParser())
 
-    def send_reply(self, reply: str) -> AsyncGenerator[AgentEvent]:
+    def send_reply(self, reply: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._session_id is None:
             raise RuntimeError("No task started; use start_task")
+        images, reply = self._attach(reply, attachments)
         return self._stream(
-            ["exec", "resume", "--json", *self._options(), self._session_id, "-"], reply, TurnParser()
+            ["exec", "resume", "--json", *images, *self._options(), self._session_id, "-"], reply, TurnParser()
         )
+
+    @staticmethod
+    def _attach(prompt: str, attachments: Sequence[Attachment]) -> tuple[list[str], str]:
+        """Images go with `--image` (new and resumed turns, codex-cli 0.164.0); every attachment is listed in the
+        prompt by path with its text copy, which Codex reads with its shell.
+
+        `exec --image` takes several values (clap `num_args(1..)`): everything after it up to the next flag is an
+        image, the prompt's `-` included. So the images go right after `--json`, and the options that follow
+        always start with a flag (`--skip-git-repo-check`), which ends the list. Stored names have no commas either,
+        which `--image` would split on."""
+        images = [a for a in attachments if a.is_image and Path(a.path).is_file()]
+        args = [arg for image in images for arg in ("--image", image.path)]
+        return args, with_files(prompt, attachments, attached={a.id for a in images})
 
     def run_command(self, command: str) -> AsyncGenerator[AgentEvent]:
         """One of Codex's commands (`codex_commands.COMMANDS`) through its app server, which `exec` lacks."""

@@ -1,7 +1,7 @@
 # PyInstaller build of the backend for the desktop app (a one-folder build: it starts much faster
 # than a one-file build, which unpacks itself on every launch).
 #   uv run pyinstaller hub-backend.spec --noconfirm   ->  dist/hub-backend/hub-backend.exe
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hiddenimports = (
     collect_submodules("app")  # app.main is imported by name ("app.main:app")
@@ -12,8 +12,9 @@ hiddenimports = (
 a = Analysis(
     ["hub_backend.py"],
     pathex=["."],
-    # Alembic loads env.py and the revision files from disk, so ship them as files.
-    datas=[("app/migrations", "app/migrations")],
+    # Alembic loads env.py and the revision files from disk, so ship them as files. python-docx keeps its
+    # templates as package data (used by the attachment text copies, app/extract_worker.py).
+    datas=[("app/migrations", "app/migrations"), *collect_data_files("docx")],
     hiddenimports=hiddenimports,
     excludes=["pytest", "tkinter"],
 )
