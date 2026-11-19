@@ -14,6 +14,7 @@ import {
 import { deriveProgress, toolOutcomes } from "../progress";
 import { useSessionStream } from "../useSessionStream";
 import { AgentChip, agentClass } from "./AgentBadge";
+import { sendWithFiles } from "../attachments";
 import { Composer } from "./Composer";
 import { AutoHandoffSwitch, FolderLock, ModelPicker } from "./ComposerControls";
 import { HistoryView } from "./HistoryView";
@@ -290,9 +291,9 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
                 )}
               </>
             }
-            onSend={async (text) => {
+            onSend={async (text, files) => {
               showView("transcript");
-              await api.sendMessage(session.id, text);
+              await sendWithFiles(session.id, text, files);
               onChanged();
             }}
             onStop={async () => {

@@ -2,8 +2,13 @@
 
 Modes: ok, question, limit, badmodel, crash, hang. Echoes its args, stdin prompt and working folder back in the
 result so tests can check what the adapter sent.
+
+Like the real CLI with `--input-format stream-json`, stdin is one JSON line per turn, `{"type": "user", "message":
+{"content": [blocks]}}`; `prompt` is its text blocks joined, and `blocks` lists every block's type (and an image's
+or document's media type and size), so tests can check what was attached.
 """
 
+import base64
 import json
 import os
 import sys
@@ -15,7 +20,20 @@ def emit(event: dict) -> None:
 
 
 mode, args = sys.argv[1], sys.argv[2:]
-prompt = sys.stdin.read()
+stdin = sys.stdin.read()
+blocks: list[dict] = []
+if "--input-format" in args and args[args.index("--input-format") + 1] == "stream-json":
+    message = json.loads(stdin.splitlines()[0])
+    content = message["message"]["content"]
+    content = [{"type": "text", "text": content}] if isinstance(content, str) else content
+    prompt = "\n".join(b["text"] for b in content if b["type"] == "text")
+    for b in content:
+        source = b.get("source") or {}
+        blocks.append({"type": b["type"], "media_type": source.get("media_type"),
+                       "bytes": len(base64.b64decode(source["data"])) if source.get("data") else None})
+else:  # the hub always sends stream-json now; a plain prompt means an adapter path was missed
+    print("fake claude: expected --input-format stream-json", file=sys.stderr)
+    sys.exit(4)
 if "--session-id" in args:
     session_id = args[args.index("--session-id") + 1]
 elif "--resume" in args:
@@ -51,7 +69,7 @@ if prompt.startswith("/compact"):  # as Claude Code 2.1.323 reports a compaction
     sys.exit(0)
 
 emit({"type": "assistant", "message": {"content": [{"type": "text", "text": f"echo: {prompt}"}]}, "parent_tool_use_id": None})
-text = json.dumps({"args": args, "prompt": prompt, "cwd": os.getcwd()})
+text = json.dumps({"args": args, "prompt": prompt, "cwd": os.getcwd(), "blocks": blocks})
 if mode == "question":
     text += "\n[[NEEDS_INPUT]]"
 emit({"type": "result", "subtype": "success", "is_error": False, "result": text, "total_cost_usd": 0.0, "num_turns": 1})

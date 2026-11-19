@@ -1,5 +1,7 @@
 import { Fragment, useState, type ReactNode } from "react";
+import { messageAttachments } from "../attachments";
 import { AgentName, agentClass } from "./AgentBadge";
+import { MessageAttachments } from "./Attachments";
 import { DiffStat, DiffView, startsOpen } from "./DiffView";
 import { MarkdownText } from "./MarkdownText";
 import { AGENT_NAMES, api, type AgentKind, type Effort, type SessionEvent, type SessionStatus } from "../api";
@@ -96,7 +98,10 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
           // Marked in the color of the agent it was sent to.
           <div key={event.id} id={eventAnchor(event.id)} className={`row user-message ${agentClass(event.agent)}`}>
             <span className="prompt-mark">❯</span>
-            <span className="pre-wrap">{p.text}</span>
+            <div className="user-message-body">
+              {p.text && <span className="pre-wrap">{p.text}</span>}
+              <MessageAttachments sessionId={sessionId} attachments={messageAttachments(p)} />
+            </div>
           </div>
         );
       case "message":

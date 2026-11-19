@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,14 +8,20 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from httpx2 import AsyncBaseTransport
 from sqlalchemy.engine import Engine
+from sqlmodel import Session, select
 
-from app.api import folders, health, local, models, sessions, settings as hub_settings, skills as skill_routes, usage
+from app.api import attachments as attachment_routes, folders, health, local, models, sessions, settings as hub_settings, skills as skill_routes, usage
 from app.model_list import default_codex_home
+from app.attachments import AttachmentStore
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
+from app.api.attachments import FileOpener, default_open_file
 from app.db import init_db, make_engine
+from app.models import AgentSession
 from app.orchestrator import AdapterFactory, Orchestrator, default_adapter_factory
 from app.skills import SkillLibrary
+
+log = logging.getLogger(__name__)
 
 
 def create_app(
@@ -29,6 +37,8 @@ def create_app(
     skills_dir: Path | None = None,
     claude_home: Path | None = None,
     discover_native: bool = True,
+    attachments_dir: Path | None = None,
+    open_file: FileOpener | None = None,
 ) -> FastAPI:
     """Tests pass `token`, the folders and a fake Ollama transport; otherwise they come from the settings."""
     settings = get_settings()
@@ -36,8 +46,9 @@ def create_app(
     # The skill library; tests pass their own folders so the user's real skills are never touched.
     codex_home = codex_home or default_codex_home()
     skills = SkillLibrary(skills_dir or settings.skills_dir, claude_home=claude_home, codex_home=codex_home)
+    attachments = AttachmentStore(attachments_dir or settings.attachments_dir)
     orchestrator = Orchestrator(engine, adapter_factory, simulate_limit=set(settings.simulate_limit),
-                                skills=skills)
+                                skills=skills, attachments=attachments)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -48,6 +59,14 @@ def create_app(
         )
         init_db(engine)
         orchestrator.recover_interrupted()
+        # Uploads a message never used (the window closed between upload and send, or a crash), and empty folders of
+        # deleted sessions. A cleanup must never stop the backend from starting.
+        try:
+            with Session(engine) as db:
+                known = set(db.exec(select(AgentSession.id)).all())
+            await asyncio.to_thread(attachments.sweep_unsent, known_sessions=known)
+        except Exception:
+            log.exception("Cleaning up old attachments failed; starting anyway")
         yield
         await orchestrator.shutdown()
         engine.dispose()
@@ -65,6 +84,8 @@ def create_app(
     app.state.skills = skills
     # False in tests: the `/` menu doesn't start the real Claude or Codex CLI to learn their skills.
     app.state.discover_native = discover_native
+    # Opens an attachment with its own app on this PC; tests pass a recorder so nothing opens.
+    app.state.open_file = open_file or default_open_file
 
     app.add_middleware(
         CORSMiddleware,
@@ -84,6 +105,7 @@ def create_app(
     app.include_router(local.router, prefix="/api", dependencies=authenticated)
     app.include_router(models.router, prefix="/api", dependencies=authenticated)
     app.include_router(skill_routes.router, prefix="/api", dependencies=authenticated)
+    app.include_router(attachment_routes.router, prefix="/api", dependencies=authenticated)
     return app
 
 

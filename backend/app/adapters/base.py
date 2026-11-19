@@ -7,11 +7,12 @@ with that session's working directory and model.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from app.attachments import Attachment
 from app.models import AgentKind
 
 
@@ -49,11 +50,15 @@ class AgentAdapter(ABC):
     kind: AgentKind
 
     @abstractmethod
-    def start_task(self, prompt: str) -> AsyncGenerator[AgentEvent]:
-        """Start a new task and stream its events until the turn ends."""
+    def start_task(self, prompt: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
+        """Start a new task and stream its events until the turn ends.
+
+        `attachments` are files the user attached to this message (`app.attachments`); each adapter hands them
+        over its agent's own way (content blocks, `-i`, Ollama's `images`) and lists the rest by path.
+        """
 
     @abstractmethod
-    def send_reply(self, reply: str) -> AsyncGenerator[AgentEvent]:
+    def send_reply(self, reply: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         """Answer the agent's question (or continue the task) and stream the resulting events."""
 
     def summarize(self, prompt: str, instructions: str) -> AsyncGenerator[AgentEvent]:

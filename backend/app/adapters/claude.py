@@ -13,13 +13,21 @@ Behavior verified against Claude Code 2.1.305:
   `system/compact_boundary` (`compact_metadata`: `trigger`, `pre_tokens`, `post_tokens`) and an empty result;
   Claude's own compaction when the context fills has `trigger: auto`. `/context` and `/usage` answer as an
   assistant message with no model request.
+- Every turn's input is one `--input-format stream-json` line, `{"type": "user", "message": {"role": "user",
+  "content": [text, image..., document...]}}` (checked with 2.1.323: new and `--resume`d turns, commands such as
+  `/context` as the text block, PNG `image` and PDF `document` blocks in base64). Claude Code downsizes large
+  images itself (a 21 MB, 2700 px PNG and a 9000 px wide one were taken). `--add-dir` gives Claude the session's
+  attachments folder without moving its working folder (`init` still reports the session's cwd).
 """
 
+import asyncio
+import base64
 import json
 import re
 import shutil
 import uuid
 from collections.abc import AsyncGenerator, Sequence
+from contextlib import aclosing
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +35,7 @@ from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, split_plan
 from app.adapters.diffs import claude_diffs
 from app.adapters.runner import Runner
+from app.attachments import Attachment, claude_blocks, with_files
 from app.models import AgentKind
 from app.skills import claude_capabilities
 
@@ -63,8 +72,11 @@ class ClaudeAdapter(CliAdapter):
         command: Sequence[str] | None = None,
         runner: Runner | None = None,
         plugin_dirs: Sequence[Path] = (),
+        add_dirs: Sequence[Path] = (),
     ) -> None:
         super().__init__(cwd, command or [find_claude()], runner)
+        # Folders Claude may read besides its working folder (--add-dir): the session's attachments, once it has any.
+        self.add_dirs = list(add_dirs)
         # Skill folders loaded for each turn (--plugin-dir): the hub library's skills that are on for Claude.
         self.plugin_dirs = list(plugin_dirs)
         self.model = model
@@ -77,16 +89,16 @@ class ClaudeAdapter(CliAdapter):
     def native_session_id(self) -> str | None:
         return self._session_id
 
-    def start_task(self, prompt: str) -> AsyncGenerator[AgentEvent]:
+    def start_task(self, prompt: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._session_id is not None:
             raise RuntimeError("Task already started; use send_reply")
         self._session_id = str(uuid.uuid4())
-        return self._run(["--session-id", self._session_id], prompt)
+        return self._run(["--session-id", self._session_id], prompt, attachments=attachments)
 
-    def send_reply(self, reply: str) -> AsyncGenerator[AgentEvent]:
+    def send_reply(self, reply: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._session_id is None:
             raise RuntimeError("No task started; use start_task")
-        return self._run(["--resume", self._session_id], reply)
+        return self._run(["--resume", self._session_id], reply, attachments=attachments)
 
     def run_command(self, command: str) -> AsyncGenerator[AgentEvent]:
         # Not saved, so no empty conversation is left behind; the parser drops the throwaway session id.
@@ -96,6 +108,7 @@ class ClaudeAdapter(CliAdapter):
         # No tools, not saved, and a short system prompt in place of Claude Code's own (fewer tokens).
         args = [
             "-p",
+            "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",
             "--no-session-persistence",
@@ -104,12 +117,13 @@ class ClaudeAdapter(CliAdapter):
         ]
         if self.model:
             args += ["--model", self.model]
-        return self._stream(args, prompt, TurnParser())
+        return self._stream(args, user_line(prompt), TurnParser())
 
-    def _run(self, session_args: list[str], prompt: str, parser: "TurnParser | None" = None
-             ) -> AsyncGenerator[AgentEvent]:
+    async def _run(self, session_args: list[str], prompt: str, parser: "TurnParser | None" = None,
+                   attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         args = [
             "-p",
+            "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",
             *session_args,
@@ -123,7 +137,33 @@ class ClaudeAdapter(CliAdapter):
             args += ["--effort", self.effort]
         for folder in self.plugin_dirs:
             args += ["--plugin-dir", str(folder)]
-        return self._stream(args, prompt, parser or TurnParser())
+        for folder in self.add_dirs:
+            if Path(folder).is_dir():
+                args += ["--add-dir", str(folder)]
+        # Reading and encoding attachments (up to a few tens of MB) stays off the event loop.
+        line = await asyncio.to_thread(user_line, prompt, attachments) if attachments else user_line(prompt)
+        # aclosing: closing this generator early must also end the process (`_stream`'s finally) right away.
+        async with aclosing(self._stream(args, line, parser or TurnParser())) as events:
+            async for event in events:
+                yield event
+
+
+def user_line(prompt: str, attachments: Sequence[Attachment] = ()) -> bytes:
+    """One turn's stream-json input: the text first (a command must start it), then images and PDFs as content
+    blocks, within the request's budget (`claude_blocks`). Every attachment is also listed by path, with its text copy, so Claude can open the rest itself."""
+    blocks, attached = [], set()
+    # Within the request's page and size budget; the rest are listed by path below.
+    for attachment in claude_blocks(attachments):
+        try:
+            data = base64.b64encode(Path(attachment.path).read_bytes()).decode("ascii")
+        except OSError:
+            continue  # gone from disk: the path is still listed
+        source = {"type": "base64", "media_type": attachment.mime, "data": data}
+        blocks.append({"type": "image" if attachment.is_image else "document", "source": source})
+        attached.add(attachment.id)
+    text = with_files(prompt, attachments, attached=attached)
+    content = [{"type": "text", "text": text}, *blocks]
+    return (json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n").encode("utf-8")
 
 
 class TurnParser:

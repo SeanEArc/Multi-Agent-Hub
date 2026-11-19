@@ -202,8 +202,11 @@ function activity(session: AgentSession): string {
   if (!event) return "Not started yet";
   const p = event.payload;
   switch (event.type) {
-    case "user_message":
-      return `You: ${firstLine(p.text)}`;
+    case "user_message": {
+      const files = Array.isArray(p.attachments) ? p.attachments.length : 0;
+      const attached = files ? ` (${files} file${files === 1 ? "" : "s"})` : "";
+      return `You: ${p.text ? firstLine(p.text) : "sent files"}${attached}`;
+    }
     case "message":
       return firstLine(p.text);
     case "tool_use":

@@ -67,3 +67,41 @@ def test_compact_and_context_commands(tmp_path: Path) -> None:
     assert report[-1].type is EventType.COMPLETED and "context" in report[-1].data["text"].lower()
     assert fresh.native_session_id is None
     assert not any(e.type is EventType.STARTED and e.data.get("session_id") for e in report)
+
+
+def test_attachments_as_content_blocks_on_new_and_resumed_turns(tmp_path: Path) -> None:
+    """Revision 4 attachments: images and PDFs go as stream-json content blocks, also on a resumed turn, and
+    --add-dir gives Claude the attachments folder without moving its working folder."""
+    import attachment_samples as samples
+    from app.attachments import AttachmentStore
+
+    store = AttachmentStore(tmp_path / "attachments")
+    session = "00000000-0000-4000-8000-00000000a77a"
+
+    async def run(events):
+        return [event async for event in events]
+
+    async def chunks(data: bytes):
+        yield data
+
+    async def save(name: str, data: bytes):
+        return await store.save(session, name, chunks(data))
+
+    red = asyncio.run(save("red.png", samples.png((255, 0, 0))))
+    report = asyncio.run(save("report.pdf", samples.pdf()))
+    blue = asyncio.run(save("blue.png", samples.png((0, 0, 255))))
+    work = tmp_path / "work"
+    work.mkdir()
+    adapter = ClaudeAdapter(work, model="haiku", add_dirs=[store.session_dir(session)])
+
+    first = asyncio.run(run(adapter.start_task(
+        "What color is the image, and what is the secret word in the PDF? Under 12 words, no tools.",
+        attachments=[red, report])))
+    assert first[0].data["cwd"] == str(work)
+    assert first[-1].type is EventType.COMPLETED, first[-1]
+    assert "red" in first[-1].data["text"].lower() and "pelican" in first[-1].data["text"].lower()
+
+    second = asyncio.run(run(adapter.send_reply("What color is this new image? One word, no tools.",
+                                                attachments=[blue])))
+    assert second[-1].type is EventType.COMPLETED, second[-1]
+    assert "blue" in second[-1].data["text"].lower()

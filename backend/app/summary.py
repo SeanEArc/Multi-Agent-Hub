@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from app.adapters.base import EventType
-from app.handoff import AGENT_NAMES, GitState, clip, files_and_commands
+from app.handoff import AGENT_NAMES, GitState, clip, files_and_commands, session_attachments
 from app.models import PlanItemRead, SessionEvent, Stint, StintReason
 
 SUMMARY_INSTRUCTIONS = (
@@ -64,6 +64,8 @@ def build_summary_prompt(
         sections.append("## Later messages from the user, oldest first\n\n" + "\n\n".join(
             f"- {clip(m, MAX_MESSAGE)}" for m in later
         ))
+    if attached := session_attachments(events):
+        sections.append("## Files the user attached\n\n" + "\n".join(f"- {a.name}" for a in attached[-20:]))
     sections.append("## Agents, in order\n\n" + "\n".join(
         f"- {AGENT_NAMES[s.agent]}" + (f" ({REASONS[s.reason]})" if s.reason in REASONS else "")
         for s in stints

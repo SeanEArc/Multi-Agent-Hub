@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type AgentKind, type Effort, type GitInfo, type HubSettings, type LimitPolicy } from "../api";
 import { agentClass } from "./AgentBadge";
+import { sendWithFiles } from "../attachments";
 import { Composer } from "./Composer";
 import { AutoHandoffSwitch, FolderButton, ModelPicker, chatTitle } from "./ComposerControls";
 import { FolderPicker } from "./FolderPicker";
@@ -66,12 +67,12 @@ export function NewChatView({ settings, recentProjects, onCreated }: Props) {
   const defaultPolicy: LimitPolicy = settings?.limit_policy ?? "auto";
   const auto = autoHandoff ?? defaultPolicy === "auto";
 
-  async function send(text: string) {
+  async function send(text: string, files: File[]) {
     let id = created.current;
     if (!id) {
       const policy: LimitPolicy = auto ? "auto" : "ask";
       const session = await api.createSession({
-        title: chatTitle(text),
+        title: chatTitle(text || files[0]?.name || "Attached files"),
         project_path: projectPath.trim() || null,
         agent,
         model,
@@ -83,7 +84,8 @@ export function NewChatView({ settings, recentProjects, onCreated }: Props) {
       id = created.current = session.id;
     }
     try {
-      await api.sendMessage(id, text);
+      // The session must exist before files can be uploaded to it.
+      await sendWithFiles(id, text, files);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`The session was created, but the message wasn't sent: ${message}`);

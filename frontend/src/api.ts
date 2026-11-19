@@ -1,4 +1,5 @@
 // Types and calls for the FastAPI backend (see backend/app/api/sessions.py).
+import type { Attachment } from "./attachments";
 import { apiFetch } from "./connection";
 import type { PlanItem } from "./progress";
 
@@ -46,6 +47,7 @@ export interface LocalModel {
   context_length: number | null;
   tools: boolean | null;
   thinking: boolean | null;
+  vision?: boolean | null;
 }
 
 export interface LocalModels {
@@ -436,11 +438,29 @@ export const api = {
   createSession: (body: NewSession) =>
     request<AgentSession>("/sessions", { method: "POST", body: JSON.stringify(body) }),
   deleteSession: (id: string) => request<void>(`/sessions/${id}`, { method: "DELETE" }),
-  sendMessage: (id: string, text: string) =>
+  sendMessage: (id: string, text: string, attachments: string[] = []) =>
     request<AgentSession>(`/sessions/${id}/messages`, {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, attachments }),
     }),
+  // The raw file is the body, so it streams with no multipart encoding; answers once the text copy is made.
+  uploadAttachment: async (id: string, file: File): Promise<Attachment> => {
+    const response = await apiFetch(`/api/sessions/${id}/attachments?${new URLSearchParams({ name: file.name })}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new ApiError(response.status, errorMessage(response, body));
+    }
+    return response.json();
+  },
+  discardAttachment: (id: string, attachmentId: string) =>
+    request<void>(`/sessions/${id}/attachments/${attachmentId}`, { method: "DELETE" }),
+  // Opens the file with its own app on this PC (code and scripts are shown in Explorer instead).
+  openAttachment: (id: string, attachmentId: string) =>
+    request<{ action: "opened" | "revealed" }>(`/sessions/${id}/attachments/${attachmentId}/open`, { method: "POST" }),
   stop: (id: string) => request<AgentSession>(`/sessions/${id}/stop`, { method: "POST" }),
   updateSession: (id: string, body: SessionUpdate) =>
     request<AgentSession>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

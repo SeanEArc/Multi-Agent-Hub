@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, replace
 from functools import partial
@@ -26,8 +26,9 @@ from app.adapters.base import AgentAdapter, AgentEvent, EventType
 from app.adapters.claude import ClaudeAdapter, ClaudeCliNotFound
 from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
 from app.adapters.ollama import OllamaAdapter, OllamaUnavailable, list_models_sync, pick_model
+from app.attachments import Attachment, AttachmentError, AttachmentStore
 from app.config import get_settings
-from app.handoff import build_brief, git_state, messages_brief, next_in_chain, with_brief
+from app.handoff import build_brief, git_state, messages_brief, next_in_chain, recent_images, with_brief
 from app.model_list import is_unavailable_model_error, record_availability, record_check
 from app.models import (
     AgentKind,
@@ -118,6 +119,12 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
     settings = get_settings()
     # The hub library's skills that are on for this agent (app.skills).
     library = SkillLibrary(settings.skills_dir)
+    # The session's attachments: Claude reads them through --add-dir, the local model as a read root. Codex's
+    # sandbox already lets it read anywhere, so it only gets the paths.
+    try:
+        attachments_dir: Path | None = AttachmentStore(settings.attachments_dir).session_dir(session.id)
+    except (TypeError, ValueError):
+        attachments_dir = None
     try:
         match stint.agent:
             case AgentKind.CLAUDE:
@@ -128,6 +135,7 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     permission_mode=settings.claude_permission_mode,
                     effort=stint.effort,
                     plugin_dirs=[d for d in [library.claude_plugin_dir()] if d],
+                    add_dirs=[d for d in [attachments_dir] if d],
                 )
             case AgentKind.CODEX:
                 return CodexAdapter(
@@ -144,6 +152,7 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                 models = list_models_sync(settings.ollama_url)
                 model = pick_model(models, stint.model, settings.ollama_model)
                 capable = next((m["tools"] for m in models if m["name"] == model), None)
+                sees = next((m.get("vision") for m in models if m["name"] == model), None)
                 return OllamaAdapter(
                     cwd,
                     model=model,
@@ -158,6 +167,8 @@ def default_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> A
                     command_timeout=settings.ollama_command_timeout,
                     skill_instructions=library.instructions(AgentKind.OLLAMA),
                     skill_roots=library.read_roots(AgentKind.OLLAMA),
+                    vision=sees,
+                    attachments_dir=attachments_dir,
                 )
     except (ClaudeCliNotFound, CodexCliNotFound, OllamaUnavailable) as exc:
         raise AgentUnavailable(str(exc)) from exc
@@ -171,9 +182,12 @@ class Orchestrator:
         adapter_factory: AdapterFactory = default_adapter_factory,
         simulate_limit: set[AgentKind] | None = None,
         skills: SkillLibrary | None = None,
+        attachments: AttachmentStore | None = None,
     ) -> None:
         self._engine = engine
         self._adapter_factory = adapter_factory
+        # Files uploaded for a session's messages (app.attachments); a message names them by id.
+        self.attachments = attachments or AttachmentStore(get_settings().attachments_dir)
         # The skill library, for expanding a `/name` message into the prompt the agent gets.
         self.skills = skills or SkillLibrary(get_settings().skills_dir)
         # HUB_SIMULATE_LIMIT: these agents' turns end in a usage limit (development only).
@@ -210,11 +224,12 @@ class Orchestrator:
             )
             self._set_status(session_id, SessionStatus.FAILED)
 
-    async def send(self, session_id: str, text: str) -> None:
+    async def send(self, session_id: str, text: str, attachment_ids: Sequence[str] = ()) -> None:
         """Start the task, or reply to it if it already started. Returns once the turn is running.
 
         A message starting with `/name` may be one of the agent's commands (`app.commands.route`; the hub's own for
-        the local model) or a skill (`expand_command`); anything else is sent as typed.
+        the local model) or a skill (`expand_command`); anything else is sent as typed. `attachment_ids` name files
+        uploaded for this message (`app.attachments`); AttachmentError if one is unknown or can't go with a command.
         """
         if self.is_running(session_id):
             raise SessionBusy("A turn is already running for this session")
@@ -222,8 +237,14 @@ class Orchestrator:
             agent_session = db.get(AgentSession, session_id)
             if agent_session is None:
                 raise SessionNotFound(session_id)
+            files = self.attachments.load(session_id, attachment_ids)
             stint = current_stint(db, session_id)
             command = route(stint.agent, text, load_capabilities(db, stint.agent))
+            if files and command is not None and not _takes_attachments(command):
+                raise AttachmentError(f"Files can't be attached to /{command.name}; send them in a normal message.")
+            # A new agent that waited after a handoff gets the images from the user's last messages again.
+            carried = (recent_images(_events(db, session_id), exclude=[f.id for f in files])
+                       if stint.brief and not stint.native_session_id else [])
             # A command answered without a model request still runs once the limit is reached (/usage then).
             limit_known = _limit_already_reached(db, stint) and not (command is not None and command.local)
             worktree = session_worktree(db, session_id)
@@ -251,7 +272,12 @@ class Orchestrator:
         if command is not None and command.compact and hasattr(adapter, "compact_fallback"):
             adapter.compact_fallback = partial(self._compact_brief, session_id, command.rest)
 
-        self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": text}))
+        message: dict[str, Any] = {"text": text}
+        if files:
+            message["attachments"] = [f.to_json() for f in files]
+        self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, message))
+        # Sent files stay with the session; unsent uploads can still be discarded.
+        self.attachments.mark_sent(session_id, files)
         if limit_known:
             # Codex reports a reached limit only after a turn; don't spend a turn finding out again.
             self._save_event(session_id, stint, AgentEvent(EventType.LIMIT_REACHED, {
@@ -262,7 +288,7 @@ class Orchestrator:
 
         self._adapters[session_id] = adapter
         if command is not None and command.prompt is None:
-            events = self._command_events(adapter, stint, command, text)
+            events = self._command_events(adapter, stint, command, text, files, carried)
         else:
             # A message starting with /name may name a skill; the agent gets it in a form it can run. A command
             # with the hub's own request (Codex's /init) is sent as that request.
@@ -270,27 +296,29 @@ class Orchestrator:
                 expand_command(stint.agent, text, self.skills, cached_codex_names()))
             if adapter.native_session_id is None:
                 # An agent that waited after a handoff (or whose first turn never started) gets its brief first.
-                events = adapter.start_task(with_brief(stint.brief, prompt) if stint.brief else prompt)
+                events = adapter.start_task(with_brief(stint.brief, prompt) if stint.brief else prompt,
+                                            attachments=[*carried, *files])
             else:
-                events = adapter.send_reply(prompt)
+                events = adapter.send_reply(prompt, attachments=files)
         self._start_turn(session_id, stint, adapter, events)
 
     @staticmethod
-    def _command_events(adapter: AgentAdapter, stint: Stint, command: Route, text: str
+    def _command_events(adapter: AgentAdapter, stint: Stint, command: Route, text: str,
+                        files: Sequence[Attachment] = (), carried: Sequence[Attachment] = ()
                         ) -> AsyncGenerator[AgentEvent]:
         """One of the agent's own commands. Codex's run through its app server (`run_command`). Claude's are sent as
         typed: a command must start the prompt, so it never goes behind a brief. Before the conversation starts, a
         command with no model request runs as a one-off, and any other gets the waiting brief after it, as its
-        arguments (they stay in the conversation)."""
+        arguments (they stay in the conversation). Attached files go with a command sent as a turn."""
         if command.adapter:
             return adapter.run_command(text)
         if adapter.native_session_id is not None:
-            return adapter.send_reply(text)
+            return adapter.send_reply(text, attachments=files)
         if command.local:
             return adapter.run_command(text)
         if stint.brief:
-            return adapter.start_task(f"{text}\n\n{stint.brief}")
-        return adapter.start_task(text)
+            return adapter.start_task(f"{text}\n\n{stint.brief}", attachments=[*carried, *files])
+        return adapter.start_task(text, attachments=files)
 
     async def _answer_in_hub(self, session_id: str, stint: Stint, command: Route, text: str) -> None:
         """A command the hub answers itself, with no agent turn and no change of status: `/diff` shows the session's
@@ -819,7 +847,9 @@ class Orchestrator:
                 if note and note.strip():
                     self._save_event(session_id, stint, AgentEvent(EventType.USER_MESSAGE, {"text": note.strip()}))
                 first = stint.brief if stint.brief else (note.strip() if note and note.strip() else "Continue.")
-                self._start_turn(session_id, stint, adapter, adapter.start_task(first))
+                # With a brief, the images the user showed the previous agent go along again.
+                images = recent_images(events) if stint.brief else []
+                self._start_turn(session_id, stint, adapter, adapter.start_task(first, attachments=images))
             except Exception as exc:
                 log.exception("Handoff failed for session %s", session_id)
                 self._save_event(session_id, previous, AgentEvent(EventType.ERROR, {"message": f"Handoff failed: {exc}"}))
@@ -862,6 +892,18 @@ class Orchestrator:
     def _publish(self, session_id: str, message: StreamMessage) -> None:
         for queue in self._listeners.get(session_id, ()):
             queue.put_nowait(message)
+
+
+def _events(db: Session, session_id: str) -> list[SessionEvent]:
+    return list(db.exec(
+        select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(col(SessionEvent.id))
+    ).all())
+
+
+def _takes_attachments(command: Route) -> bool:
+    """Files can go with a command only when it is sent to the agent as a turn (Claude's pass-through commands);
+    the hub's answers, notes, one-offs and app-server commands have nowhere to put them."""
+    return command.action == "agent" and not (command.adapter or command.local or command.compact or command.review)
 
 
 def _limited_agents(db: Session, session_id: str) -> set[AgentKind]:

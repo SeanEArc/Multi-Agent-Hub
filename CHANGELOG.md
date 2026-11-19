@@ -28,6 +28,13 @@ workflow uses that section as the release notes and refuses a tag without one. S
 - Local model commands: `/compact` has the local model summarize its own conversation (the hub's summary if it
   can't), with **View summary** on the "Conversation compacted" row; `/context` shows how full its context is;
   `/usage` says it has no limits; `/code-review` asks it to review the session's git changes.
+- Attachments: attach images (PNG, JPEG, GIF, WebP), PDF, Word, Excel, CSV, text and code files with the
+  paperclip button, by pasting a screenshot, or by dropping files on the window. Claude sees images and PDFs
+  directly, Codex sees images, and the local model sees images when it has vision; every agent can open the
+  files, and the hub makes a plain-text copy of PDF, Word, Excel and CSV files for them. The transcript shows
+  images inline and opens other files with a click. After a handoff the next agent gets the list of files and
+  the recent images again. Files are kept in `%LOCALAPPDATA%\MultiAgentHub\attachments` and deleted with
+  the session.
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.

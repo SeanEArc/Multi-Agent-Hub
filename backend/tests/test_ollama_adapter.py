@@ -46,7 +46,7 @@ def test_models_from_tags() -> None:
     models = models_from_tags(TAGS)
     assert [m["name"] for m in models] == ["plain:1b", MODEL]
     assert models[1] == {"name": MODEL, "size": 6_550_825_550, "parameter_size": "9.0B", "quantization": "Q4_K_M",
-                         "context_length": 262144, "tools": True, "thinking": True}
+                         "context_length": 262144, "tools": True, "thinking": True, "vision": False}
     assert models_from_tags({"models": [{"name": "old"}]})[0]["tools"] is None  # no capabilities reported
 
 

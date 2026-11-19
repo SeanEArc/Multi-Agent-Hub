@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     local_dir: Path = APP_DATA_DIR / "local"
     # The skill library (app.skills): skills any agent can use, their per-agent switches and downloads.
     skills_dir: Path = APP_DATA_DIR / "skills"
+    # Files attached to messages (app.attachments), a folder per session, deleted with it. Outside any repository,
+    # like worktrees_dir.
+    attachments_dir: Path = APP_DATA_DIR / "attachments"
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was
     # reached, so handoff can be tried with the real CLIs. The turn still runs and uses real usage.
     simulate_limit: Annotated[list[AgentKind], NoDecode] = []

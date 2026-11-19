@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app.adapters.base import EventType
 from app.adapters.cli import HEADLESS_GIT_ENV
+from app.attachments import KIND_NAMES, Attachment
 from app.models import AgentKind, ChainEntry, SessionEvent, StintReason
 
 MAX_BRIEF = 40_000
@@ -21,6 +22,11 @@ LATER_MESSAGES = 10
 LAST_AGENT_MESSAGES = 3
 LAST_COMMANDS = 20
 GIT_TIMEOUT = 10.0
+# Attachments: how many the brief lists, and the images sent again with the new agent's first message (from the
+# user's last few messages that had any), so it can see what the user showed the previous agent.
+LISTED_ATTACHMENTS = 30
+RESENT_IMAGE_MESSAGES = 3
+RESENT_IMAGES = 5
 
 AGENT_NAMES = {AgentKind.CLAUDE: "Claude Code", AgentKind.CODEX: "Codex", AgentKind.OLLAMA: "a local model"}
 REASON_TEXT = {
@@ -118,6 +124,8 @@ def build_brief(
         sections.append("## Later messages from the user, oldest first\n\n" + "\n\n".join(
             f"- {clip(m, MAX_MESSAGE)}" for m in later
         ))
+    if files_section := _attachments_section(events):
+        sections.append(files_section)
     if agent_messages:
         sections.append(f"## Last messages from {AGENT_NAMES[from_agent]}, oldest first\n\n" + "\n\n---\n\n".join(
             clip(m, MAX_MESSAGE) for m in agent_messages[-LAST_AGENT_MESSAGES:]
@@ -164,7 +172,62 @@ def messages_brief(events: Sequence[SessionEvent], to_agent: AgentKind) -> str |
     )
     if len(kept) < len(user_messages):
         head += f" {len(user_messages) - len(kept)} messages after the first are left out."
-    return clip(head + "\n\n" + "\n\n".join(f"- {clip(m, MAX_MESSAGE)}" for m in kept), MAX_BRIEF)
+    body = "\n\n".join(f"- {clip(m, MAX_MESSAGE)}" for m in kept)
+    if files_section := _attachments_section(events):
+        body += "\n\n" + files_section
+    return clip(head + "\n\n" + body, MAX_BRIEF)
+
+
+def message_attachments(event: SessionEvent) -> list[Attachment]:
+    """The files attached to a `user_message` event."""
+    return [Attachment.from_json(a) for a in event.payload.get("attachments") or [] if isinstance(a, dict)]
+
+
+def session_attachments(events: Sequence[SessionEvent]) -> list[Attachment]:
+    """Every file the user attached in the session, each once, oldest first."""
+    found: dict[str, Attachment] = {}
+    for event in events:
+        if event.type == EventType.USER_MESSAGE:
+            for attachment in message_attachments(event):
+                found.setdefault(attachment.id, attachment)
+    return list(found.values())
+
+
+def recent_images(events: Sequence[SessionEvent], exclude: Sequence[str] = ()) -> list[Attachment]:
+    """Images from the user's last messages that had attachments (at most `RESENT_IMAGES`, the newest kept, oldest
+    first), sent again with a new agent's first message. Files no longer on disk are skipped."""
+    images: list[Attachment] = []
+    messages = 0
+    for event in reversed(events):
+        if event.type != EventType.USER_MESSAGE or not event.payload.get("attachments"):
+            continue
+        messages += 1
+        for attachment in reversed(message_attachments(event)):
+            if (attachment.is_image and attachment.id not in exclude and Path(attachment.path).is_file()
+                    and all(a.id != attachment.id for a in images)):
+                images.append(attachment)
+        if messages >= RESENT_IMAGE_MESSAGES or len(images) >= RESENT_IMAGES:
+            break
+    return list(reversed(images[:RESENT_IMAGES]))
+
+
+def _attachments_section(events: Sequence[SessionEvent]) -> str:
+    attachments = session_attachments(events)
+    if not attachments:
+        return ""
+    intro = ("Read them from these paths; never change them. A text copy is the hub's plain-text version of a PDF, "
+             "Word, Excel or CSV file.")
+    if any(a.is_image for a in attachments):
+        intro += " Images from the user's last messages come with this message again, when your tools take images."
+    lines = ["## Files the user attached", "", intro, ""]
+    for attachment in attachments[-LISTED_ATTACHMENTS:]:
+        line = f"- {attachment.name} ({KIND_NAMES.get(attachment.kind, attachment.kind)}): `{attachment.path}`"
+        if attachment.text_path:
+            line += f"; text copy: `{attachment.text_path}`"
+        lines.append(line)
+    if len(attachments) > LISTED_ATTACHMENTS:
+        lines.append(f"- … and {len(attachments) - LISTED_ATTACHMENTS} earlier files in the same folder")
+    return "\n".join(lines)
 
 
 def with_brief(brief: str, text: str) -> str:
