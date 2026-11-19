@@ -1707,6 +1707,8 @@ This session ran inside Multi-Agent Hub itself (headless `claude -p`).
 
 # Session 53: revision 4, attachments PR 1 on `revision/attachments`: attaching and reading files, built by a subagent loop (engineer → DevOps tests → QA review, three rounds).
 
+Claude session: https://claude.ai/code/session_018PBEGAnVeYQw3xpLKHrkf2
+
 ## How the work was run
 At the user's request the coordinator delegated to three subagents and looped until QA passed: a **senior software engineer** (builds the code and its tests), a **senior DevOps engineer** (tests the code and checks CI fitness), and a **senior QA reviewer** (checks the spec, reviews and runs everything, and gives a verdict). Round 1 was rated INCOMPLETE (2 blocking bugs), round 2 COMPLETE with 2 should-fix items, and round 3 fixed those. The coordinator re-ran everything at the end: **446 passed, 10 skipped**, UI typecheck and build pass, version check passes. Nothing is committed.
 
