@@ -102,7 +102,7 @@ To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
 
 ## Roadmap
 
-Next: Claude's and Codex's own commands in the hub (`/compact`, `/context`, `/usage`, `/code-review`) and attachments, image generation, and **delegation** (one agent hands a sub-task to another and gets a report back). Later: parallel split of one task across agents, Docker isolation, design styles, auto-update and access from a phone. The full plan is in [`docs/plan.md`](docs/plan.md).
+Next: Claude's and Codex's own commands in the hub (`/compact`, `/context`, `/usage`, `/code-review`) and attachments, image generation, and **delegation** (one agent hands a sub-task to another and gets a report back). Later: parallel split of one task across agents, Docker isolation, design styles, auto-update and access from a phone.
 
 ## Contributing
 
