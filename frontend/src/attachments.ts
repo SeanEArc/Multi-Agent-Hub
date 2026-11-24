@@ -103,28 +103,45 @@ export function fileUrl(sessionId: string, id: string, text = false): string {
 }
 
 /**
- * An object URL for an attachment's file, loaded through apiFetch so the desktop app's token goes with it (an
- * <img src> to the API can't carry the header). Null while loading or when it failed.
+ * A file from the API as a Blob, loaded through apiFetch so the desktop app's token goes with it (an <img src> or
+ * a viewer's own fetch can't carry the header). Null while loading; `error` when it failed. A null path loads nothing.
+ * With `maxBytes`, only the first that many bytes are fetched (a Range request; the backend's file routes take it).
  */
-export function useAttachmentUrl(sessionId: string, id: string): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+export function useApiBlob(path: string | null, maxBytes?: number): { blob: Blob | null; error: string | null } {
+  const [state, setState] = useState<{ blob: Blob | null; error: string | null }>({ blob: null, error: null });
   useEffect(() => {
+    setState({ blob: null, error: null });
+    if (!path) return;
     let current = true;
-    let made: string | null = null;
-    apiFetch(fileUrl(sessionId, id))
-      .then((response) => (response.ok ? response.blob() : null))
-      .then((blob) => {
-        if (!blob || !current) return;
-        made = URL.createObjectURL(blob);
-        setUrl(made);
+    apiFetch(path, maxBytes ? { headers: { Range: `bytes=0-${maxBytes - 1}` } } : {})
+      .then(async (response) => {
+        if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail ?? `Couldn't load the file (${response.status}).`);
+        return response.blob();
       })
-      .catch(() => undefined);
+      .then((blob) => current && setState({ blob, error: null }))
+      .catch((e) => current && setState({ blob: null, error: e instanceof Error ? e.message : String(e) }));
     return () => {
       current = false;
-      if (made) URL.revokeObjectURL(made);
     };
-  }, [sessionId, id]);
+  }, [path, maxBytes]);
+  return state;
+}
+
+/** An object URL for a Blob, revoked when the Blob changes or the component goes. */
+export function useObjectUrl(blob: Blob | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) return setUrl(null);
+    const made = URL.createObjectURL(blob);
+    setUrl(made);
+    return () => URL.revokeObjectURL(made);
+  }, [blob]);
   return url;
+}
+
+/** An object URL for an attachment's file (see useApiBlob). Null while loading or when it failed. */
+export function useAttachmentUrl(sessionId: string, id: string): string | null {
+  return useObjectUrl(useApiBlob(fileUrl(sessionId, id)).blob);
 }
 
 /** Reads the attachments out of a `user_message` event's payload. */

@@ -13,7 +13,13 @@
     "build:backend": "cd ../backend && uv run pyinstaller hub-backend.spec --noconfirm"
   },
   "dependencies": {
+    "@betteroffice/docx": "0.5.1",
+    "@betteroffice/docx-react": "0.5.1",
+    "@betteroffice/fonts": "0.4.2",
+    "@betteroffice/xlsx": "0.5.1",
+    "@betteroffice/xlsx-react": "0.5.1",
     "@tauri-apps/api": "^2.12.4",
+    "pdfjs-dist": "6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

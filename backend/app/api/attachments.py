@@ -22,8 +22,9 @@ from app.models import AgentSession
 
 router = APIRouter(prefix="/sessions/{session_id}/attachments", tags=["attachments"])
 
-# Opens a file with its own app (`reveal`: shows it in Explorer instead). Tests replace it.
-FileOpener = Callable[[Path, bool], None]
+# Opens a file with its own app (`reveal`: shows it in Explorer instead), or a checked web link (a str) in the
+# default browser (app.api.links). Tests replace it.
+FileOpener = Callable[[Path | str, bool], None]
 
 
 class AttachmentRead(BaseModel):
@@ -51,7 +52,7 @@ Store = Annotated[AttachmentStore, Depends(get_store)]
 DbSession = Annotated[Session, Depends(get_session)]
 
 
-def default_open_file(path: Path, reveal: bool) -> None:
+def default_open_file(path: Path | str, reveal: bool) -> None:
     """The backend runs on the user's PC (loopback only), so it can hand the file to Windows."""
     if os.name != "nt":
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Opening files is only supported on Windows.")
@@ -59,6 +60,19 @@ def default_open_file(path: Path, reveal: bool) -> None:
         subprocess.Popen(["explorer", f"/select,{path}"])  # noqa: S603 - fixed program, path from the store
     else:
         os.startfile(path)  # type: ignore[attr-defined]
+
+
+def file_response(path: Path, name: str, kind: str | None, mime: str,
+                  cache: str = "private, max-age=3600") -> FileResponse:
+    """A stored file for the UI. Only images and PDFs go as themselves; text, CSV and code as plain text; anything
+    else (`kind` None included) as a download, so nothing in a file can run as a page. Always `nosniff`."""
+    headers = {"X-Content-Type-Options": "nosniff", "Cache-Control": cache}
+    if kind in ("text", "csv"):
+        return FileResponse(path, media_type="text/plain; charset=utf-8", headers=headers, filename=name,
+                            content_disposition_type="inline")
+    if kind in ("image", "pdf"):
+        return FileResponse(path, media_type=mime, headers=headers, filename=name, content_disposition_type="inline")
+    return FileResponse(path, media_type="application/octet-stream", headers=headers, filename=name)
 
 
 def _check_session(db: Session, session_id: str) -> None:
@@ -108,14 +122,8 @@ def get_file(session_id: str, attachment_id: str, store: Store, text: bool = Fal
         attachment, path = store.file(session_id, attachment_id, text=text)
     except AttachmentError as exc:
         raise _http(exc) from None
-    headers = {"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"}
-    if text or attachment.kind in ("text", "csv"):
-        return FileResponse(path, media_type="text/plain; charset=utf-8", headers=headers,
-                            filename=path.name, content_disposition_type="inline")
-    if attachment.kind in ("image", "pdf"):
-        return FileResponse(path, media_type=attachment.mime, headers=headers, filename=attachment.name,
-                            content_disposition_type="inline")
-    return FileResponse(path, media_type="application/octet-stream", headers=headers, filename=attachment.name)
+    return file_response(path, path.name if text else attachment.name, "text" if text else attachment.kind,
+                         attachment.mime)
 
 
 @router.post("/{attachment_id}/open", response_model=OpenResult)

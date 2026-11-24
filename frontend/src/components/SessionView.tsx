@@ -19,6 +19,8 @@ import { Composer } from "./Composer";
 import { AutoHandoffSwitch, FolderLock, ModelPicker } from "./ComposerControls";
 import { HistoryView } from "./HistoryView";
 import { OutputFiles } from "./OutputFiles";
+import { PreviewPane } from "./PreviewPane";
+import { PreviewContext, type PreviewTarget } from "../preview";
 import { ProgressAside, ProgressCard } from "./ProgressPanel";
 import { useLocalModels } from "./ModelSelect";
 import { StatusBadge } from "./StatusBadge";
@@ -51,6 +53,8 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
   const [view, setView] = useState<"transcript" | "history">("transcript");
   // A turn picked in the history, to scroll to once the transcript is back.
   const [jumpTo, setJumpTo] = useState<number | null>(null);
+  // The file in the preview pane, if one is open.
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
 
   // Keep the sidebar (and this session's current agent) in step when the live status changes.
   useEffect(() => {
@@ -215,97 +219,100 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
         </div>
       </header>
 
-      <div className={`session-body ${layout}`}>
-        <div className="session-main">
-          {view === "history" ? (
-            // Its own element, so it opens at the top rather than at the transcript's scroll position.
-            <div key="history" className="transcript-scroller">
-              <HistoryView
-                session={session}
-                events={events}
-                status={status}
-                projectPath={folder}
-                onShowInTranscript={(eventId) => {
-                  setView("transcript");
-                  setJumpTo(eventId);
-                }}
-                onChanged={onChanged}
-              />
-            </div>
-          ) : (
-            <div
-              className="transcript-scroller"
-              ref={scroller}
-              onScroll={(e) => {
-                const el = e.currentTarget;
-                stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-              }}
-            >
-              {events.length === 0 && status === "ready" ? (
-                <div className="empty-state">
-                  <p>Send a message to start {agentName} in</p>
-                  <code>{folder}</code>
-                </div>
-              ) : (
-                <Transcript
-                  sessionId={session.id}
+      <PreviewContext.Provider value={{ current: preview, show: setPreview }}>
+        <div className={`session-body ${layout}${preview ? " previewing" : ""}`}>
+          <div className="session-main">
+            {view === "history" ? (
+              // Its own element, so it opens at the top rather than at the transcript's scroll position.
+              <div key="history" className="transcript-scroller">
+                <HistoryView
+                  session={session}
                   events={events}
                   status={status}
                   projectPath={folder}
-                  onAcceptHandoff={async (agent, model, effort) => {
-                    stickToBottom.current = true;
-                    await api.handoff(session.id, { agent, model, effort });
-                    onChanged();
+                  onShowInTranscript={(eventId) => {
+                    setView("transcript");
+                    setJumpTo(eventId);
                   }}
-                  // In the split layout the card stands in for the side panel on narrow windows.
-                  header={<ProgressCard {...progressProps} />}
+                  onChanged={onChanged}
                 />
-              )}
-            </div>
-          )}
-
-          <OutputFiles sessionId={session.id} refreshKey={`${status}:${lastOf(events, "tool_result", "completed")?.id ?? 0}`} />
-          <Composer
-            status={status}
-            agent={session.agent}
-            loadCommands={async () => (await api.commands(session.agent, { sessionId: session.id })).commands}
-            commandsKey={`${session.id}:${session.agent}`}
-            notes={controlError ? <span className="hint warning">{controlError}</span> : undefined}
-            picker={
-              <ModelPicker
-                agent={session.agent}
-                model={session.model}
-                effort={session.effort ?? null}
-                local={local}
-                disabled={busy}
-                title={busy ? "Stop the running turn to switch" : `Messages go to ${agentName} (${model}). Pick another agent or model to switch.`}
-                onChange={(agent, model, effort) => {
-                  if (agent !== session.agent || model !== session.model) setSwitchTo({ agent, model, effort });
-                  else if (effort !== (session.effort ?? null)) void changeEffort(effort);
+              </div>
+            ) : (
+              <div
+                className="transcript-scroller"
+                ref={scroller}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
                 }}
-              />
-            }
-            controls={
-              <>
-                <FolderLock chat={session.chat} path={session.project_path} />
-                {settings?.chaining_enabled !== false && settings && (
-                  <AutoHandoffSwitch checked={autoHandoff} disabled={savingPolicy} onChange={(on) => void changeAutoHandoff(on)} />
+              >
+                {events.length === 0 && status === "ready" ? (
+                  <div className="empty-state">
+                    <p>Send a message to start {agentName} in</p>
+                    <code>{folder}</code>
+                  </div>
+                ) : (
+                  <Transcript
+                    sessionId={session.id}
+                    events={events}
+                    status={status}
+                    projectPath={folder}
+                    onAcceptHandoff={async (agent, model, effort) => {
+                      stickToBottom.current = true;
+                      await api.handoff(session.id, { agent, model, effort });
+                      onChanged();
+                    }}
+                    // In the split layout the card stands in for the side panel on narrow windows.
+                    header={<ProgressCard {...progressProps} />}
+                  />
                 )}
-              </>
-            }
-            onSend={async (text, files) => {
-              showView("transcript");
-              await sendWithFiles(session.id, text, files);
-              onChanged();
-            }}
-            onStop={async () => {
-              await api.stop(session.id);
-              onChanged();
-            }}
-          />
+              </div>
+            )}
+
+            <OutputFiles sessionId={session.id} refreshKey={`${status}:${lastOf(events, "tool_result", "completed")?.id ?? 0}`} />
+            <Composer
+              status={status}
+              agent={session.agent}
+              loadCommands={async () => (await api.commands(session.agent, { sessionId: session.id })).commands}
+              commandsKey={`${session.id}:${session.agent}`}
+              notes={controlError ? <span className="hint warning">{controlError}</span> : undefined}
+              picker={
+                <ModelPicker
+                  agent={session.agent}
+                  model={session.model}
+                  effort={session.effort ?? null}
+                  local={local}
+                  disabled={busy}
+                  title={busy ? "Stop the running turn to switch" : `Messages go to ${agentName} (${model}). Pick another agent or model to switch.`}
+                  onChange={(agent, model, effort) => {
+                    if (agent !== session.agent || model !== session.model) setSwitchTo({ agent, model, effort });
+                    else if (effort !== (session.effort ?? null)) void changeEffort(effort);
+                  }}
+                />
+              }
+              controls={
+                <>
+                  <FolderLock chat={session.chat} path={session.project_path} />
+                  {settings?.chaining_enabled !== false && settings && (
+                    <AutoHandoffSwitch checked={autoHandoff} disabled={savingPolicy} onChange={(on) => void changeAutoHandoff(on)} />
+                  )}
+                </>
+              }
+              onSend={async (text, files) => {
+                showView("transcript");
+                await sendWithFiles(session.id, text, files);
+                onChanged();
+              }}
+              onStop={async () => {
+                await api.stop(session.id);
+                onChanged();
+              }}
+            />
+          </div>
+          {layout === "split" && !preview && <ProgressAside {...progressProps} />}
+          {preview && <PreviewPane target={preview} onClose={() => setPreview(null)} />}
         </div>
-        {layout === "split" && <ProgressAside {...progressProps} />}
-      </div>
+      </PreviewContext.Provider>
 
       {showWorktree && worktree && (
         <WorktreeDialog
