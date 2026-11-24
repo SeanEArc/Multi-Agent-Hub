@@ -102,9 +102,9 @@ To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
 
 ## Roadmap
 
-Recently added: each agent's own commands (`/compact`, `/context`, `/usage`, `/code-review`), attachments (images, PDF, Word, Excel, CSV), and a document toolkit that lets agents fix Excel sheets and review Word formatting in edited copies.
+Recently added: each agent's own commands (`/compact`, `/context`, `/usage`, `/code-review`), attachments (images, PDF, Word, Excel, CSV), a document toolkit that lets agents fix Excel sheets and review Word formatting in edited copies, and a preview pane for files.
 
-Next: a preview pane for files, image generation, and **delegation** (one agent hands a sub-task to another and gets a report back). Later: parallel split of one task across agents, Docker isolation, design styles, auto-update and access from a phone.
+Next: image generation, and **delegation** (one agent hands a sub-task to another and gets a report back). Later: parallel split of one task across agents, Docker isolation, design styles, auto-update and access from a phone.
 
 ## Contributing
 
@@ -121,11 +121,17 @@ backend/             FastAPI backend (Python, uv)
 frontend/            React + TypeScript UI (Vite)
   src-tauri/         Tauri desktop shell (Rust)
 docs/                Plan, development log, manual test checklist, notes
+licenses/            License texts of the third-party software the installer ships
 scripts/version.py   Keeps the version the same in every file
+scripts/notices.py   Writes THIRD-PARTY-NOTICES.md and licenses/, checks them at release
 ```
+
+## Acknowledgements
+
+Document support (recalculating and editing Excel workbooks, the Word formatting report, and the preview pane's Word and Excel viewers) is built on [BetterOffice](https://github.com/openooxml/betteroffice) by Elia Hilse and The OpenOOXML Project (Apache-2.0). PDF previews use [pdf.js](https://github.com/mozilla/pdf.js) by Mozilla. The app is built with FastAPI, React and Tauri, among many other open-source projects; [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) lists every one the installer ships, with its license.
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE). Third-party software in the installer keeps its own license: see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) and [`licenses/`](licenses/).
 
 Multi-Agent Hub is an independent project, not affiliated with or endorsed by Anthropic, OpenAI or Ollama. Claude, Claude Code, Codex and Ollama are trademarks of their owners.

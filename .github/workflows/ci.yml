@@ -77,6 +77,35 @@ jobs:
       # Vite build only; the desktop installer is built by the release workflow.
       - run: npx vite build
 
+  # Flags a dependency change that the third-party notices don't cover yet, so it's fixed before release rather
+  # than at the release's own check. Not required for merging or promotion: a version bump only warns, and a new
+  # package can wait for `scripts/notices.py generate` (RELEASING.md step 1).
+  notices:
+    name: Third-party notices
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend
+        working-directory: backend
+        run: uv sync --locked
+      - name: Install UI
+        working-directory: frontend
+        run: npm ci
+      # Rust is preinstalled on GitHub's Windows runners; `cargo metadata` lists the shell's crates.
+      - run: uv run --project backend python scripts/notices.py check
+
   promote:
     name: Promote staging to main
     needs: [versions, backend, frontend]

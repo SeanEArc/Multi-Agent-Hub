@@ -2,7 +2,8 @@
 #
 #   1. check:   the tag is on main, CI passed on it, every file has the tag's version, CHANGELOG.md has
 #               its notes and a sample database was saved for the upgrade tests
-#   2. build:   the Windows installer (PyInstaller backend + Tauri shell + NSIS), kept as a run artifact
+#   2. build:   checks THIRD-PARTY-NOTICES.md covers every shipped package (scripts/notices.py check), then
+#               builds the Windows installer (PyInstaller backend + Tauri shell + NSIS), kept as a run artifact
 #   3. publish: waits for approval in the `release` environment, then creates the GitHub Release
 #
 # Tags containing a hyphen (v0.3.0-beta.1) are published as prereleases.
@@ -110,6 +111,10 @@ jobs:
       - name: Install UI
         working-directory: frontend
         run: npm ci
+      # The installer ships THIRD-PARTY-NOTICES.md and licenses/; fail if a shipped package has no entry there or
+      # brings a license the MIT app can't ship. Fix with `scripts/notices.py generate` (see RELEASING.md).
+      - name: Third-party notices cover every shipped package
+        run: uv run --project backend python scripts/notices.py check
       - name: Build (backend bundle, UI, NSIS installer)
         working-directory: frontend
         # beforeBuildCommand in tauri.conf.json runs the PyInstaller bundle and the Vite build first.

@@ -46,6 +46,10 @@ workflow uses that section as the release notes and refuses a tag without one. S
   viewers that work offline; images, text, CSV and code show as they are; anything else (such as `.xls`) shows
   the hub's text copy with **Open**. When an agent overwrites the file, the pane shows the new version. Links in
   a document open in your browser.
+- Third-party notices: the installer now includes `THIRD-PARTY-NOTICES.md` and the license texts of every
+  package it ships (Python, npm and Rust packages, the Python runtime and its libraries, and the NSIS installer), and the README
+  credits BetterOffice, which powers document support and the Word and Excel previews. A release fails if a
+  shipped package is missing from the notices or has a license the app can't ship.
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.
