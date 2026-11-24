@@ -1,13 +1,10 @@
-"""Hardening, round 2: the engineer's fixes for QA's round 1 (revision 4 PR 2), under the conditions they were built
-for: the PC-wide Office lock and the registry of Office processes (`app.doctool.office_registry`), hub-doc's read
-limit (`HUB_DOC_READ_ROOTS`, `app.doctool.paths`) and the sparse Excel walk with `truncated` (`app.doctool.xlsx`).
-`tests/test_documents_round2.py` holds the engineer's own tests; these don't repeat them.
+"""hub-doc's Office runs: one at a time on the PC (`app.doctool.office_registry` lock), the registry that reaps
+Office left by a killed run, and the lock folder (passed to every agent; unusable means fail closed).
 
-Never real Office: the "Office" here is `tests/fake_office.py` or a recording stand-in script, and every test uses its
-own registry folder (`HUB_OFFICE_REGISTRY`), so the lock is never shared with the user's real runs.
+Never real Office: the "Office" here is `tests/fake_office.py` or a recording stand-in script, and every test
+uses its own registry folder (`HUB_OFFICE_REGISTRY`), so the lock is never shared with the user's real runs.
 """
 
-import ctypes
 import json
 import os
 import subprocess
@@ -19,20 +16,17 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 
 import document_samples as samples
-from app.doctool import cli, office_registry, winproc, xlsx
-from app.doctool.contract import READ_ROOTS_ENV, Refused, read_roots
+from app.doctool import office, office_registry, winproc
+from app.doctool.contract import Failed
 from app.doctool.office import OfficeRun, is_automation
-from app.doctool.paths import within_any
-from test_documents_acceptance import HubDoc, hub_doc_exe  # noqa: F401  (fixture)
+from app.documents import DocumentAccess
+from test_documents_acceptance import HubDoc, hub_doc_exe, make_session  # noqa: F401  (hub_doc_exe: fixture)
 from test_documents_acceptance_office import alive, office_app, office_fakes  # noqa: F401  (office_fakes: fixture)
-from test_documents_hardening import Held, junction
-from test_orchestrator import create, wait_until_idle
-from test_worktrees import repo  # noqa: F401  (fixture)
+from test_documents_hardening import Held
 
 WINDOWS = os.name == "nt"
 windows_only = pytest.mark.skipif(not WINDOWS, reason="Windows file locks, junctions and processes")
@@ -43,11 +37,87 @@ def fake(mode: str, *args: object) -> list[str]:
     return [sys.executable, str(FAKE_OFFICE), mode, *map(str, args)]
 
 
+def pids(path: Path) -> set[int]:
+    return {int(p) for p in path.read_text().split()} if path.exists() else set()
+
+
 @pytest.fixture
 def registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     folder = tmp_path / "office-registry"
     monkeypatch.setenv(office_registry.REGISTRY_ENV, str(folder))
     return folder
+
+
+def kill_all(*groups: set[int]) -> None:
+    for group in groups:
+        for pid in group:
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+
+
+@windows_only
+def test_overlapping_runs_never_kill_each_others_office(office_fakes: Path, registry: Path, tmp_path: Path) -> None:
+    """QA's B1: run A's cleanup killed run B's Word. With the lock, B starts only after A's cleanup, so each run
+    kills exactly the Office it started."""
+    a_file, b_file = tmp_path / "a.txt", tmp_path / "b.txt"
+    a = OfficeRun(fake("found-leftover", office_fakes, a_file), timeout=60)
+    b = OfficeRun(fake("found-leftover", office_fakes, b_file), timeout=60)
+    answers: dict[str, dict] = {}
+    first = threading.Thread(target=lambda: answers.setdefault("a", a.run()))
+    second = threading.Thread(target=lambda: answers.setdefault("b", b.run()))
+    try:
+        first.start()
+        time.sleep(0.5)
+        second.start()
+        first.join(60)
+        second.join(60)
+        assert answers["a"]["ok"] and answers["b"]["ok"], answers
+        assert set(a.killed) == pids(a_file) and len(a.killed) == 2
+        assert set(b.killed) == pids(b_file) and len(b.killed) == 2
+        deadline = time.monotonic() + 10  # a kill isn't instant
+        while time.monotonic() < deadline and any(alive(pid) for pid in pids(a_file) | pids(b_file)):
+            time.sleep(0.1)
+        assert not any(alive(pid) for pid in pids(a_file) | pids(b_file))
+    finally:
+        kill_all(pids(a_file), pids(b_file))
+
+
+@windows_only
+def test_waiting_for_the_lock_counts_against_the_time_limit(registry: Path) -> None:
+    stuck = OfficeRun(fake("hang"), timeout=4)
+    holder = threading.Thread(target=stuck.run)
+    holder.start()
+    try:
+        time.sleep(0.5)
+        started = time.monotonic()
+        answer = OfficeRun(fake("found"), timeout=1).run()
+        assert answer["ok"] is False and answer.get("busy") and "busy" in answer["error"]
+        assert time.monotonic() - started < 3
+    finally:
+        stuck.cancel()
+        holder.join(30)
+    assert OfficeRun(fake("found"), timeout=20).run()["ok"]  # the lock is free again
+
+
+@windows_only
+def test_a_killed_process_never_keeps_the_lock(registry: Path) -> None:
+    script = textwrap.dedent(f"""
+        import os, sys, threading, time
+        sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
+        os.environ[{office_registry.REGISTRY_ENV!r}] = {str(registry)!r}
+        from app.doctool.office_registry import OfficeLock
+        lock = OfficeLock()  # kept: closing the file (garbage collection) releases the lock
+        lock.acquire(time.monotonic() + 5, threading.Event())
+        print("locked", flush=True)
+        time.sleep(60)
+    """)
+    holder = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "locked"
+        assert OfficeRun(fake("found"), timeout=1).run().get("busy")
+    finally:
+        holder.kill()
+        holder.wait()
+    assert OfficeRun(fake("found"), timeout=10).run()["ok"]
 
 
 # A stand-in Office script that logs when it starts and ends, so tests can see whether two runs overlapped.
@@ -76,9 +146,6 @@ def intervals(log: Path) -> list[tuple[float, float]]:
         kind, stamp = line.split()
         (starts if kind == "start" else ends).append(float(stamp))
     return list(zip(sorted(starts), sorted(ends)))
-
-
-# --- The lock ------------------------------------------------------------------------------------------------------
 
 
 @windows_only
@@ -213,12 +280,122 @@ def _client(app) -> TestClient:
     return make_client(app)
 
 
-# --- The registry --------------------------------------------------------------------------------------------------
+def test_an_unusable_lock_folder_fails_closed_with_a_visible_error(hub_doc_exe: str, tmp_path: Path) -> None:
+    """S5: if an agent's sandbox can't use the hub's lock folder, Word isn't started and the agent is told why (not
+    that Office is unlicensed, S6)."""
+    session = make_session(tmp_path / "attachments")
+    document = session.original("report.docx", samples.formatted_docx())
+    not_a_folder = tmp_path / "lock-is-a-file"
+    not_a_folder.write_text("x")
+    started = time.monotonic()
+    reply = HubDoc(hub_doc_exe, session.outputs).run("docx", "pages", document,
+                                                     env={office_registry.REGISTRY_ENV: str(not_a_folder)})
+    assert reply.code == 2 and "lock folder" in reply.data["error"], reply
+    assert "licensed" not in reply.data["error"]
+    assert time.monotonic() - started < 15
+    assert not any(session.outputs.iterdir())
+
+
+@pytest.mark.parametrize("answer, licence", [
+    ({"ok": False, "busy": True, "error": "Office stayed busy"}, False),
+    ({"ok": False, "lock_folder": True, "error": "its lock folder can't be used"}, False),
+    ({"ok": False, "error": "Class not registered"}, True),
+])
+def test_only_a_real_office_failure_mentions_the_licence(tmp_path: Path, answer: dict, licence: bool) -> None:
+    with pytest.raises(Failed) as failed:
+        office._require(answer, tmp_path / "missing.pdf")
+    assert ("licensed Office" in str(failed.value)) is licence
+    assert answer["error"] in str(failed.value)
+
+
+def test_agents_get_the_hubs_resolved_lock_folder(tmp_path: Path, monkeypatch) -> None:
+    folder = tmp_path / "hub-office"
+    monkeypatch.setenv(office_registry.REGISTRY_ENV, str(folder))
+    env = DocumentAccess(outputs=tmp_path).env()
+    assert env[office_registry.REGISTRY_ENV] == os.path.realpath(folder)
+    monkeypatch.delenv(office_registry.REGISTRY_ENV)
+    assert DocumentAccess(outputs=tmp_path).env()[office_registry.REGISTRY_ENV] == \
+        os.path.realpath(office_registry.folder())  # the default %TEMP% folder, resolved by the hub
+
+
+def _record(folder: Path, owner: int, owner_created: int | None, office: list[tuple[int, int | None]]) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"run-{owner}-{uuid.uuid4().hex[:8]}.json").write_text(json.dumps(
+        {"owner": owner, "owner_created": owner_created, "office": [{"pid": p, "created": c} for p, c in office]}))
 
 
 def _start(exe: Path, *args: str) -> subprocess.Popen:
     return subprocess.Popen([str(exe), "-c", "import time; time.sleep(120)", *args], stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+@windows_only
+def test_only_registered_office_of_dead_runs_is_reaped(office_fakes: Path, registry: Path) -> None:
+    orphan = _start(office_fakes / "WINWORD.EXE", "/Automation", "-Embedding")
+    live_runs = _start(office_fakes / "EXCEL.EXE", "/Automation", "-Embedding")
+    unregistered = _start(office_fakes / "WINWORD.EXE", "/Automation", "-Embedding")
+    users_word = _start(office_fakes / "WINWORD.EXE")
+    reused = _start(office_fakes / "EXCEL.EXE", "/Automation", "-Embedding")
+    procs = [orphan, live_runs, unregistered, users_word, reused]
+    try:
+        time.sleep(0.5)
+        dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True)
+        dead_pid = int(dead.stdout)
+        created = {p.pid: winproc.creation_time(p.pid) for p in procs}
+        # A dead owner: its Office is reaped, except an entry whose creation time no longer matches (PID reused)
+        # and the user's own Word (no automation flag), even though both are listed.
+        _record(registry, dead_pid, 1234, [(orphan.pid, created[orphan.pid]), (reused.pid, 99),
+                                           (users_word.pid, created[users_word.pid])])
+        # A live owner (this test process): its Office is left alone.
+        _record(registry, os.getpid(), winproc.creation_time(os.getpid()), [(live_runs.pid, created[live_runs.pid])])
+        run = OfficeRun(fake("missing"), timeout=20)
+        run.run()
+        assert run.reaped == [orphan.pid]
+        time.sleep(0.3)
+        assert orphan.poll() is not None
+        assert all(p.poll() is None for p in (live_runs, unregistered, users_word, reused))
+        assert len(list(registry.glob("run-*.json"))) == 1  # the live owner's record stays
+    finally:
+        for process in procs:
+            process.kill()
+
+
+@windows_only
+def test_office_of_a_run_killed_midway_is_reaped_by_the_next_run(office_fakes: Path, registry: Path,
+                                                                 tmp_path: Path) -> None:
+    """QA's S1 repro without real Office: hub-doc is killed while its Office runs (Stop, a Bash timeout). Its Word
+    is left behind; the next run, inside the lock, kills it."""
+    pid_file = tmp_path / "pids.txt"
+    script = textwrap.dedent(f"""
+        import os, sys
+        sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
+        os.environ[{office_registry.REGISTRY_ENV!r}] = {str(registry)!r}
+        from app.doctool.office import OfficeRun
+        OfficeRun({fake("leftover", office_fakes, pid_file)!r}, timeout=120).run()
+    """)
+    runner = subprocess.Popen([sys.executable, "-c", script])
+    left: set[int] = set()
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            left = pids(pid_file)
+            records = [json.loads(p.read_text()) for p in registry.glob("run-*.json")]
+            if len(left) == 2 and any(len(r["office"]) == 2 for r in records):
+                break
+            time.sleep(0.2)
+        assert len(left) == 2, "the fake Office didn't start"
+        subprocess.run(["taskkill", "/PID", str(runner.pid), "/T", "/F"], capture_output=True)
+        runner.wait(10)
+        assert all(alive(pid) for pid in left)  # orphaned, as COM-started Office is
+        run = OfficeRun(fake("missing"), timeout=20)
+        run.run()
+        assert set(run.reaped) == left
+        time.sleep(0.3)
+        assert not any(alive(pid) for pid in left)
+        assert not list(registry.glob("run-*.json"))
+    finally:
+        runner.kill()
+        kill_all(left)
 
 
 def _dead_owner() -> tuple[int, int]:
@@ -330,249 +507,3 @@ def test_a_cleanup_racing_a_live_run_spares_it(office_fakes: Path, registry: Pat
         runner.kill()
         for pid in office | {int(p) for p in pid_file.read_text().split()} if pid_file.exists() else office:
             subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
-
-
-# --- The read limit ------------------------------------------------------------------------------------------------
-
-
-def short_name(path: Path) -> str:
-    buffer = ctypes.create_unicode_buffer(1024)
-    ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, 1024)
-    return buffer.value
-
-
-@pytest.fixture
-def folders(tmp_path: Path) -> dict[str, Path]:
-    inside = tmp_path / "Session Files"
-    sibling = tmp_path / "Session Files-other"  # same prefix, a different folder
-    outside = tmp_path / "elsewhere"
-    for folder in (inside, sibling, outside):
-        folder.mkdir()
-        (folder / "book.xlsx").write_bytes(samples.sales_xlsx())
-    return {"inside": inside, "sibling": sibling, "outside": outside}
-
-
-def gate(monkeypatch: pytest.MonkeyPatch, raw: str | None, file: Path | str) -> None:
-    """hub-doc's read check for one input, with HUB_DOC_READ_ROOTS set to `raw` (None: unset)."""
-    if raw is None:
-        monkeypatch.delenv(READ_ROOTS_ENV, raising=False)
-    else:
-        monkeypatch.setenv(READ_ROOTS_ENV, raw)
-    cli.check(cli.parse(["xlsx", "check", str(file)]))
-
-
-@windows_only
-def test_every_spelling_of_a_file_inside_is_allowed(folders: dict[str, Path], monkeypatch) -> None:
-    inside = folders["inside"]
-    target = inside / "book.xlsx"
-    spellings = [str(target), str(target).upper(), "\\\\?\\" + str(target), str(inside / "sub" / ".." / "book.xlsx")]
-    short = short_name(target)
-    if short and short.upper() != str(target).upper():
-        spellings.append(short)
-    for spelling in spellings:
-        gate(monkeypatch, str(inside), spelling)  # no Refused
-
-
-@windows_only
-@pytest.mark.parametrize("which", ["outside", "sibling prefix", "dotdot", "verbatim", "stream", "trailing dot",
-                                   "short name", "junction in"])
-def test_every_spelling_of_a_file_outside_is_refused(folders: dict[str, Path], monkeypatch, tmp_path: Path,
-                                                      which: str) -> None:
-    inside, outside = folders["inside"], folders["outside"]
-    target = outside / "book.xlsx"
-    spelling = {
-        "outside": str(target),
-        "sibling prefix": str(folders["sibling"] / "book.xlsx"),
-        "dotdot": str(inside / ".." / "elsewhere" / "book.xlsx"),
-        "verbatim": "\\\\?\\" + str(target),
-        "stream": str(target) + ":Zone.Identifier",
-        "trailing dot": str(outside) + ".\\book.xlsx",
-        "short name": short_name(target),
-        "junction in": "",
-    }[which]
-    if which == "junction in":
-        junction(inside / "link", outside)
-        spelling = str(inside / "link" / "book.xlsx")
-    if not spelling:
-        pytest.skip("no 8.3 names on this volume")
-    try:
-        with pytest.raises(Refused, match="outside the folders"):
-            gate(monkeypatch, str(inside), spelling)
-    finally:
-        if (inside / "link").exists():
-            os.rmdir(inside / "link")
-
-
-@windows_only
-def test_roots_given_by_other_spellings_or_through_a_junction(folders: dict[str, Path], monkeypatch,
-                                                              tmp_path: Path) -> None:
-    """The hub's roots may themselves be junctions (a user's profile moved to another drive), short names or
-    `\\\\?\\` paths: the files really inside are allowed by any spelling, the rest still refused."""
-    inside = folders["inside"]
-    via = tmp_path / "via-junction"
-    junction(via, inside)
-    try:
-        roots = [str(via), "\\\\?\\" + str(inside).lower() + "\\", short_name(inside) or str(inside)]
-        for root in roots:
-            gate(monkeypatch, root, inside / "book.xlsx")
-            gate(monkeypatch, root, via / "book.xlsx")
-            with pytest.raises(Refused):
-                gate(monkeypatch, root, folders["outside"] / "book.xlsx")
-    finally:
-        os.rmdir(via)
-
-
-def test_an_empty_or_malformed_read_limit_reads_nothing(folders: dict[str, Path], monkeypatch) -> None:
-    """Decided here: only an unset HUB_DOC_READ_ROOTS (hub-doc run by hand) allows any file. Set but empty, only
-    separators, or only relative parts (which would depend on the agent's current folder) allows nothing; a root
-    that doesn't exist allows nothing outside it. Before the fix, an empty value allowed every file."""
-    target = folders["outside"] / "book.xlsx"
-    gate(monkeypatch, None, target)  # by hand: any file
-    assert read_roots() is None
-    for raw in ["", " ", os.pathsep * 3, "relative" + os.pathsep + ".", str(folders["inside"] / "missing")]:
-        with pytest.raises(Refused):
-            gate(monkeypatch, raw, target)
-    monkeypatch.chdir(folders["outside"])
-    with pytest.raises(Refused):
-        gate(monkeypatch, ".", "book.xlsx")  # "." can't name the current folder
-    gate(monkeypatch, os.pathsep.join(["relative", str(folders["outside"]), ""]), target)  # the absolute part counts
-
-
-@windows_only
-def test_hub_doc_itself_refuses_with_an_empty_read_limit(hub_doc_exe: str, folders: dict[str, Path]) -> None:
-    reply = HubDoc(hub_doc_exe, None).run("xlsx", "check", folders["outside"] / "book.xlsx",
-                                          env={READ_ROOTS_ENV: ""})
-    assert reply.code == 1 and "outside the folders" in reply.data["error"], reply
-
-
-def roots_of(client: TestClient, session_id: str) -> tuple[Path, ...]:
-    return client.app.state.orchestrator._adapters[session_id].documents.read_roots
-
-
-def test_roots_for_a_chat(client: TestClient) -> None:
-    session_id = client.post("/api/sessions", json={"title": "ok", "agent": "claude"}).json()["id"]
-    client.post(f"/api/sessions/{session_id}/messages", json={"text": "hi"})
-    wait_until_idle(client, session_id)
-    session_folder = client.app.state.orchestrator.attachments.session_dir(session_id)
-    chat_folder = Path(client.get(f"/api/sessions/{session_id}").json()["project_path"])
-    assert roots_of(client, session_id) == (session_folder, session_folder / "outputs", chat_folder)
-
-
-def test_roots_for_a_worktree_subfolder_and_after_a_handoff(client: TestClient, repo: Path) -> None:  # noqa: F811
-    """A session on `<repo>/src` runs in `<worktree>/src`: that is the working folder hub-doc may read (never the
-    user's own checkout), and a handoff to another agent keeps the same roots."""
-    session_id = create(client, repo / "src", "ok")
-    client.post(f"/api/sessions/{session_id}/messages", json={"text": "where are you"})
-    wait_until_idle(client, session_id)
-    session = client.get(f"/api/sessions/{session_id}").json()
-    worktree = Path(session["worktree"]["path"])
-    ran_in = Path(json.loads(client.get(f"/api/sessions/{session_id}/events").json()[-1]["payload"]["text"])["cwd"])
-    roots = roots_of(client, session_id)
-    assert Path(roots[2]).resolve() == (worktree / "src").resolve() == ran_in.resolve()
-    assert not any(Path(r).resolve().is_relative_to(repo.resolve()) for r in roots)
-
-    assert client.post(f"/api/sessions/{session_id}/handoff", json={"agent": "codex"}).status_code == 202
-    wait_until_idle(client, session_id)
-    assert client.get(f"/api/sessions/{session_id}").json()["agent"] == "codex"
-    assert roots_of(client, session_id) == roots
-
-
-# --- The Excel walk ------------------------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sales(tmp_path: Path) -> Path:
-    path = tmp_path / "sales.xlsx"
-    path.write_bytes(samples.sales_xlsx())
-    return path
-
-
-def snapshot(path: Path) -> tuple[dict, bool]:
-    book = xlsx.Book.open(str(path))
-    return book.snapshot(), book.truncated
-
-
-@pytest.mark.parametrize("cells_per_export", [1, 2, 3, 5, 6, 7, 32, 33, 34])
-def test_bands_split_at_any_boundary_lose_nothing(sales: Path, monkeypatch, cells_per_export: int) -> None:
-    """Exports cut short are split by rows and, for a single row, by columns: whatever the export's cap, every
-    filled cell comes back once (before, a row wider than the cap lost its other cells)."""
-    full, _ = snapshot(sales)
-    monkeypatch.setattr(xlsx, "EXPORT_CELLS", cells_per_export)
-    split, truncated = snapshot(sales)
-    assert split == full and truncated is False
-
-
-def test_exactly_the_limit_is_complete_and_one_more_is_truncated(sales: Path, monkeypatch) -> None:
-    """At exactly FILLED_LIMIT filled cells nothing was left out, even when the walk ran in several bands; one cell
-    over, the reply says `truncated`."""
-    total = len(snapshot(sales)[0])
-    monkeypatch.setattr(xlsx, "EXPORT_CELLS", 5)
-    monkeypatch.setattr(xlsx, "FILLED_LIMIT", total)
-    assert "truncated" not in xlsx.Book.open(str(sales)).check()
-    monkeypatch.setattr(xlsx, "FILLED_LIMIT", total - 1)
-    reply = xlsx.Book.open(str(sales)).check()
-    assert reply["truncated"] is True and any("filled cells" in w for w in reply["warnings"])
-
-
-def test_an_edit_near_the_limit_lists_only_real_changes(sales: Path, tmp_path: Path, monkeypatch) -> None:
-    """`edit` snapshots the workbook before and after. They shared one budget, so past half the limit the second
-    came back short and every cell it missed was listed as changed (33 instead of 3 here)."""
-    total = len(snapshot(sales)[0])
-    for limit in (total, total // 2 + 1):
-        monkeypatch.setattr(xlsx, "FILLED_LIMIT", limit)
-        reply = xlsx.Book.open(str(sales)).edit(["Sales!B2=11"], str(tmp_path / f"out-{limit}.xlsx"))
-        cells = {c["cell"] for c in reply["changed"]}
-        assert cells <= {"B2", "D2", "D7", "E2", "E7"}, reply["changed"]
-        assert reply["changed_count"] == len(reply["changed"])
-        assert reply.get("truncated", False) is (limit < total)
-
-
-def test_csv_and_changes_under_truncated(sales: Path, tmp_path: Path, monkeypatch) -> None:
-    """Past the limit, the CSV holds only what was read and says so, and the changed cells are still real ones."""
-    monkeypatch.setattr(xlsx, "FILLED_LIMIT", 8)
-    book = xlsx.Book.open(str(sales))
-    reply = book.csv("Sales", None, str(tmp_path / "part.csv"))
-    assert reply["truncated"] is True and any("8 filled cells" in w for w in reply["warnings"])
-    rows = (tmp_path / "part.csv").read_text(encoding="utf-8-sig").splitlines()
-    assert 1 <= len(rows) <= 8
-    edited = xlsx.Book.open(str(sales)).edit(["Sales!A1=Area"], str(tmp_path / "e.xlsx"))
-    assert edited["truncated"] is True and [c["cell"] for c in edited["changed"]] == ["A1"]
-
-
-def test_merged_cells(tmp_path: Path) -> None:
-    """A merged title row: only its first cell holds a value; the walk, check and CSV treat the rest as empty."""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Report"
-    ws["A1"] = "Quarterly report"
-    ws.merge_cells("A1:D1")
-    ws.append(["a", "b", "c", "d"])
-    ws.append([1, 2, 3, "=A3+B3+C3"])
-    path = tmp_path / "merged.xlsx"
-    wb.save(path)
-    book = xlsx.Book.open(str(path))
-    state = book.snapshot()
-    assert ("Report", "A1") in state and ("Report", "B1") not in state
-    assert state[("Report", "D3")][0] == 6
-    reply = book.csv("Report", None, str(tmp_path / "merged.csv"))
-    lines = (tmp_path / "merged.csv").read_text(encoding="utf-8-sig").splitlines()
-    assert lines[0] == "Quarterly report,,," and lines[2] == "1,2,3,6" and "truncated" not in reply
-
-
-def test_a_sheet_of_only_formulas(tmp_path: Path) -> None:
-    """openpyxl saves formulas with no cached results: every value comes from the recalculation, errors included."""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Calc"
-    ws["A1"] = "=2+3"
-    ws["A2"] = "=A1*10"
-    ws["A3"] = "=1/0"
-    ws["B1"] = "=SUM(A1:A2)"
-    ws["B2"] = '=UPPER("ok")'
-    path = tmp_path / "formulas.xlsx"
-    wb.save(path)
-    reply = xlsx.Book.open(str(path)).check()
-    assert [(e["cell"], e["error"]) for e in reply["errors"]] == [("A3", "#DIV/0!")]
-    state = xlsx.Book.open(str(path)).snapshot()
-    assert state[("Calc", "A2")][0] == 50 and state[("Calc", "B1")][0] == 55 and state[("Calc", "B2")][0] == "OK"
-    assert all(formula for _, formula in state.values())

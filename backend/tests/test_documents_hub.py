@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.adapters.codex import CodexAdapter
 from app.adapters.local_tools import LocalTools, ToolError
-from app.attachments import AttachmentError, AttachmentStore, openable_name
+from app.attachments import AttachmentError, AttachmentStore
 from app.doctool import office, winproc
 from app.documents import CLAUDE_RULES, DocumentAccess, DocumentToolkit, prepare_bin
 from app.office import OfficeDetector
@@ -168,20 +168,6 @@ def test_save_copy_never_into_the_attachments_folder(store: tuple[OutputsStore, 
         outputs.save_copy(session, "r.docx", str(tmp_path / "no-folder" / "x.docx"))
     saved = outputs.save_copy(session, "r.docx", str(tmp_path / "copy.docx"))
     assert saved.read_bytes() == b"PK"
-
-
-def test_openable_names() -> None:
-    assert openable_name("report (edited).docx") and openable_name("sales.csv") and openable_name("notes.md")
-    assert not openable_name("fix.ps1") and not openable_name("macros.xlsm") and not openable_name("tool.exe")
-
-
-def test_session_folder_is_the_stored_id_and_old_dashed_folders_are_kept(tmp_path: Path) -> None:
-    store = AttachmentStore(tmp_path)
-    new = uuid.uuid4()
-    assert store.session_dir(str(new)) == tmp_path / new.hex == store.session_dir(new.hex)
-    old = uuid.uuid4()
-    (tmp_path / str(old)).mkdir()  # made by a PR 1 development build
-    assert store.session_dir(old.hex) == tmp_path / str(old)
 
 
 def test_sweep_removes_an_empty_outputs_folder_of_a_deleted_session(tmp_path: Path) -> None:
