@@ -770,6 +770,9 @@ def test_new_sessions_use_the_id_as_stored(client: TestClient) -> None:
     note = upload(client, session_id, "notes.txt", b"hello\n")
     assert Path(note["path"]).parent.parent == attachments_root(client) / session_id
     assert not (attachments_root(client) / str(uuid.UUID(session_id))).exists()
+    # A dashed id names the same folder.
+    store = AttachmentStore(attachments_root(client))
+    assert store.session_dir(str(uuid.UUID(session_id))) == attachments_root(client) / session_id
 
 
 def test_a_dashed_folder_from_a_pr1_build_keeps_working(client: TestClient) -> None:

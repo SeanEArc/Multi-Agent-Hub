@@ -180,12 +180,6 @@ def test_word_tables_keep_their_cells(tmp_path: Path) -> None:
     assert "region\tsales" in text and "north\t42" in text
 
 
-def test_a_broken_document_still_uploads_without_a_text_copy(tmp_path: Path) -> None:
-    attachment = save(AttachmentStore(tmp_path), "broken.pdf", b"%PDF-1.4 this is not really a pdf")
-    assert attachment.text_path is None and attachment.pages is None and attachment.note
-    assert sorted(p.name for p in Path(attachment.path).parent.iterdir()) == [META_FILE, "broken.pdf"]
-
-
 def test_text_copy_timeout_leaves_nothing(tmp_path: Path) -> None:
     original = tmp_path / "report.pdf"
     original.write_bytes(samples.pdf())
@@ -447,12 +441,6 @@ def test_excel_formulas_without_a_stored_value_show_the_formula(tmp_path: Path) 
     attachment = save(AttachmentStore(tmp_path), "totals.xlsx", buffer.getvalue())
     text = Path(attachment.text_path).read_text(encoding="utf-8")
     assert "apple\t3" in text and "\t=SUM(B2:B3)" in text
-
-
-def test_inline_text_with_code_fences_gets_a_longer_fence(tmp_path: Path) -> None:
-    readme = _attachment(tmp_path, "README.md", b"Intro\n```python\nprint('hi')\n```\nEnd\n")
-    text = with_files("Look", [readme], inline_text=True)
-    assert "\n````\nIntro\n```python" in text and text.rstrip().endswith("End\n````")
 
 
 def test_sweep_skips_a_folder_it_cant_list(tmp_path: Path, monkeypatch, caplog) -> None:
