@@ -3,7 +3,7 @@ import { api } from "../api";
 import { KIND_NAMES, kindOf, sizeText, useAttachmentUrl, type Attachment, type AttachmentKind } from "../attachments";
 
 // Short labels for the file badge.
-const BADGES: Record<AttachmentKind, string> = {
+export const BADGES: Record<AttachmentKind, string> = {
   image: "IMG",
   pdf: "PDF",
   word: "DOC",

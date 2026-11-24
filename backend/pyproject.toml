@@ -16,7 +16,15 @@ dependencies = [
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "xlrd>=2.0.2",
+    "betteroffice-xlsx==0.2.2",
+    "betteroffice-docx==0.2.2",
+    "pypdfium2>=5.15.2",
 ]
+
+[project.scripts]
+# The hub's document toolkit for agents (app/doctool). The hub copies this launcher into a bin folder of its own
+# and puts that on each agent's PATH (app/documents.py).
+hub-doc = "app.doctool.cli:main"
 
 [dependency-groups]
 dev = [
@@ -32,7 +40,7 @@ build-backend = "setuptools.build_meta"
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["migrations/script.py.mako", "migrations/versions/*.py"]
+app = ["migrations/script.py.mako", "migrations/versions/*.py", "doctool/scripts/*.ps1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

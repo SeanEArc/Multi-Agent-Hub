@@ -3396,3 +3396,90 @@ textarea:focus,
   color: var(--danger);
   font-size: 12px;
 }
+
+/* Files agents wrote to the session's outputs folder (OutputFiles.tsx), above the composer. */
+.outputs-bar {
+  margin: 0 16px 8px;
+  border: 1px solid color-mix(in srgb, var(--agent) 30%, var(--border));
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 6px 10px;
+}
+
+.outputs-bar > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--agent);
+}
+
+.outputs-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.output-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  background: var(--panel-raised);
+}
+
+.output-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.output-details {
+  font-size: 12px;
+}
+
+.output-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.output-actions .button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Settings: Microsoft Office found / not found. */
+.office-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.office-status {
+  font-weight: 600;
+}
+
+.office-found {
+  color: var(--ok);
+}
+
+.office-not-found {
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .outputs-bar {
+    margin: 0 8px 6px;
+  }
+
+  .output-actions {
+    margin-left: 0;
+  }
+}

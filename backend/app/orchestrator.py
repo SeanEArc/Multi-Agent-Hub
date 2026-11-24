@@ -28,6 +28,7 @@ from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
 from app.adapters.ollama import OllamaAdapter, OllamaUnavailable, list_models_sync, pick_model
 from app.attachments import Attachment, AttachmentError, AttachmentStore
 from app.config import get_settings
+from app.documents import DocumentToolkit
 from app.handoff import build_brief, git_state, messages_brief, next_in_chain, recent_images, with_brief
 from app.model_list import is_unavailable_model_error, record_availability, record_check
 from app.models import (
@@ -52,6 +53,7 @@ from app.models import (
     utcnow,
 )
 from app.commands import Route, review_prompt, route
+from app.outputs import OutputsStore
 from app.skills import SkillLibrary, cached_codex_names, expand_command, load_capabilities, record_capabilities
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
@@ -183,11 +185,16 @@ class Orchestrator:
         simulate_limit: set[AgentKind] | None = None,
         skills: SkillLibrary | None = None,
         attachments: AttachmentStore | None = None,
+        documents: DocumentToolkit | None = None,
     ) -> None:
         self._engine = engine
         self._adapter_factory = adapter_factory
         # Files uploaded for a session's messages (app.attachments); a message names them by id.
         self.attachments = attachments or AttachmentStore(get_settings().attachments_dir)
+        # Files agents write for the user, beside the attachments (app.outputs), and the hub-doc toolkit agents get
+        # with it (app.documents).
+        self.outputs = OutputsStore(self.attachments)
+        self.documents = documents or DocumentToolkit(get_settings().tools_bin)
         # The skill library, for expanding a `/name` message into the prompt the agent gets.
         self.skills = skills or SkillLibrary(get_settings().skills_dir)
         # HUB_SIMULATE_LIMIT: these agents' turns end in a usage limit (development only).
@@ -254,6 +261,7 @@ class Orchestrator:
                 )
                 if worktree is not None and hasattr(adapter, "review_base"):
                     adapter.review_base = worktree.base_commit
+                self._equip(session_id, adapter)
         if command is not None and command.action == "notice":
             self._notice(session_id, stint, command.message, "command")
             return
@@ -568,6 +576,19 @@ class Orchestrator:
             if not self._listeners[session_id]:
                 del self._listeners[session_id]
 
+    def _equip(self, session_id: str, adapter: AgentAdapter) -> None:
+        """Before a turn: make the session's outputs folder (it must exist when the agent starts: Claude adds only
+        folders that exist, Codex's sandbox needs it as a writable root) and give the adapter it and hub-doc."""
+        try:
+            outputs = self.outputs.folder(session_id, create=True)
+        except (OSError, ValueError):
+            log.exception("Couldn't make the outputs folder for session %s", session_id)
+            return
+        # hub-doc reads only the session's attachments (outputs' parent), its outputs and its working folder.
+        workdir = getattr(adapter, "cwd", None)
+        roots = (outputs.parent, outputs, *([Path(workdir)] if workdir else []))
+        adapter.documents = self.documents.access(outputs, read_roots=roots)
+
     def _start_turn(
         self, session_id: str, stint: Stint, adapter: AgentAdapter, events: AsyncGenerator[AgentEvent]
     ) -> None:
@@ -849,6 +870,7 @@ class Orchestrator:
                 first = stint.brief if stint.brief else (note.strip() if note and note.strip() else "Continue.")
                 # With a brief, the images the user showed the previous agent go along again.
                 images = recent_images(events) if stint.brief else []
+                self._equip(session_id, adapter)
                 self._start_turn(session_id, stint, adapter, adapter.start_task(first, attachments=images))
             except Exception as exc:
                 log.exception("Handoff failed for session %s", session_id)

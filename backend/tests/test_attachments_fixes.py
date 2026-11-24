@@ -429,8 +429,10 @@ def test_a_drive_without_streams_still_takes_uploads(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(attachments_module, "open", no_streams, raising=False)
     monkeypatch.setattr(attachments_module.os, "name", "nt")
-    attachment = save(AttachmentStore(tmp_path), "letter.docx", samples.docx())
-    assert Path(attachment.path).read_bytes() == samples.docx() and attachment.text_path
+    # Built once: python-docx stamps the save time into the zip, so two builds differ across a 2-second boundary.
+    data = samples.docx()
+    attachment = save(AttachmentStore(tmp_path), "letter.docx", data)
+    assert Path(attachment.path).read_bytes() == data and attachment.text_path
 
 
 # --- Workbook formulas -------------------------------------------------------------------------------------

@@ -35,6 +35,12 @@ workflow uses that section as the release notes and refuses a tag without one. S
   images inline and opens other files with a click. After a handoff the next agent gets the list of files and
   the recent images again. Files are kept in `%LOCALAPPDATA%\MultiAgentHub\attachments` and deleted with
   the session.
+- Working on documents: every agent gets `hub-doc`, the hub's document toolkit. Agents fix Excel formulas in a
+  recalculated copy that lists the errors left (charts kept), read sheets and Word files, review a Word file's
+  formatting from a report (styles, fonts, spacing, lists, tracked changes, inconsistencies), replace Word text
+  without losing its formatting, and list changed paragraphs. With Microsoft Office, Word page images and a
+  tracked-changes copy of an agent's edits. Agents write only to the session's outputs folder; its files show
+  above the text box with **Open** and **Save as…**. Settings shows whether Microsoft Office was found.
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.

@@ -19,7 +19,7 @@ so the hub runs them through the app server on the same thread files. Verified w
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -37,10 +37,14 @@ class AppServerError(RuntimeError):
 class AppServer:
     """One `codex app-server` process: `async with AppServer(...) as server`, then `request` and `notifications`."""
 
-    def __init__(self, command: Sequence[str], cwd: Path, runner: Runner, config: Sequence[str] = ()) -> None:
+    def __init__(self, command: Sequence[str], cwd: Path, runner: Runner, config: Sequence[str] = (),
+                 env: Mapping[str, str] | None = None) -> None:
         self._command = [*command, "app-server", *config]
         self._cwd = cwd
         self._runner = runner
+        # Added to the environment: headless git, plus what the adapter's turns get (hub-doc on PATH, the outputs
+        # folder), since a /code-review turn runs commands too.
+        self._env = dict(env) if env is not None else dict(HEADLESS_GIT_ENV)
         self._proc: RunningProcess | None = None
         self._reader: asyncio.Task[None] | None = None
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
@@ -48,7 +52,7 @@ class AppServer:
         self._next_id = 0
 
     async def __aenter__(self) -> "AppServer":
-        self._proc = await self._runner.start(self._command, self._cwd, HEADLESS_GIT_ENV)
+        self._proc = await self._runner.start(self._command, self._cwd, self._env)
         self._reader = asyncio.create_task(self._read())
         try:
             await self.request("initialize", {"clientInfo": {"name": "multi-agent-hub", "version": "1"}})

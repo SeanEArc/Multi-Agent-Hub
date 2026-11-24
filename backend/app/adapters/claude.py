@@ -36,6 +36,7 @@ from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, sp
 from app.adapters.diffs import claude_diffs
 from app.adapters.runner import Runner
 from app.attachments import Attachment, claude_blocks, with_files
+from app.documents import CLAUDE_RULES
 from app.models import AgentKind
 from app.skills import claude_capabilities
 
@@ -129,23 +130,37 @@ class ClaudeAdapter(CliAdapter):
             *session_args,
             "--permission-mode", self.permission_mode,
             "--permission-prompts", "none",
-            "--append-system-prompt", HEADLESS_PROMPT,
+            "--append-system-prompt", self._instructions("Claude"),
         ]
+        if self.documents is not None and self.documents.toolkit:
+            # The only program Claude's shell may run under the hub's settings, by its bare name (decided with
+            # the user; hub-doc itself refuses to write outside the outputs folder).
+            args += ["--allowedTools", *CLAUDE_RULES]
         if self.model:
             args += ["--model", self.model]
         if self.effort:
             args += ["--effort", self.effort]
         for folder in self.plugin_dirs:
             args += ["--plugin-dir", str(folder)]
-        for folder in self.add_dirs:
-            if Path(folder).is_dir():
-                args += ["--add-dir", str(folder)]
+        for folder in self._readable_folders():
+            args += ["--add-dir", str(folder)]
         # Reading and encoding attachments (up to a few tens of MB) stays off the event loop.
         line = await asyncio.to_thread(user_line, prompt, attachments) if attachments else user_line(prompt)
         # aclosing: closing this generator early must also end the process (`_stream`'s finally) right away.
         async with aclosing(self._stream(args, line, parser or TurnParser())) as events:
             async for event in events:
                 yield event
+
+
+    def _readable_folders(self) -> list[Path]:
+        """`--add-dir` folders that exist: the session's attachments, and its outputs folder unless that is already
+        inside one (it is, under the attachments folder; Claude writes there through the same --add-dir)."""
+        folders = [Path(folder) for folder in self.add_dirs if Path(folder).is_dir()]
+        outputs = self.documents.outputs if self.documents is not None else None
+        if outputs is not None and outputs.is_dir() and not any(
+                outputs.resolve().is_relative_to(folder.resolve()) for folder in folders):
+            folders.append(outputs)
+        return folders
 
 
 def user_line(prompt: str, attachments: Sequence[Attachment] = ()) -> bytes:

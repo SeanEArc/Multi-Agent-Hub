@@ -86,6 +86,35 @@ if args[:1] == ["app-server"]:
     app_server()
     sys.exit(0)
 
+def check_overrides() -> None:
+    """`-c key=value` overrides as codex-cli 0.164.0 loads them (probe 2026-11-21, rev 4 PR 2, section 3): the value
+    is parsed as TOML and, when that fails, taken as a plain string. `sandbox_workspace_write.writable_roots` must
+    then be a list of path strings, on `exec` and `exec resume` alike, or the CLI stops before the turn with a config
+    error. So a Windows path in a double-quoted TOML string (`["C:\\Users\\..."]`, an invalid escape) fails here as it
+    does in the real CLI."""
+    import tomllib
+
+    for index, arg in enumerate(args[:-1]):
+        if arg != "-c" or not args[index + 1].startswith("sandbox_workspace_write.writable_roots="):
+            continue
+        raw = args[index + 1].split("=", 1)[1]
+        try:
+            value = tomllib.loads(f"v = {raw}")["v"]
+        except tomllib.TOMLDecodeError:
+            value = raw
+        if isinstance(value, str):
+            problem = f'invalid type: string "{value}", expected a sequence'
+        elif not isinstance(value, list):
+            problem = f"invalid type: {type(value).__name__}, expected a sequence"
+        elif bad := next((v for v in value if not isinstance(v, str)), None):
+            problem = f"invalid type: {type(bad).__name__} `{bad}`, expected path string in `sandbox_workspace_write.writable_roots`"
+        else:
+            continue
+        print(f"Error loading config.toml: {problem}", file=sys.stderr)
+        sys.exit(1)
+
+
+check_overrides()
 prompt = sys.stdin.read()
 # `--image`/`-i` is greedy, as clap parses it in codex-cli 0.164.0 (`num_args(1..)`): every following argument up to
 # the next flag is an image, a lone `-` included. The real CLI doesn't fail on an image it can't read; it puts an

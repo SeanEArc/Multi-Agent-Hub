@@ -76,6 +76,14 @@ class CodexCliNotFound(RuntimeError):
     pass
 
 
+def toml_value(value: Any) -> str:
+    """`value` as a `-c` override: JSON, which is also TOML, but with non-ASCII characters kept as they are. JSON's
+    ASCII escapes write a character outside the BMP (an emoji in a folder name or a skill's description) as a
+    surrogate pair (`\\ud83d\\ude00`), which TOML refuses: the writable root then stops every turn with a config
+    error, and the instructions arrive as a raw string. DEL is the one character JSON leaves that TOML doesn't."""
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def find_codex(configured: str | None = None) -> str:
     """The native codex.exe: the configured path, a codex.exe on PATH, or the one inside the npm install."""
     if configured:
@@ -165,11 +173,11 @@ class CodexAdapter(CliAdapter):
 
     def server_config(self) -> list[str]:
         """The same settings as a turn, as `-c` overrides for `codex app-server`."""
-        instructions = HEADLESS_PROMPT + (f"\n\n{self.skill_instructions}" if self.skill_instructions else "")
         config = [
             "-c", f"sandbox_mode={json.dumps(self.sandbox)}",
             "-c", 'approval_policy="never"',
-            "-c", f"developer_instructions={json.dumps(instructions)}",
+            "-c", f"developer_instructions={toml_value(self._turn_instructions())}",
+            *self._writable_roots(),
         ]
         if self.model:
             config += ["-c", f"model={json.dumps(self.model)}"]
@@ -186,20 +194,36 @@ class CodexAdapter(CliAdapter):
     def _options(
         self, sandbox: str | None = None, instructions: str | None = None, effort: bool = True
     ) -> list[str]:
+        turn = instructions is None  # a session turn, not a one-off summary with its own instructions
         if instructions is None:
-            instructions = HEADLESS_PROMPT + (f"\n\n{self.skill_instructions}" if self.skill_instructions else "")
+            instructions = self._turn_instructions()
         options = [
             # The user picked the folder in the hub; Codex's own git-repo guard would only block non-git folders.
             "--skip-git-repo-check",
             "-c", f"sandbox_mode={json.dumps(sandbox or self.sandbox)}",
             "-c", 'approval_policy="never"',
-            "-c", f"developer_instructions={json.dumps(instructions)}",
+            "-c", f"developer_instructions={toml_value(instructions)}",
+            *(self._writable_roots() if turn else []),
         ]
         if self.model:
             options += ["--model", self.model]
         if effort and self.effort:
             options += ["-c", f"model_reasoning_effort={json.dumps(self.effort)}"]
         return options
+
+    def _turn_instructions(self) -> str:
+        """HEADLESS_PROMPT, the library's skills, then the outputs folder and hub-doc."""
+        parts = [HEADLESS_PROMPT, self.skill_instructions,
+                 self.documents.instructions("Codex") if self.documents is not None else None]
+        return "\n\n".join(part for part in parts if part)
+
+    def _writable_roots(self) -> list[str]:
+        """The outputs folder as the sandbox's one extra writable root, never the whole session folder (the sandbox
+        could then clear an original's read-only flag, probe 2026-11-21). The value is TOML: a JSON string escapes a
+        Windows path's backslashes the way TOML reads them (a bare backslash would be an invalid escape)."""
+        if self.documents is None:
+            return []
+        return ["-c", f"sandbox_workspace_write.writable_roots={toml_value([str(self.documents.outputs)])}"]
 
     async def _on_event(self, event: AgentEvent) -> None:
         if event.type is EventType.STARTED and event.data.get("session_id"):

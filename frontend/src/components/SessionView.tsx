@@ -18,6 +18,7 @@ import { sendWithFiles } from "../attachments";
 import { Composer } from "./Composer";
 import { AutoHandoffSwitch, FolderLock, ModelPicker } from "./ComposerControls";
 import { HistoryView } from "./HistoryView";
+import { OutputFiles } from "./OutputFiles";
 import { ProgressAside, ProgressCard } from "./ProgressPanel";
 import { useLocalModels } from "./ModelSelect";
 import { StatusBadge } from "./StatusBadge";
@@ -263,6 +264,7 @@ export function SessionView({ session, onChanged, onDeleted, layout, onLayoutCha
             </div>
           )}
 
+          <OutputFiles sessionId={session.id} refreshKey={`${status}:${lastOf(events, "tool_result", "completed")?.id ?? 0}`} />
           <Composer
             status={status}
             agent={session.agent}

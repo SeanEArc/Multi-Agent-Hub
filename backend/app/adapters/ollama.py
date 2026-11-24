@@ -55,6 +55,7 @@ from app.adapters.local_tools import (
 )
 from app.adapters.runner import Runner
 from app.attachments import Attachment, with_files
+from app.documents import DocumentAccess
 from app.models import AgentKind
 
 DEFAULT_URL = "http://127.0.0.1:11434"
@@ -255,6 +256,7 @@ class OllamaAdapter(AgentAdapter):
         # Read-only besides the working folder: the library's skills and the session's attachments.
         roots = [*skill_roots, *([attachments_dir] if attachments_dir else [])]
         self.tools = LocalTools(self.cwd, runner, command_timeout, read_roots=roots)
+        self._documents: DocumentAccess | None = None
         # The hub library's skills that are on for the local model, listed in its system prompt.
         self.skill_instructions = skill_instructions
         self._transport = transport
@@ -267,6 +269,17 @@ class OllamaAdapter(AgentAdapter):
     @property
     def native_session_id(self) -> str | None:
         return self._conversation_id
+
+    @property
+    def documents(self) -> DocumentAccess | None:
+        return self._documents
+
+    @documents.setter
+    def documents(self, access: DocumentAccess | None) -> None:
+        """The outputs folder becomes a write root of the file tools, and run_command gets hub-doc on PATH."""
+        self._documents = access
+        self.tools.write_roots = [access.outputs.resolve()] if access is not None else []
+        self.tools.env = access.env() if access is not None else {}
 
     def start_task(self, prompt: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         if self._conversation_id is not None:
@@ -300,6 +313,9 @@ class OllamaAdapter(AgentAdapter):
         # A model without tools can't read a SKILL.md; it still gets a skill picked from the `/` menu in full.
         if self.use_tools and self.skill_instructions:
             prompt += "\n" + self.skill_instructions + "\n"
+        if self.use_tools and self._documents is not None:
+            prompt += (f"\n{self._documents.instructions(self.model)}\nwrite_file and edit_file can write in the "
+                       "outputs folder too: give them its full path. Run hub-doc with run_command.\n")
         return prompt
 
     async def _turn(self, text: str, new: bool, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:

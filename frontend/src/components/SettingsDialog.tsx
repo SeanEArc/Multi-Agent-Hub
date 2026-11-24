@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, effortName, effortsFor, type AgentKind, type Effort, type CatalogAgent, type HubSettings, type ModelCatalog, type ProgressLayout } from "../api";
+import { api, effortName, effortsFor, type AgentKind, type Effort, type CatalogAgent, type HubSettings, type ModelCatalog, type OfficeStatus, type ProgressLayout } from "../api";
 import { useTheme } from "../theme";
 import { ChainEditor } from "./ChainEditor";
 import { AGENT_OPTIONS } from "./ComposerControls";
@@ -182,6 +182,7 @@ export function SettingsDialog({ onClose }: Props) {
         ) : (
           !error && <p className="muted">Loading…</p>
         )}
+        <OfficeLine />
 
         {error && <div className="composer-error">{error}</div>}
 
@@ -225,6 +226,68 @@ function formatTime(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+}
+
+/** "Microsoft Office: found / not found", from the hub's test conversion, with a button to check again. */
+function OfficeLine() {
+  const [office, setOffice] = useState<OfficeStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let current = true;
+    let timer: number | undefined;
+    // The startup check runs in the background: look again until it has an answer.
+    const load = () =>
+      api.office().then(
+        (status) => {
+          if (!current) return;
+          setOffice(status);
+          if (status.status === "checking") timer = window.setTimeout(load, 2000);
+        },
+        (e) => current && setError(e instanceof Error ? e.message : String(e)),
+      );
+    void load();
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  async function recheck() {
+    setChecking(true);
+    setError(null);
+    try {
+      setOffice(await api.checkOffice());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const busy = checking || office?.status === "checking";
+  const shown = !office ? "…" : office.status === "found" ? `found${office.version ? ` (version ${office.version})` : ""}` : office.status;
+  return (
+    <div className="field">
+      <span>Microsoft Office</span>
+      <div className="model-check-row office-row">
+        <span className={`office-status office-${office?.status.replace(" ", "-") ?? "loading"}`}>{busy ? "checking…" : shown}</span>
+        <button type="button" className="button" disabled={busy} onClick={() => void recheck()}>
+          Check again
+        </button>
+      </div>
+      <span className={`hint${error ? " warning" : ""}`}>
+        {error
+          ? error
+          : office?.status === "found"
+            ? "Agents can have Word save page images of a document and show their edits as tracked changes."
+            : office?.status === "not found"
+              ? `${office.error ? `${office.error} ` : ""}Agents still read, check and edit Word and Excel files without Office.`
+              : "The hub opens a tiny document in hidden Word to see whether Office works (alerts off, read-only)."}
+      </span>
+    </div>
+  );
 }
 
 /** Buttons that try each of an agent's models once, so the pickers know which the plan can use. */

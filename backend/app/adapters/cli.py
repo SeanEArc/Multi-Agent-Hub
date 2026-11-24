@@ -83,6 +83,16 @@ class CliAdapter(AgentAdapter):
             self._stopping = True
             await self._proc.kill()
 
+    def _env(self) -> dict[str, str]:
+        """Added to the CLI's environment: headless git, plus hub-doc on PATH and the outputs folder."""
+        return {**HEADLESS_GIT_ENV, **(self.documents.env() if self.documents is not None else {})}
+
+    def _instructions(self, author: str) -> str:
+        """HEADLESS_PROMPT, plus where to write and how to use hub-doc when the orchestrator gave them."""
+        if self.documents is None:
+            return HEADLESS_PROMPT
+        return f"{HEADLESS_PROMPT}\n\n{self.documents.instructions(author)}"
+
     async def _on_event(self, event: AgentEvent) -> None:
         """Hook for adapters that learn state (such as the session id) from the stream, or add to an event."""
 
@@ -95,7 +105,7 @@ class CliAdapter(AgentAdapter):
             raise RuntimeError("A turn is already running")
 
         self._stopping = False
-        proc = await self.runner.start([*self._command, *args], self.cwd, HEADLESS_GIT_ENV)
+        proc = await self.runner.start([*self._command, *args], self.cwd, self._env())
         self._proc = proc
         stderr_task = asyncio.create_task(proc.read_stderr())
         try:

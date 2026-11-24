@@ -33,7 +33,8 @@ async def run(adapter: "CodexAdapter", name: str, rest: str) -> AsyncGenerator[A
 
     adapter._stopping = False
     try:
-        async with AppServer(adapter._command, adapter.cwd, adapter.runner, adapter.server_config()) as server:
+        async with AppServer(adapter._command, adapter.cwd, adapter.runner, adapter.server_config(),
+                             adapter._env()) as server:
             adapter._proc = server._proc  # so Stop kills it, like a turn
             async for event in _COMMANDS[name](adapter, server, rest):
                 yield event
