@@ -433,6 +433,25 @@ export interface CommandMenu {
   native_known: boolean;
 }
 
+/** A file an agent wrote to the session's outputs folder (backend/app/outputs.py). */
+export interface OutputFile {
+  // Relative to the outputs folder, with forward slashes.
+  name: string;
+  size: number;
+  modified: number;
+  path: string;
+}
+
+/** Whether Microsoft Office passed the hub's test conversion (backend/app/office.py). */
+export interface OfficeStatus {
+  status: "found" | "not found" | "checking";
+  version: string | null;
+  word: boolean;
+  excel: boolean;
+  error: string | null;
+  checked_at: number | null;
+}
+
 export const api = {
   listSessions: () => request<AgentSession[]>("/sessions"),
   createSession: (body: NewSession) =>
@@ -461,6 +480,22 @@ export const api = {
   // Opens the file with its own app on this PC (code and scripts are shown in Explorer instead).
   openAttachment: (id: string, attachmentId: string) =>
     request<{ action: "opened" | "revealed" }>(`/sessions/${id}/attachments/${attachmentId}/open`, { method: "POST" }),
+  listOutputs: (id: string) => request<OutputFile[]>(`/sessions/${id}/outputs`),
+  // Opens an agent's file with its own app (scripts and code are shown in Explorer instead).
+  openOutput: (id: string, name: string) =>
+    request<{ action: "opened" | "revealed" }>(`/sessions/${id}/outputs/open`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  // Save as…: a copy at a full path the user chose.
+  saveOutput: (id: string, name: string, destination: string) =>
+    request<{ path: string }>(`/sessions/${id}/outputs/save`, {
+      method: "POST",
+      body: JSON.stringify({ name, destination }),
+    }),
+  office: () => request<OfficeStatus>("/office"),
+  // Runs the test conversion now; waits until it has finished (up to a minute).
+  checkOffice: () => request<OfficeStatus>("/office/check", { method: "POST" }),
   stop: (id: string) => request<AgentSession>(`/sessions/${id}/stop`, { method: "POST" }),
   updateSession: (id: string, body: SessionUpdate) =>
     request<AgentSession>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

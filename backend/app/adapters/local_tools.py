@@ -134,11 +134,16 @@ class LocalTools:
     """Runs the local model's tool calls in one working folder."""
 
     def __init__(self, cwd: Path, runner: Runner | None = None,
-                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, read_roots: Sequence[Path] = ()) -> None:
+                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, read_roots: Sequence[Path] = (),
+                 write_roots: Sequence[Path] = ()) -> None:
         self.cwd = Path(cwd)
         self.root = self.cwd.resolve()
         # Folders outside the working folder that may be read but not changed: the hub library's skills.
         self.read_roots = [Path(r).resolve() for r in read_roots]
+        # Folders outside the working folder the file tools may also write: the session's outputs folder.
+        self.write_roots = [Path(r).resolve() for r in write_roots]
+        # Added to run_command's environment: hub-doc on PATH and the outputs folder (app.documents).
+        self.env: dict[str, str] = {}
         self.runner = runner or HostRunner()
         self.command_timeout = command_timeout
         self._process: RunningProcess | None = None
@@ -205,6 +210,8 @@ class LocalTools:
             raise ToolError("a path is required.")
         path = Path(raw.strip())
         resolved = (path if path.is_absolute() else self.root / path).resolve()
+        if any(resolved.is_relative_to(r) for r in self.write_roots):
+            return resolved  # resolve() followed any junction, so this is where the file really is
         if not writing and any(resolved.is_relative_to(r) for r in self.read_roots):
             return resolved
         if not resolved.is_relative_to(self.root):
@@ -332,7 +339,7 @@ class LocalTools:
         try:
             proc = await self.runner.start(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script],
-                self.cwd, HEADLESS_GIT_ENV,
+                self.cwd, {**HEADLESS_GIT_ENV, **self.env},
             )
             self._process = proc
             try:

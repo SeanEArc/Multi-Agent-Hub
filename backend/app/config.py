@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # Files attached to messages (app.attachments), a folder per session, deleted with it. Outside any repository,
     # like worktrees_dir.
     attachments_dir: Path = APP_DATA_DIR / "attachments"
+    # A folder holding only the hub-doc launcher (app.documents), put first on each agent's PATH. From source, the
+    # hub copies the launcher here from the venv, whose Scripts folder also holds python.exe; the bundle uses its
+    # own folder instead.
+    tools_bin: Path = APP_DATA_DIR / "bin"
+    # The Microsoft Office check (app.office: hidden Word saves a test PDF) at startup and from Settings. Off: Office
+    # counts as not found, so agents get no Word page images or Compare.
+    office_check: bool = True
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was
     # reached, so handoff can be tried with the real CLIs. The turn still runs and uses real usage.
     simulate_limit: Annotated[list[AgentKind], NoDecode] = []

@@ -132,7 +132,8 @@ def test_hostile_and_unusual_names_stay_inside_the_session_folder(client: TestCl
     body = upload(client, session_id, name, data)
     path = Path(body["path"])
     assert path.name == stored_as
-    assert path.parent.parent.name == str(uuid.UUID(session_id)) and path.parent.name == body["id"]
+    # The session's folder is named by its id as stored (revision 4 PR 2: `<attachments>/<session id>/outputs`).
+    assert path.parent.parent.name == uuid.UUID(session_id).hex and path.parent.name == body["id"]
     assert path.read_bytes() == data
     shown = client.get(f"/api/sessions/{session_id}/attachments/{body['id']}/file")
     assert shown.status_code == 200 and shown.content == data

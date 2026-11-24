@@ -177,8 +177,15 @@ class AttachmentStore:
         self.root = Path(root)
 
     def session_dir(self, session_id: str) -> Path:
-        # Session ids are UUIDs; checking keeps a stored value from naming another folder.
-        return self.root / str(uuid.UUID(session_id))
+        """`<root>/<session id>`, the id as the database stores it (32 hex digits). Session ids are UUIDs; parsing
+        keeps a stored value from naming another folder. PR 1's development builds used the dashed form, and a
+        session that already has such a folder keeps it."""
+        parsed = uuid.UUID(session_id)
+        folder = self.root / parsed.hex
+        legacy = self.root / str(parsed)
+        if not folder.exists() and legacy.is_dir():
+            return legacy
+        return folder
 
     async def save(self, session_id: str, name: str, chunks: AsyncIterator[bytes],
                    declared_size: int | None = None) -> Attachment:
@@ -283,9 +290,13 @@ class AttachmentStore:
                     continue
                 if age_from < cutoff and remove_tree(folder):
                     removed += 1
-            if known_sessions is not None and session.name not in known_sessions:
+            if known_sessions is not None and not {session.name, _session_key(session.name)} & set(known_sessions):
                 try:
-                    session.rmdir()  # only succeeds when empty; a folder with files is never touched here
+                    # Only succeed when empty: a folder with files is never touched here. An empty outputs folder
+                    # (made before each turn) doesn't count as files.
+                    if (session / "outputs").is_dir():
+                        (session / "outputs").rmdir()
+                    session.rmdir()
                 except OSError:
                     pass
         if removed:
@@ -375,6 +386,16 @@ def openable(attachment: Attachment) -> bool:
     return attachment.kind in OPENABLE_KINDS or Path(attachment.path).suffix.lower() in OPENABLE_TEXT
 
 
+def openable_name(name: str) -> bool:
+    """The same rule for any file by its name (an agent's output): documents, images and plain text open, anything
+    else (scripts, code, `.xlsm` with macros) is only shown in Explorer."""
+    try:
+        kind, _ = classify(name)
+    except AttachmentError:
+        return False
+    return kind in OPENABLE_KINDS or Path(name).suffix.lower() in OPENABLE_TEXT
+
+
 def claude_block_ok(attachment: Attachment) -> bool:
     """Whether Claude could take the attachment as a content block at all: any allowed image, and a PDF within the
     API's document limits (its page count must be known)."""
@@ -418,7 +439,8 @@ def with_files(prompt: str, attachments: Sequence[Attachment], attached: Collect
         "## Attached files",
         "",
         f"The user attached {'this file' if len(attachments) == 1 else f'these {len(attachments)} files'}. They are "
-        f"stored in {folder}: read them from there, and never change them (write anything new elsewhere).",
+        f"stored in {folder}: read them from there, and never change them (write anything new to the session's "
+        "outputs folder, or elsewhere).",
     ]
     if note:
         lines.append(note)
@@ -465,6 +487,14 @@ def _inline_texts(attachments: Sequence[Attachment]) -> str:
 
 def _longest_backtick_run(text: str) -> int:
     return max((len(run) for run in re.findall(r"`+", text)), default=0)
+
+
+def _session_key(name: str) -> str:
+    """A session folder's name as the database's id (a dashed folder from PR 1's builds included)."""
+    try:
+        return uuid.UUID(name).hex
+    except ValueError:
+        return name
 
 
 def _listing(folder: Path) -> list[Path]:

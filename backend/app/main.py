@@ -10,14 +10,16 @@ from httpx2 import AsyncBaseTransport
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from app.api import attachments as attachment_routes, folders, health, local, models, sessions, settings as hub_settings, skills as skill_routes, usage
+from app.api import attachments as attachment_routes, folders, health, local, models, office as office_routes, outputs as output_routes, sessions, settings as hub_settings, skills as skill_routes, usage
 from app.model_list import default_codex_home
 from app.attachments import AttachmentStore
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
 from app.api.attachments import FileOpener, default_open_file
 from app.db import init_db, make_engine
+from app.documents import DocumentToolkit
 from app.models import AgentSession
+from app.office import CHECK_TIMEOUT, OfficeDetector
 from app.orchestrator import AdapterFactory, Orchestrator, default_adapter_factory
 from app.skills import SkillLibrary
 
@@ -39,16 +41,27 @@ def create_app(
     discover_native: bool = True,
     attachments_dir: Path | None = None,
     open_file: FileOpener | None = None,
+    office_command: list[str] | None = None,
+    office_timeout: float = CHECK_TIMEOUT,
+    tools_bin: Path | None = None,
 ) -> FastAPI:
-    """Tests pass `token`, the folders and a fake Ollama transport; otherwise they come from the settings."""
+    """Tests pass `token`, the folders and a fake Ollama transport; otherwise they come from the settings.
+
+    `office_command` replaces the Office check's PowerShell script (tests pass a fake, so the suite never starts
+    Word); `office_timeout` is the check's time limit. `tools_bin` is where hub-doc's launcher is copied for agents'
+    PATH (tests pass a temp folder, never the real app-data one)."""
     settings = get_settings()
     engine = engine or make_engine(settings.database_url)
     # The skill library; tests pass their own folders so the user's real skills are never touched.
     codex_home = codex_home or default_codex_home()
     skills = SkillLibrary(skills_dir or settings.skills_dir, claude_home=claude_home, codex_home=codex_home)
     attachments = AttachmentStore(attachments_dir or settings.attachments_dir)
+    # Microsoft Office (Word page images and Compare) and the hub-doc toolkit agents get on their PATH.
+    office = OfficeDetector(office_command, office_timeout,
+                            enabled=office_command is not None or settings.office_check)
+    toolkit = DocumentToolkit(tools_bin or settings.tools_bin, office=office)
     orchestrator = Orchestrator(engine, adapter_factory, simulate_limit=set(settings.simulate_limit),
-                                skills=skills, attachments=attachments)
+                                skills=skills, attachments=attachments, documents=toolkit)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -67,7 +80,14 @@ def create_app(
             await asyncio.to_thread(attachments.sweep_unsent, known_sessions=known)
         except Exception:
             log.exception("Cleaning up old attachments failed; starting anyway")
+        try:
+            await asyncio.to_thread(toolkit.install)
+        except Exception:
+            log.exception("Setting up hub-doc for agents failed; starting anyway")
+        # In the background: the first Word start can take a while, and the backend answers meanwhile.
+        office.start()
         yield
+        await office.shutdown()
         await orchestrator.shutdown()
         engine.dispose()
 
@@ -86,6 +106,8 @@ def create_app(
     app.state.discover_native = discover_native
     # Opens an attachment with its own app on this PC; tests pass a recorder so nothing opens.
     app.state.open_file = open_file or default_open_file
+    app.state.office = office
+    app.state.documents = toolkit
 
     app.add_middleware(
         CORSMiddleware,
@@ -106,6 +128,8 @@ def create_app(
     app.include_router(models.router, prefix="/api", dependencies=authenticated)
     app.include_router(skill_routes.router, prefix="/api", dependencies=authenticated)
     app.include_router(attachment_routes.router, prefix="/api", dependencies=authenticated)
+    app.include_router(output_routes.router, prefix="/api", dependencies=authenticated)
+    app.include_router(office_routes.router, prefix="/api", dependencies=authenticated)
     return app
 
 
