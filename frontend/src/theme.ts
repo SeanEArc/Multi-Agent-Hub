@@ -41,3 +41,15 @@ export function useTheme(): [ThemeChoice, (choice: ThemeChoice) => void] {
 
   return [choice, setChoice];
 }
+
+/** The theme on screen now ("light" or "dark", from `data-theme`), following every change. */
+export function useResolvedTheme(): "light" | "dark" {
+  const read = () => (document.documentElement.dataset.theme === "light" ? "light" : "dark");
+  const [theme, setTheme] = useState<"light" | "dark">(read);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(read()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}

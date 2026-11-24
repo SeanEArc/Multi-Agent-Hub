@@ -1,5 +1,5 @@
 import { memo } from "react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
@@ -7,6 +7,11 @@ import remarkGfm from "remark-gfm";
 // fenced code blocks that name their language. Colors are in styles.css (.hljs-*).
 const remarkPlugins = [remarkGfm];
 const rehypePlugins = [rehypeHighlight];
+// A link never replaces the hub's page: it asks for a new window, which the desktop shell hands to the default
+// browser (src-tauri/src/lib.rs) and a browser opens as a tab.
+const components: Components = {
+  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+};
 
 /**
  * Markdown from an agent, a brief or a summary. Memoized on its text, so a long transcript
@@ -14,7 +19,7 @@ const rehypePlugins = [rehypeHighlight];
  */
 export const MarkdownText = memo(function MarkdownText({ children }: { children: string }) {
   return (
-    <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
+    <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
       {children}
     </Markdown>
   );

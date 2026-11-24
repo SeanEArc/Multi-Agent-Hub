@@ -7,17 +7,24 @@ runs on the user's PC, so the copy is made here.
 
 from typing import Annotated
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from app.api.attachments import FileOpener, OpenResult
-from app.attachments import AttachmentError
+from app.api.attachments import FileOpener, OpenResult, file_response
+from app.attachments import AttachmentError, classify
 from app.db import get_session
 from app.models import AgentSession
 from app.outputs import OutputFile, OutputsStore
 
 router = APIRouter(prefix="/sessions/{session_id}/outputs", tags=["outputs"])
+
+# Pages, SVG and XML can hold scripts: an agent's file of this kind only ever goes as a download, never inline (not
+# even as plain text, which is how an attachment of these types is shown).
+ACTIVE_SUFFIXES = {".html", ".htm", ".xhtml", ".svg", ".svgz", ".xml", ".xsl", ".xslt", ".mht", ".mhtml"}
 
 
 class OutputRead(BaseModel):
@@ -57,6 +64,24 @@ def _check_session(db: Session, session_id: str) -> None:
 def list_outputs(session_id: str, db: DbSession, outputs: Outputs) -> list[OutputFile]:
     _check_session(db, session_id)
     return outputs.list(session_id)
+
+
+@router.get("/file")
+def get_output_file(session_id: str, name: str, db: DbSession, outputs: Outputs) -> FileResponse:
+    """An output file's bytes for the preview pane, typed like an attachment's (images and PDFs as themselves, text
+    and code as plain text, anything else as a download). Never cached: agents overwrite files under the same name."""
+    _check_session(db, session_id)
+    try:
+        path = outputs.file(session_id, name)
+    except AttachmentError as exc:
+        raise HTTPException(exc.status, str(exc)) from None
+    try:
+        kind, mime = classify(path.name)
+    except AttachmentError:
+        kind, mime = None, "application/octet-stream"  # a type attachments don't take: a download
+    if Path(path.name).suffix.lower() in ACTIVE_SUFFIXES:
+        kind = None
+    return file_response(path, path.name, kind, mime, cache="no-store")
 
 
 @router.post("/open", response_model=OpenResult)

@@ -41,6 +41,11 @@ workflow uses that section as the release notes and refuses a tag without one. S
   without losing its formatting, and list changed paragraphs. With Microsoft Office, Word page images and a
   tracked-changes copy of an agent's edits. Agents write only to the session's outputs folder; its files show
   above the text box with **Open** and **Save as…**. Settings shows whether Microsoft Office was found.
+- Preview pane: click an attached file, or **Preview** on a file from an agent, to see it beside the chat
+  without leaving the hub. PDF, Word (with tracked changes as stored) and Excel (`.xlsx`) open in built-in
+  viewers that work offline; images, text, CSV and code show as they are; anything else (such as `.xls`) shows
+  the hub's text copy with **Open**. When an agent overwrites the file, the pane shows the new version. Links in
+  a document open in your browser.
 
 ### Changed
 - README rewritten for people installing the app with their own accounts. Development notes moved to `docs/`.
