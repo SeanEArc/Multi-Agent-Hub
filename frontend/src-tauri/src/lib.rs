@@ -5,6 +5,10 @@
 //! restarts the backend if it exits, and hands the port and token to the UI through the
 //! `hub_connection` command. Each backend run is placed in a Windows job object, so the backend
 //! and every agent CLI it started are killed when it crashes or the shell closes.
+//!
+//! The window only ever shows the app itself: any other page it is asked to navigate to or open in a new
+//! window (a link in the transcript or in a previewed document) goes to the default browser through the
+//! backend's `/api/links/open`, which allows only http, https and mailto links.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -17,7 +21,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri::webview::{NewWindowResponse, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, Url};
 
 mod job;
 
@@ -208,6 +213,45 @@ fn health_ok(port: u16, token: &str) -> bool {
     stream.read_exact(&mut head).is_ok() && head.starts_with(b"HTTP/1.1 200")
 }
 
+/// The app's own pages: the bundled UI (`tauri://localhost`, `http(s)://tauri.localhost`) and, in a dev build,
+/// the dev server it was configured with.
+fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
+    match url.scheme() {
+        "tauri" => true,
+        "http" | "https" => {
+            url.host_str() == Some("tauri.localhost")
+                || (cfg!(debug_assertions) && dev_url.is_some_and(|dev| dev.origin() == url.origin()))
+        }
+        _ => false,
+    }
+}
+
+/// Hands a web link to the backend, which opens it in the default browser (it checks the link again). Runs on its
+/// own thread so the webview is never kept waiting.
+fn open_externally(url: &Url, backend: &Arc<Backend>) {
+    if !matches!(url.scheme(), "http" | "https" | "mailto") {
+        return;
+    }
+    let (port, token) = (backend.port, backend.token.clone());
+    let body = serde_json::json!({ "url": url.as_str() }).to_string();
+    thread::spawn(move || {
+        let address = SocketAddr::from(([127, 0, 0, 1], port));
+        let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(500)) else {
+            return;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+        let request = format!(
+            "POST /api/links/open HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\n\
+             Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        if stream.write_all(request.as_bytes()).is_ok() {
+            let mut head = [0u8; 12];
+            let _ = stream.read_exact(&mut head);
+        }
+    });
+}
+
 fn backend_command(app: &AppHandle, backend: &Backend) -> Result<Command, String> {
     let mut command = if let Ok(exe) = std::env::var("HUB_BACKEND_EXE") {
         Command::new(exe)
@@ -317,6 +361,24 @@ pub fn run() {
                 supervising: AtomicBool::new(false),
             });
             app.manage(backend.clone());
+            // The main window is built here (`create: false` in tauri.conf.json) so it gets the navigation rules.
+            let config = app.config();
+            let window = config.app.windows.iter().find(|w| w.label == "main").ok_or("no main window in the config")?;
+            let dev_url = config.build.dev_url.clone();
+            let (navigating, opening) = (backend.clone(), backend.clone());
+            WebviewWindowBuilder::from_config(app.handle(), window)?
+                .on_navigation(move |url| {
+                    let allowed = is_app_url(url, dev_url.as_ref());
+                    if !allowed {
+                        open_externally(url, &navigating);
+                    }
+                    allowed
+                })
+                .on_new_window(move |url, _features| {
+                    open_externally(&url, &opening);
+                    NewWindowResponse::Deny
+                })
+                .build()?;
             start_supervisor(app.handle().clone(), backend);
             Ok(())
         })

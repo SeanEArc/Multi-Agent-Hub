@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { KIND_NAMES, kindOf, sizeText, useAttachmentUrl, type Attachment, type AttachmentKind } from "../attachments";
+import { attachmentPreview, usePreview } from "../preview";
 
 // Short labels for the file badge.
 export const BADGES: Record<AttachmentKind, string> = {
@@ -66,31 +67,34 @@ export function MessageAttachments({ sessionId, attachments }: { sessionId: stri
   );
 }
 
+/** Shows the file in the session's preview pane, or opens it with its own app where there is no pane. */
 function useOpen(sessionId: string, attachment: Attachment) {
+  const preview = usePreview();
   const [error, setError] = useState<string | null>(null);
   async function open() {
     setError(null);
+    if (preview) return preview.show(attachmentPreview(sessionId, attachment));
     try {
       await api.openAttachment(sessionId, attachment.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }
-  return { open, error };
+  return { open, error, previews: preview !== null };
 }
 
 function InlineImage({ sessionId, attachment }: { sessionId: string; attachment: Attachment }) {
   const url = useAttachmentUrl(sessionId, attachment.id);
-  const { open, error } = useOpen(sessionId, attachment);
+  const { open, error, previews } = useOpen(sessionId, attachment);
   return (
-    <button type="button" className="attach-image" title={error ?? `${attachment.name} · open full size`} onClick={() => void open()}>
+    <button type="button" className="attach-image" title={error ?? `${attachment.name} · ${previews ? "preview" : "open full size"}`} onClick={() => void open()}>
       {url ? <img src={url} alt={attachment.name} /> : <span className="attach-image-placeholder muted">{attachment.name}</span>}
     </button>
   );
 }
 
 function FileRow({ sessionId, attachment }: { sessionId: string; attachment: Attachment }) {
-  const { open, error } = useOpen(sessionId, attachment);
+  const { open, error, previews } = useOpen(sessionId, attachment);
   const details = [KIND_NAMES[attachment.kind], attachment.pages ? `${attachment.pages} page${attachment.pages === 1 ? "" : "s"}` : null, sizeText(attachment.size)]
     .filter(Boolean)
     .join(" · ");
@@ -100,7 +104,7 @@ function FileRow({ sessionId, attachment }: { sessionId: string; attachment: Att
       ? `no text copy${attachment.note ? `: ${attachment.note}` : ""}`
       : null;
   return (
-    <button type="button" className="attach-file" title={error ?? `Open ${attachment.path}`} onClick={() => void open()}>
+    <button type="button" className="attach-file" title={error ?? `${previews ? "Preview" : "Open"} ${attachment.path}`} onClick={() => void open()}>
       <span className={`attach-badge kind-${attachment.kind}`}>{BADGES[attachment.kind]}</span>
       <span className="attach-file-name">{attachment.name}</span>
       <span className="muted attach-file-details">{details}</span>

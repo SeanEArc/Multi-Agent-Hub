@@ -10,7 +10,7 @@ from httpx2 import AsyncBaseTransport
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from app.api import attachments as attachment_routes, folders, health, local, models, office as office_routes, outputs as output_routes, sessions, settings as hub_settings, skills as skill_routes, usage
+from app.api import attachments as attachment_routes, folders, health, links, local, models, office as office_routes, outputs as output_routes, sessions, settings as hub_settings, skills as skill_routes, usage
 from app.model_list import default_codex_home
 from app.attachments import AttachmentStore
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
@@ -130,6 +130,7 @@ def create_app(
     app.include_router(attachment_routes.router, prefix="/api", dependencies=authenticated)
     app.include_router(output_routes.router, prefix="/api", dependencies=authenticated)
     app.include_router(office_routes.router, prefix="/api", dependencies=authenticated)
+    app.include_router(links.router, prefix="/api", dependencies=authenticated)
     return app
 
 

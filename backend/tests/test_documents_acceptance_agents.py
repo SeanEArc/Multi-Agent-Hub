@@ -409,6 +409,7 @@ class OutputsApi:
     GET  /api/sessions/{id}/outputs               -> [{name, size, ...}]
     POST /api/sessions/{id}/outputs/open  {name}  -> {action: "opened" | "revealed"}
     POST /api/sessions/{id}/outputs/save  {name, destination} -> 200, a copy at destination
+    GET  /api/sessions/{id}/outputs/file?name=     -> the bytes, for the preview pane (PR 3)
     """
 
     def __init__(self, client: TestClient, session_id: str) -> None:
@@ -422,6 +423,9 @@ class OutputsApi:
 
     def save(self, name: str, destination: Path):
         return self.client.post(f"{self.base}/save", json={"name": name, "destination": str(destination)})
+
+    def file(self, name: str):
+        return self.client.get(f"{self.base}/file", params={"name": name})
 
 
 def make_chat_with_original(client: TestClient) -> tuple[str, dict, Path]:
@@ -487,6 +491,7 @@ def test_outputs_routes_refuse_anything_outside_outputs(client: TestClient, tmp_
         for name in bad_names:
             assert api.open(name).status_code in (400, 403, 404, 422), name
             assert api.save(name, copy).status_code in (400, 403, 404, 422), name
+            assert api.file(name).status_code in (400, 403, 404, 422), name
         assert opened_files == [] and not copy.exists()
         listed = {row["name"] for row in api.list().json()}
         assert "secret.txt" not in json.dumps(sorted(listed)) and "notes.txt" not in listed
@@ -510,8 +515,66 @@ def test_outputs_routes_need_the_token_and_a_real_session(client: TestClient) ->
     assert anonymous.get(base).status_code in (401, 403)
     assert anonymous.post(f"{base}/open", json={"name": "ok.txt"}).status_code in (401, 403)
     assert anonymous.post(f"{base}/save", json={"name": "ok.txt", "destination": "C:/x.txt"}).status_code in (401, 403)
+    assert anonymous.get(f"{base}/file", params={"name": "ok.txt"}).status_code in (401, 403)
     assert opened_files == []
     assert client.get("/api/sessions/00000000-0000-4000-8000-000000000000/outputs").status_code == 404
+
+
+def test_output_files_are_served_for_the_preview_and_nothing_runs_as_a_page(client: TestClient) -> None:
+    """Plan: PR 3 > preview pane. Output files come as blobs: the exact bytes, `nosniff`, never cached (an agent
+    overwrites under the same name), images and PDFs as themselves, Office files as downloads, and pages, SVG and
+    XML only ever as downloads. hub-doc's staging folders and missing files are refused."""
+    session_id, _, outputs = make_chat_with_original(client)
+    api = OutputsApi(client, session_id)
+    files = {
+        "report.docx": (samples.formatted_docx(), "application/octet-stream", "attachment"),
+        "sales.xlsx": (samples.sales_xlsx(), "application/octet-stream", "attachment"),
+        "paper.pdf": (attachment_samples.pdf(), "application/pdf", "inline"),
+        "chart.png": (attachment_samples.png(), "image/png", "inline"),
+        "notes.md": (b"# Notes", "text/plain; charset=utf-8", "inline"),
+        "page.html": (b"<script>alert(1)</script>", "application/octet-stream", "attachment"),
+        "art.svg": (b"<svg xmlns='http://www.w3.org/2000/svg'><script/></svg>", "application/octet-stream", "attachment"),
+        "feed.xml": (b"<?xml version='1.0'?><x/>", "application/octet-stream", "attachment"),
+        "tool.exe": (b"MZ", "application/octet-stream", "attachment"),
+    }
+    for name, (data, _, _) in files.items():
+        (outputs / name).write_bytes(data)
+    for name, (data, content_type, disposition) in files.items():
+        served = api.file(name)
+        assert served.status_code == 200, (name, served.text)
+        assert served.content == data, name
+        assert served.headers["content-type"] == content_type, name
+        assert served.headers["content-disposition"].startswith(disposition), name
+        assert served.headers["x-content-type-options"] == "nosniff"
+        assert served.headers["cache-control"] == "no-store"
+
+    # The pane fetches only the start of a large text file.
+    start = client.get(f"{api.base}/file", params={"name": "notes.md"}, headers={"Range": "bytes=0-2"})
+    assert start.status_code == 206 and start.content == b"# N"
+
+    staging = outputs / ".~hub-doc-0123abcd"
+    staging.mkdir()
+    (staging / "half.docx").write_bytes(b"PK")
+    assert api.file(".~hub-doc-0123abcd/half.docx").status_code in (400, 404)
+    assert api.file("gone.docx").status_code == 404
+
+
+def test_document_links_open_in_the_browser_only_when_they_are_web_links(client: TestClient) -> None:
+    """Plan: PR 3 > links inside a previewed document open in the system browser, never the app's window: only
+    http(s) and mailto are handed to Windows, behind the token."""
+    opened_files.clear()
+    # Characters such as | ^ { } \ and ' are fine in a real link: os.startfile runs no shell.
+    good = ["https://example.com/a?b=1", "mailto:someone@example.com", "https://example.com/search?q={a|b}^c",
+            r"https://example.com/path\to", "https://en.wikipedia.org/wiki/O'Brien"]
+    for url in good:
+        assert client.post("/api/links/open", json={"url": url}).status_code == 204, url
+    for bad in ("file:///C:/Windows/System32/calc.exe", r"C:\Windows\notepad.exe", r"\\server\share\x",
+                "javascript:alert(1)", "ms-settings:", "https://", "https://example.com/a b", 'http://x" & calc',
+                "http://[abc]/", "https://example.com/\x07"):
+        assert client.post("/api/links/open", json={"url": bad}).status_code == 400, bad
+    anonymous = TestClient(client.app, base_url=str(client.base_url))
+    assert anonymous.post("/api/links/open", json={"url": "https://example.com"}).status_code in (401, 403)
+    assert opened_files == [(url, False) for url in good]
 
 
 def test_an_agents_new_file_shows_in_the_outputs_list(wired: WiredHub) -> None:

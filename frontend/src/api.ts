@@ -493,6 +493,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, destination }),
     }),
+  // A web link from a previewed document, opened in the default browser by the backend (desktop app).
+  openLink: (url: string) => request<void>("/links/open", { method: "POST", body: JSON.stringify({ url }) }),
   office: () => request<OfficeStatus>("/office"),
   // Runs the test conversion now; waits until it has finished (up to a minute).
   checkOffice: () => request<OfficeStatus>("/office/check", { method: "POST" }),

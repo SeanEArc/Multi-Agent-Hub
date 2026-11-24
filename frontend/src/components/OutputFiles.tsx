@@ -1,7 +1,9 @@
-// Files agents wrote to the session's outputs folder (backend/app/outputs.py): a row each with Open and Save as….
+// Files agents wrote to the session's outputs folder (backend/app/outputs.py): a row each with Preview, Open and
+// Save as….
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type OutputFile } from "../api";
 import { kindOf, sizeText } from "../attachments";
+import { outputPreview, usePreview } from "../preview";
 import { BADGES } from "./Attachments";
 import { FolderPicker } from "./FolderPicker";
 
@@ -15,6 +17,16 @@ interface Props {
 export function OutputFiles({ sessionId, refreshKey }: Props) {
   const [files, setFiles] = useState<OutputFile[]>([]);
   const [saving, setSaving] = useState<OutputFile | null>(null);
+  const preview = usePreview();
+
+  // A file in the preview pane that an agent overwrote (new size or time) is shown again.
+  const shown = preview?.current?.outputName;
+  useEffect(() => {
+    const file = files.find((f) => f.name === shown);
+    if (!preview || !file) return;
+    const next = outputPreview(sessionId, file);
+    if (next.version !== preview.current?.version) preview.show(next);
+  }, [files, shown]);
 
   useEffect(() => {
     let current = true;
@@ -36,7 +48,13 @@ export function OutputFiles({ sessionId, refreshKey }: Props) {
       </summary>
       <ul className="outputs-list">
         {newestFirst.map((file) => (
-          <OutputRow key={file.name} sessionId={sessionId} file={file} onSaveAs={() => setSaving(file)} />
+          <OutputRow
+            key={file.name}
+            sessionId={sessionId}
+            file={file}
+            onPreview={preview ? () => preview.show(outputPreview(sessionId, file)) : undefined}
+            onSaveAs={() => setSaving(file)}
+          />
         ))}
       </ul>
       {saving && <SaveAsDialog sessionId={sessionId} file={saving} onClose={() => setSaving(null)} />}
@@ -44,7 +62,14 @@ export function OutputFiles({ sessionId, refreshKey }: Props) {
   );
 }
 
-function OutputRow({ sessionId, file, onSaveAs }: { sessionId: string; file: OutputFile; onSaveAs: () => void }) {
+interface RowProps {
+  sessionId: string;
+  file: OutputFile;
+  onPreview?: () => void;
+  onSaveAs: () => void;
+}
+
+function OutputRow({ sessionId, file, onPreview, onSaveAs }: RowProps) {
   const [error, setError] = useState<string | null>(null);
   const kind = kindOf(file.name);
 
@@ -66,6 +91,11 @@ function OutputRow({ sessionId, file, onSaveAs }: { sessionId: string; file: Out
       </span>
       {error && <span className="attach-error">{error}</span>}
       <span className="output-actions">
+        {onPreview && (
+          <button type="button" className="button subtle" onClick={onPreview} title="Show it in the preview pane">
+            Preview
+          </button>
+        )}
         <button type="button" className="button subtle" onClick={() => void open()} title="Open with its app (scripts are shown in Explorer)">
           Open
         </button>
