@@ -506,7 +506,7 @@ def test_outputs_routes_refuse_anything_outside_outputs(client: TestClient, tmp_
 
 
 def test_outputs_routes_need_the_token_and_a_real_session(client: TestClient) -> None:
-    """Plan: PR 2 > Outputs folder; CLAUDE.md (every /api router is behind the token)."""
+    """Plan: PR 2 > Outputs folder; AGENTS.md (every /api router is behind the token)."""
     session_id, _, outputs = make_chat_with_original(client)
     (outputs / "ok.txt").write_text("fine", encoding="utf-8")
     anonymous = TestClient(client.app, base_url=str(client.base_url))

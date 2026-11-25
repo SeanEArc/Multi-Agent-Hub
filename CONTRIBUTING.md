@@ -16,7 +16,7 @@ cd frontend; npm ci; npm run typecheck; npm run build
 cd frontend; npm run tauri dev              # the desktop app from source
 ```
 
-`CLAUDE.md` describes the architecture in detail.
+[`docs/architecture/`](docs/architecture/README.md) describes how each part works; `AGENTS.md` (read by Claude Code through `CLAUDE.md`) has the rules for AI agents.
 
 ## Pull requests
 

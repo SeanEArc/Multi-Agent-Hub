@@ -1,0 +1,5 @@
+# Desktop shell (Tauri)
+
+## Desktop shell
+
+**Desktop shell** (`frontend/src-tauri/src/lib.rs`): on launch picks a free loopback port and a new random token, starts the backend (`uv run python -m app.main` in debug builds, the bundled `resources/backend/hub-backend.exe` in release, or `HUB_BACKEND_EXE`) with `HUB_TOKEN`/`HUB_PORT` in its env and no window, output appended to `logs\backend.log`. A supervisor thread polls `/api/health` (raw HTTP) to report `ready`, and restarts the backend when it exits (backoff, gives up after more than 5 crashes in 2 minutes, or at once on exit code 3), emitting `backend-status` events that `BackendBanner.tsx` shows (with Retry → `restart_backend`). Each run is put in a kill-on-close job object (`job.rs`), so a crash or the shell closing also kills the agent CLIs it started. `tauri-plugin-single-instance` focuses the open window instead of starting a second app. Tests use `make_client` in `conftest.py` (loopback `base_url` plus `TEST_TOKEN`); `create_app(..., token=)` skips the file.
