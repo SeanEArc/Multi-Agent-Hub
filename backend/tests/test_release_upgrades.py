@@ -129,7 +129,7 @@ def test_no_backup_for_a_new_or_current_database(tmp_path: Path) -> None:
 
 
 def test_migrations_never_rebuild_or_drop_history_tables() -> None:
-    """A batch rebuild of sessions or stints cascades deletes to child rows (see CLAUDE.md)."""
+    """A batch rebuild of sessions or stints cascades deletes to child rows (see AGENTS.md)."""
     rebuild = re.compile(r"batch_alter_table\(\s*['\"](sessions|stints)['\"]")
     drop = re.compile(r"op\.drop_table\(\s*['\"](%s)['\"]" % "|".join(HISTORY_TABLES))
     offenders = []

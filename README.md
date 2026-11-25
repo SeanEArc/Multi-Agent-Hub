@@ -88,7 +88,7 @@ Most settings are in the app's **Settings** dialog. Advanced ones are `HUB_*` en
 | `HUB_OLLAMA_MODEL`, `HUB_OLLAMA_NUM_CTX`, `HUB_OLLAMA_MAX_ROUNDS`, `HUB_OLLAMA_COMMAND_TIMEOUT` | auto, `32768`, `30`, `300` | Local model, context size, tool rounds per turn and command timeout (seconds). |
 | `HUB_LOG_LEVEL` | `info` | Log level. |
 
-Developer settings (`HUB_RELOAD`, `HUB_SIMULATE_LIMIT`, token and lock files) are described in [`CLAUDE.md`](CLAUDE.md).
+Developer settings (`HUB_RELOAD`, `HUB_SIMULATE_LIMIT`, token and lock files) are described in [`backend/AGENTS.md`](backend/AGENTS.md) and [`docs/architecture/settings.md`](docs/architecture/settings.md).
 
 ## Security and privacy
 

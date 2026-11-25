@@ -1,43 +1,38 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
+Instructions for AI coding agents (Claude Code, Codex and others) working in this repository. `CLAUDE.md` files import the `AGENTS.md` beside them, so this file is the one source for both.
 
-Multi-Agent Hub is a Windows desktop application using FastAPI, React/TypeScript, and Tauri.
-- `backend/app/`: API routes (`api/`), agent integrations (`adapters/`), orchestration, SQLModel models, and Alembic migrations.
-- `backend/tests/`: pytest tests, fake agent processes, and released database fixtures.
-- `frontend/src/`: React components, API helpers, streaming hooks, and CSS theme tokens.
-- `frontend/src-tauri/`: Rust desktop shell, installer configuration, and icon assets.
-- `docs/`: plans, progress recaps, and manual checks. Consult `CLAUDE.md` for architecture details.
+## Project
 
-## Build, Test, and Development Commands
+Multi-Agent Hub: an open-source (MIT) Windows desktop app that runs Claude Code, Codex and a local Ollama model as parallel agent sessions on different projects, with automatic handoff to the next agent when one hits a usage limit. Anyone can run it with their own CLI logins.
 
-Use Windows 10/11, Node.js 22, and `uv` (Python 3.14 is pinned). Desktop builds also require stable Rust.
+- `backend/`: FastAPI on SQLite (SQLModel, Alembic), the agent adapters, the orchestrator, and `hub-doc` (`app/doctool/`, a separate document program).
+- `frontend/`: React and TypeScript UI (Vite); `frontend/src-tauri/` is the Rust desktop shell and installer.
+- `scripts/`: version and third-party-notice tools. `.github/workflows/`: CI and releases.
+- `docs/architecture/`: how each part works, one file per topic (index in `docs/architecture/README.md`).
 
-From `backend/`:
-- `uv sync --locked`: install locked dependencies.
-- `uv run python -m app.main`: start the API on port 8765.
-- `uv run pytest`: run backend tests.
-- `uv run python ../scripts/version.py check`: verify consistent project versions.
+## Read before you work
 
-From `frontend/`:
-- `npm ci`: install locked dependencies.
-- `npm run dev`: start Vite; run the backend separately.
-- `npm run typecheck` and `npm run build`: check TypeScript and build the UI.
-- `npm run tauri dev`: launch the desktop app with its backend.
-- `npm run tauri build`: package the Windows installer.
+- **Before working in `backend/` or `frontend/`, read that folder's `AGENTS.md`.** It has the commands, local rules and a table saying which `docs/architecture/` file to read for each kind of change. Read that file before changing the part it covers.
+- `docs/plan.md` (the confirmed plan: phases and revisions), `docs/progress.md` (per-session recaps and the current next steps; read it first to see where work stopped, and append a new recap at the end of each session) and `docs/TODO.md` (manual checks) are private notes. They exist only in the maintainer's main checkout, not in worktrees or public clones; if they're missing, carry on without them.
+- Revisions between phases are added to `docs/plan.md` after the last completed phase, not by rewriting phases.
 
-## Coding Style & Naming Conventions
+## Rules that always apply
 
-Follow surrounding code: four-space Python indentation, two-space TypeScript/TSX indentation, double-quoted strings, and TypeScript semicolons. Use Python `snake_case`, React component `PascalCase` filenames, and `camelCase` helpers/hooks. Keep TypeScript strict checks passing. No dedicated formatter or linter is configured. Reuse CSS theme tokens.
+- **Login tokens:** Claude and Codex are driven through their official CLIs under the user's own logins; the app must never read, store or send login tokens (for Codex: never `auth.json`, `identity` or `account/read`). The local model needs no sign-in.
+- **Database:** every schema change needs an Alembic migration (there is no `create_all`). **Never batch-rebuild `sessions` or `stints`:** with foreign keys on, dropping the old table cascades and deletes history. Use plain `ALTER TABLE ADD/DROP COLUMN`. Details in `docs/architecture/database.md`.
+- **Local only:** `HUB_HOST` and `HUB_OLLAMA_URL` must be loopback, and every `/api` router stays behind the bearer token (`require_caller`).
+- **Folders agents run in:** worktrees and chat folders must stay outside any repository, because Claude Code loads every `CLAUDE.md` above its cwd. Worktrees are not a sandbox.
+- **Agent sandboxes:** Codex gets write access to a session's `outputs` folder only, never the session folder, and stored attachments stay read-only. Nothing the hub imports (skills, archives) is ever run.
+- **Tests never use real accounts:** the normal suite uses fake Claude, Codex and Ollama; live tests are opt-in (`HUB_LIVE_*`) and CI never has credentials.
 
-## Testing Guidelines
+## Branches, CI and pull requests
 
-Name pytest files `test_*.py` and functions `test_*`. Add regression tests for behavior changes; use fake adapters and isolated databases. No numeric coverage threshold is configured. Live tests require explicit `HUB_LIVE_CLAUDE`, `HUB_LIVE_CODEX`, or `HUB_LIVE_OLLAMA` opt-in. Validate UI changes with typecheck/build and relevant manual checks in `docs/TODO.md`.
+- Feature branches start from `staging` and merge into `staging` through pull requests, never into `main` (see `RELEASING.md`). CI (`.github/workflows/ci.yml`: Windows backend tests, UI typecheck and build, version check) must pass, and a passing push to `staging` fast-forwards `main` to it. Releases are tags `vX.Y.Z` on `main` (`.github/workflows/release.yml`).
+- Add user-visible changes under Unreleased in `CHANGELOG.md`.
+- Commits: concise, descriptive subjects; history uses prefixes such as `progress:`, `plan:` and revision labels, without enforcing Conventional Commits. PRs describe behavior changes and how they were checked, with screenshots for UI changes.
+- Add regression tests for behavior changes. Configure through `HUB_*` variables or `backend/.env`; keep secrets uncommitted.
 
-## Commit & Pull Request Guidelines
+## Keeping these files current
 
-Use concise, descriptive subjects; history uses prefixes such as `progress:`, `plan:`, and revision labels, without enforcing Conventional Commits. Branch from and target `staging`. Describe behavior changes and validation; include screenshots for UI changes. CI must pass. Add user-visible changes to `CHANGELOG.md` under Unreleased.
-
-## Security & Database Changes
-
-Never read, store, or transmit CLI login tokens. Configure through `HUB_*` variables or `backend/.env`; keep secrets uncommitted. Schema changes require reviewed, additive Alembic migrations and release-upgrade tests. Never batch-rebuild `sessions` or `stints`, which can cascade-delete history.
+When a change alters how a part works, update its `docs/architecture/` file in the same PR. Keep this file and the folder `AGENTS.md` files short: they load into every session, so add only rules that apply to nearly every task there, and put explanations in the topic files.
