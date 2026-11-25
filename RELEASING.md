@@ -32,6 +32,14 @@ feature branch ──PR──► staging ──(CI passes)──► main ──(
    ```
    In `CHANGELOG.md`, rename **Unreleased** to `## [0.2.0] - YYYY-MM-DD` and start a new empty
    Unreleased section above it.
+   Refresh the third-party notices, so the installer credits exactly what it ships (needs `npm ci` in
+   `frontend/` and `cargo` on PATH), and commit `THIRD-PARTY-NOTICES.md` and `licenses/`:
+   ```powershell
+   uv run --project backend python scripts/notices.py generate
+   ```
+   The release workflow runs `scripts/notices.py check` before building and fails if a shipped package has
+   no entry or brings a license that isn't on its allowed list (`ALLOWED` in the script). No release may
+   ship without these notices.
 2. Save a sample database at this version's schema, so later versions are tested upgrading from it:
    ```powershell
    cd backend; uv run python scripts/snapshot_release_db.py 0.2.0

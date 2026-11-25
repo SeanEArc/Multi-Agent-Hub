@@ -38,7 +38,10 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../backend/dist/hub-backend/": "backend/"
+      "../../backend/dist/hub-backend/": "backend/",
+      "../../LICENSE": "LICENSE",
+      "../../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "../../licenses/": "licenses/"
     },
     "windows": {
       "nsis": {
