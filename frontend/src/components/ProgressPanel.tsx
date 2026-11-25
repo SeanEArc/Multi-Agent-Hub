@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { DiffStat, DiffView } from "./DiffView";
 import { formatClock, formatTime } from "../format";
 import { planCounts, type FileEdit, type FileTouched, type PlanItem, type Progress, type Subagent, type ToolOutcomes } from "../progress";
@@ -42,8 +42,8 @@ export function ProgressCard({ progress, outcomes, projectPath, running }: Props
   );
 }
 
-/** Layout C: a side panel with the plan, subagents and every file the session changed. */
-export function ProgressAside({ progress, outcomes, projectPath, running }: Props) {
+/** Layout C: a side panel with the plan, subagents, every file the session changed, then `children`. */
+export function ProgressAside({ progress, outcomes, projectPath, running, children }: Props & { children?: ReactNode }) {
   const { plan, subagents, files } = progress;
   return (
     <aside className="progress-aside" aria-label="Progress">
@@ -84,6 +84,7 @@ export function ProgressAside({ progress, outcomes, projectPath, running }: Prop
           <p className="muted small">No edits yet.</p>
         )}
       </section>
+      {children}
     </aside>
   );
 }

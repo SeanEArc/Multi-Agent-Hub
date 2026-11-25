@@ -32,10 +32,14 @@ export function attachmentPreview(sessionId: string, attachment: Attachment): Pr
   };
 }
 
+export function outputUrl(sessionId: string, name: string): string {
+  return `/api/sessions/${sessionId}/outputs/file?${new URLSearchParams({ name })}`;
+}
+
 export function outputPreview(sessionId: string, file: OutputFile): PreviewTarget {
   return {
     name: file.name.split("/").at(-1) ?? file.name,
-    url: `/api/sessions/${sessionId}/outputs/file?${new URLSearchParams({ name: file.name })}`,
+    url: outputUrl(sessionId, file.name),
     textUrl: null,
     size: file.size,
     version: `output:${file.name}:${file.size}:${file.modified}`,

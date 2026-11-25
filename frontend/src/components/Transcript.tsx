@@ -2,11 +2,13 @@ import { Fragment, useState, type ReactNode } from "react";
 import { messageAttachments } from "../attachments";
 import { AgentName, agentClass } from "./AgentBadge";
 import { MessageAttachments } from "./Attachments";
+import { ChatOutputs, useOutputs } from "./OutputFiles";
 import { DiffStat, DiffView, startsOpen } from "./DiffView";
 import { MarkdownText } from "./MarkdownText";
 import { AGENT_NAMES, api, type AgentKind, type Effort, type SessionEvent, type SessionStatus } from "../api";
 import { COMMAND_TOOLS, commandOutcome, editDiffs, isEditTool } from "../diffs";
 import { formatTokens, turnTokens } from "../history";
+import { outputChanges } from "../outputs";
 import {
   editedPaths,
   isSubagent,
@@ -63,7 +65,9 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
   let lastTokens = 0;
   // Files the current turn edited, for its turn-end row.
   let turnFiles = new Set<string>();
-  const rows = events.map((event, index) => {
+  // Files agents wrote for the user, shown after the tool call that wrote them.
+  const written = outputChanges(events, useOutputs()?.files ?? [], running);
+  const renderEvent = (event: SessionEvent, index: number) => {
     const p = event.payload;
     if (event.type === "tool_use") for (const path of editedPaths(p.name, p.input ?? {})) turnFiles.add(path);
     if (p.parent_tool_use_id) return null;
@@ -220,6 +224,24 @@ export function Transcript({ sessionId, events, status, projectPath, onAcceptHan
         // started, tool_result, permission_denied and rate_limit are shown elsewhere.
         return null;
     }
+  };
+  const rows = events.map((event, index) => {
+    const row = renderEvent(event, index);
+    const changes = written.get(event.id);
+    if (!changes) return row;
+    const cards = <ChatOutputs changes={changes} />;
+    // A row that ends the turn comes after its files; any other event's files follow it.
+    return ["completed", "question", "error", "limit_reached"].includes(event.type) ? (
+      <Fragment key={event.id}>
+        {cards}
+        {row}
+      </Fragment>
+    ) : (
+      <Fragment key={event.id}>
+        {row}
+        {cards}
+      </Fragment>
+    );
   });
 
   return (

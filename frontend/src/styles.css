@@ -2410,11 +2410,13 @@ textarea:focus,
   order: 3;
 }
 
-.session-body.split .composer {
+.session-body.split .composer,
+.session-body.with-files .composer,
+.session-body.previewing .composer {
   width: calc(100% - 32px);
 }
 
-/* The split layout shows the side panel; narrow windows get the card instead. */
+/* The split layout shows the side panel; narrow windows get the card instead (and files only in the transcript). */
 .session-body.split .progress-card {
   display: none;
 }
@@ -2424,7 +2426,7 @@ textarea:focus,
     display: flex;
   }
 
-  .session-body.split .progress-aside {
+  .session-body .progress-aside {
     display: none;
   }
 }
@@ -3398,16 +3400,8 @@ textarea:focus,
   font-size: 12px;
 }
 
-/* Files agents wrote to the session's outputs folder (OutputFiles.tsx), above the composer. */
-.outputs-bar {
-  margin: 0 16px 8px;
-  border: 1px solid color-mix(in srgb, var(--agent) 30%, var(--border));
-  border-radius: 10px;
-  background: var(--panel);
-  padding: 6px 10px;
-}
-
-.outputs-bar > summary {
+/* Files agents wrote to the session's outputs folder (OutputFiles.tsx): the side panel's list and the transcript's cards. */
+.outputs-panel > summary {
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -3418,11 +3412,28 @@ textarea:focus,
   list-style: none;
   margin: 6px 0 0;
   padding: 0;
-  max-height: 168px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.chat-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-output {
+  border: 1px solid var(--border);
+}
+
+.chat-output-image {
+  flex-basis: 100%;
+}
+
+.chat-outputs-more {
+  align-self: flex-start;
+  font-size: 12px;
 }
 
 .output-row {
@@ -3439,6 +3450,11 @@ textarea:focus,
   font-weight: 600;
   overflow-wrap: anywhere;
   min-width: 0;
+}
+
+/* In the side panel: the badge and name, then the details and buttons on the next line. */
+.outputs-panel .output-name {
+  flex: 1 1 calc(100% - 64px);
 }
 
 .output-details {
@@ -3476,10 +3492,6 @@ textarea:focus,
 }
 
 @media (max-width: 640px) {
-  .outputs-bar {
-    margin: 0 8px 6px;
-  }
-
   .output-actions {
     margin-left: 0;
   }

@@ -53,7 +53,7 @@ from app.models import (
     utcnow,
 )
 from app.commands import Route, review_prompt, route
-from app.outputs import OutputsStore
+from app.outputs import OutputFile, OutputsStore, changes
 from app.skills import SkillLibrary, cached_codex_names, expand_command, load_capabilities, record_capabilities
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
@@ -589,6 +589,13 @@ class Orchestrator:
         roots = (outputs.parent, outputs, *([Path(workdir)] if workdir else []))
         adapter.documents = self.documents.access(outputs, read_roots=roots)
 
+    def _output_files(self, session_id: str) -> dict[str, OutputFile]:
+        try:
+            return {file.name: file for file in self.outputs.list(session_id)}
+        except (OSError, ValueError):
+            log.exception("Couldn't list the outputs folder for session %s", session_id)
+            return {}
+
     def _start_turn(
         self, session_id: str, stint: Stint, adapter: AgentAdapter, events: AsyncGenerator[AgentEvent]
     ) -> None:
@@ -611,6 +618,8 @@ class Orchestrator:
         hand_off = False
         error: str | None = None
         try:
+            # Before the agent starts (it does on the first event), so only this turn's changes are reported.
+            known = await asyncio.to_thread(self._output_files, session_id)
             async with aclosing(events):
                 async for event in events:
                     if event.type is EventType.ERROR and event.data.get("stopped"):
@@ -630,6 +639,13 @@ class Orchestrator:
                         capabilities = event.data.pop("capabilities", None)
                         if capabilities:
                             self._record_capabilities(stint.agent, capabilities)
+                    if event.type is EventType.TOOL_RESULT or event.type in RESTING_STATUS:
+                        # Files written to the outputs folder since the last look, for the transcript: by this tool,
+                        # or (at the turn's end) by something no result reported, such as a background command.
+                        current = await asyncio.to_thread(self._output_files, session_id)
+                        if changed := changes(known, current):
+                            event.data["output_files"] = changed
+                        known = current
                     self._save_event(session_id, stint, event)
             hand_off = limit_reached and status is SessionStatus.FAILED
         except Exception as exc:
