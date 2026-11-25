@@ -12,6 +12,7 @@ import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app.attachments import AttachmentError, AttachmentStore, mark_from_elsewhere, openable_name
 from app.doctool.contract import STAGING_PREFIX
@@ -27,6 +28,17 @@ class OutputFile:
     size: int
     modified: float
     path: str
+
+
+def changes(before: dict[str, OutputFile], after: dict[str, OutputFile]) -> list[dict[str, Any]]:
+    """What an agent did between two looks at the folder, as saved on an event (`output_files`): files created or
+    edited (a new size or time). Deleted files aren't listed."""
+    return [
+        {"name": name, "size": file.size, "modified": file.modified,
+         "change": "edited" if name in before else "created"}
+        for name, file in after.items()
+        if name not in before or (file.size, file.modified) != (before[name].size, before[name].modified)
+    ]
 
 
 class OutputsStore:
