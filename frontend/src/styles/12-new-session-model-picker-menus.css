@@ -1,0 +1,430 @@
+/* --- New session: prompt and composer centered ------------------------------ */
+
+.new-chat-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 16px;
+}
+
+.new-chat-prompt {
+  margin: 0 0 20px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.new-chat-center .composer {
+  margin-bottom: 0;
+}
+
+/* --- Model picker by Send: one box with the agent's mark and the model ------ */
+
+.model-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.model-button {
+  gap: 6px;
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--agent) 45%, var(--border));
+}
+
+.model-button:hover:not(:disabled),
+.model-button.open {
+  background: var(--panel);
+}
+
+.model-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.model-button-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-logo {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.claude-logo {
+  fill: #d97757;
+}
+
+.codex-logo {
+  fill: currentColor;
+}
+
+.local-logo {
+  width: auto;
+  height: auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--agent-ollama) 20%, transparent);
+  color: var(--agent-ollama);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.switch-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  font-weight: 600;
+}
+
+.switch-options {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.model-button-effort {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--agent) 16%, transparent);
+  color: var(--agent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The menu: providers, then that provider's models, then the model's efforts. */
+.model-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 130px;
+  width: 470px;
+  max-width: calc(100vw - 32px);
+  height: min(380px, 60vh);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.25);
+  overflow: hidden;
+}
+
+.model-menu-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.model-menu-provider {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.model-menu-provider .agent-logo {
+  width: 20px;
+  height: 20px;
+}
+
+.model-menu-provider .local-logo {
+  width: auto;
+  height: auto;
+}
+
+.model-menu-provider:hover {
+  background: var(--panel-raised);
+}
+
+.model-menu-provider.selected {
+  border-color: color-mix(in srgb, var(--agent) 55%, var(--border));
+  background: var(--panel-raised);
+}
+
+.model-menu-column {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.model-menu-column + .model-menu-column {
+  border-left: 1px solid var(--border);
+}
+
+.model-menu-heading {
+  padding: 4px 8px 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.model-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-menu-more {
+  flex: none;
+}
+
+.model-menu-item:hover:not(:disabled),
+.model-menu-item:focus-visible {
+  background: var(--panel);
+}
+
+.model-menu-item.selected {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--agent) 14%, transparent);
+}
+
+.model-menu-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.model-menu-note {
+  display: block;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: normal;
+}
+
+@media (max-width: 640px) {
+  .model-button-name {
+    max-width: 110px;
+  }
+}
+
+/* The `/` menu above the composer's text box. */
+.composer {
+  position: relative;
+}
+
+.slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
+
+.slash-item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slash-item.active {
+  background: color-mix(in srgb, var(--agent) 14%, transparent);
+}
+
+.slash-name {
+  font-family: var(--mono, monospace);
+  font-weight: 600;
+}
+
+.slash-kind {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--agent) 16%, transparent);
+  color: var(--agent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.slash-description {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-note {
+  padding: 8px;
+  font-size: 13px;
+}
+
+/* The Skills dialog. */
+.skills-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.skills-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.skills-section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.skill-row.missing {
+  opacity: 0.7;
+}
+
+.skill-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.skill-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.skill-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.skill-switch input:checked {
+  accent-color: var(--agent);
+}
+
+.skill-source {
+  display: flex;
+  gap: 8px;
+}
+
+.skill-source input {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-list.compact {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.skill-share-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.skill-share-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.skill-share-text .small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-content pre,
+.skill-diff {
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.sidebar-footer {
+  display: flex;
+  gap: 6px;
+}
+
+.sidebar-footer .sidebar-settings {
+  flex: 1;
+}
+
