@@ -1,0 +1,6 @@
+# Commits that only move or reformat code. GitHub's blame view skips them;
+# locally run: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# For moved lines, git blame -C -C also follows them to their old file.
+
+# Revision 10 PR 2: split frontend/src/styles.css into ordered slices
+1f80916ef13e31ec4231169f41dd5d57f9781d5d
