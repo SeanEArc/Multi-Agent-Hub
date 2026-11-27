@@ -30,7 +30,8 @@ from app.extract import make_text_copy, text_copy_path
 from app.handoff import build_brief, messages_brief, recent_images, session_attachments
 from app.models import AgentKind, SessionEvent, StintReason
 
-import attachment_samples as samples
+from support import attachment_samples as samples
+from support.paths import BACKEND
 
 SESSION = str(uuid.uuid4())
 
@@ -305,7 +306,6 @@ def test_brief_lists_attachments_and_recent_images_go_again(tmp_path: Path) -> N
 
 # --- The worker's own memory cap, unmocked -------------------------------------------------------------
 
-BACKEND = Path(__file__).resolve().parent.parent
 ALLOCATE = """
 import sys
 sys.path.insert(0, sys.argv[1])

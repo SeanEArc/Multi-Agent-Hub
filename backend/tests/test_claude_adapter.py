@@ -9,7 +9,7 @@ import pytest
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.claude import ClaudeAdapter, TurnParser
 
-FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
+from support.paths import FAKE_CLAUDE
 
 
 def collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:

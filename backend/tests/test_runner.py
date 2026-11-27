@@ -9,8 +9,7 @@ from app.adapters.cli import HEADLESS_GIT_ENV
 from app.adapters.codex import CodexAdapter
 from app.adapters.runner import HostRunner, RunningProcess
 
-FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
-FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
+from support.paths import FAKE_CLAUDE, FAKE_CODEX
 
 
 class RecordingRunner(HostRunner):

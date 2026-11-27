@@ -49,7 +49,7 @@ feature branch ──PR──► staging ──(CI passes)──► main ──(
    ```powershell
    cd backend
    $env:HUB_LIVE_CLAUDE="1"; $env:HUB_LIVE_CODEX="1"; $env:HUB_LIVE_OLLAMA="1"
-   uv run pytest tests/test_claude_live.py tests/test_codex_live.py tests/test_ollama_live.py
+   uv run pytest tests/live   # the Office ones skip unless HUB_LIVE_OFFICE=1 too
    ```
    Note the CLI versions you tested in the changelog entry.
 4. Merge the branch into `staging` and wait for CI to promote it to `main`.
@@ -75,7 +75,7 @@ database revision. Downgrading without restoring a copy isn't supported.
 Migrations run on every user's real database when they upgrade, so:
 - Only add: new tables, `ALTER TABLE ... ADD COLUMN`. Never batch-rebuild `sessions` or `stints` (with
   foreign keys on, the rebuild cascades and deletes child rows) and never drop a history table.
-  `tests/test_release_upgrades.py` fails the build if a migration does either.
+  `tests/core/test_release_upgrades.py` fails the build if a migration does either.
 - Every released schema has a dump in `backend/tests/release_dbs/`; CI upgrades each one to the newest
   schema and checks that no row was lost.
 

@@ -13,17 +13,16 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import document_samples as samples
 from app.attachments import AttachmentStore
 from app.doctool import cli
 from app.doctool.contract import READ_ROOTS_ENV, Refused, read_roots
 from app.doctool.paths import within
 from app.documents import DocumentAccess
 from app.outputs import OutputsStore
-from test_documents_acceptance import HubDoc, hub_doc_exe, make_session  # noqa: F401  (hub_doc_exe: fixture)
-from test_documents_hardening import junction
-from test_orchestrator import create, wait_until_idle
-from test_worktrees import repo  # noqa: F401  (fixture)
+
+from support import document_samples as samples
+from support.documents import HubDoc, junction, make_session
+from support.sessions import create, wait_until_idle
 
 WINDOWS = os.name == "nt"
 windows_only = pytest.mark.skipif(not WINDOWS, reason="Windows file locks, junctions and processes")

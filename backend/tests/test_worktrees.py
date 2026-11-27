@@ -1,33 +1,12 @@
 import asyncio
 import json
-import subprocess
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.handoff import git_state
 
-from test_orchestrator import create, event_types, wait_until_idle
-
-
-def git(cwd: Path, *args: str) -> str:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
-
-
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
-    """A repository with one commit and a subfolder."""
-    path = tmp_path / "project"
-    (path / "src").mkdir(parents=True)
-    git(path, "init", "--quiet", "--initial-branch=main")
-    git(path, "config", "user.name", "Test")
-    git(path, "config", "user.email", "test@example.com")
-    (path / "README.md").write_text("hello\n")
-    (path / "src" / "app.py").write_text("print('hi')\n")
-    git(path, "add", "--all")
-    git(path, "commit", "--quiet", "--message", "first")
-    return path
+from support.sessions import create, event_types, git, wait_until_idle
 
 
 def worktree_of(client: TestClient, session_id: str) -> dict | None:

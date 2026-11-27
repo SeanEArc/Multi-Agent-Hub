@@ -44,3 +44,7 @@ app = ["migrations/script.py.mako", "migrations/versions/*.py", "doctool/scripts
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# importlib: test files are never on sys.path, so no test imports another; shared helpers are the `support`
+# package in tests/ (asserts rewritten through conftest.py), and test files in different folders may share a name.
+addopts = ["--import-mode=importlib"]
+pythonpath = ["tests"]

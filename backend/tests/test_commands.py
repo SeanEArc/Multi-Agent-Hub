@@ -17,10 +17,8 @@ from app.adapters.claude import TurnParser
 from app.commands import route
 from app.models import AgentKind
 
-from conftest import FAKE_CODEX
-from test_handoff import events_of, prompts_sent
-from test_orchestrator import create, wait_until_idle
-from test_worktrees import git, repo  # noqa: F401 (fixture)
+from support.paths import FAKE_CODEX
+from support.sessions import create, events_of, git, prompts_sent, wait_until_idle
 
 CAPABILITIES = {
     "skills": ["fake-skill"],
@@ -313,7 +311,7 @@ def test_local_compact_replaces_the_saved_conversation(client: TestClient, tmp_p
 def test_local_compact_falls_back_to_the_hubs_brief(tmp_path: Path) -> None:
     from app.adapters.ollama import OllamaAdapter, save_history
 
-    import fake_ollama
+    from support import fake_ollama
 
     conversation = "6f1c1d1e-0000-4000-8000-000000000001"
     history = tmp_path / "history"

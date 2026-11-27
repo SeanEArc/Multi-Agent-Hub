@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.model_list import read_codex_efforts
 
-from test_orchestrator import create, wait_until_idle
+from support.sessions import create, wait_until_idle
 
 
 def last_args(client: TestClient, session_id: str) -> list[str]:

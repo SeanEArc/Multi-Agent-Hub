@@ -72,7 +72,7 @@ def test_compact_and_context_commands(tmp_path: Path) -> None:
 def test_attachments_as_content_blocks_on_new_and_resumed_turns(tmp_path: Path) -> None:
     """Revision 4 attachments: images and PDFs go as stream-json content blocks, also on a resumed turn, and
     --add-dir gives Claude the attachments folder without moving its working folder."""
-    import attachment_samples as samples
+    from support import attachment_samples as samples
     from app.attachments import AttachmentStore
 
     store = AttachmentStore(tmp_path / "attachments")

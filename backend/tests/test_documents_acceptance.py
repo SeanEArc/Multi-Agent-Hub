@@ -3,11 +3,11 @@
 Written before the feature from `docs/plan.md` (Revision 4, "PR 2: working on documents", including the
 "Decided 2026-11-23 with the user, after the live probe" bullets, which win over the older ones) and from the
 live probe (`sub-agents/runs/2026-11-21-rev4-attachments-pr2/probe.md`). They test only the outside: `hub-doc` run
-as a program, located by the one `hub_doc_exe` fixture below.
+as a program, located by the one `hub_doc_exe` fixture (in `conftest.py`).
 
 Each test names the plan bullet it covers in its docstring ("Plan: ...").
 
-The command contract these tests assume (the seams, all in `HubDoc` below so a rename is one edit):
+The command contract these tests assume (the seams, all in `HubDoc` in `support/documents.py` so a rename is one edit):
 - `hub-doc <format> <action> <file> [options]`, formats `xlsx` and `docx`.
 - stdout is exactly one JSON object; `ok` is true or false; a false reply has a human `error` string.
 - exit code 0 = ok, 1 = refused (a write outside the outputs folder, over an input, over a read-only file, a Word
@@ -21,140 +21,24 @@ The command contract these tests assume (the seams, all in `HubDoc` below so a r
 """
 
 import csv
-import hashlib
 import io
 import json
 import os
-import shutil
-import stat
-import struct
 import subprocess
-import sys
-import uuid
 import zipfile
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-import document_samples as samples
-from app.attachments import make_read_only, mark_from_elsewhere
+from app.attachments import make_read_only
+
+from support import document_samples as samples
+from support.documents import HubDoc, Reply, SessionFiles, fingerprint, make_session, png_size, same_file
 
 FILE_ATTRIBUTE_READONLY = 0x1
-TIMEOUT = 180
-
-
-# --- The one way tests find hub-doc ------------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def hub_doc_exe() -> str:
-    """`hub-doc` as the agents get it: `HUB_DOC_EXE` (e.g. the bundled `hub-doc.exe` from PyInstaller), else the
-    launcher `uv sync` makes from `[project.scripts] hub-doc = ...` in this venv's Scripts folder."""
-    override = os.environ.get("HUB_DOC_EXE")
-    if override:
-        return override
-    found = shutil.which("hub-doc", path=str(Path(sys.executable).parent))
-    if not found:
-        pytest.fail("hub-doc isn't installed: add `[project.scripts] hub-doc = \"...\"` to backend/pyproject.toml "
-                    "and run `uv sync` (or set HUB_DOC_EXE to a built hub-doc.exe).")
-    return found
-
-
-@dataclass
-class Reply:
-    code: int
-    data: dict
-    stdout: str
-    stderr: str
-
-    def __repr__(self) -> str:  # shown when an assertion fails
-        return f"Reply(code={self.code}, data={json.dumps(self.data)[:1500]}, stderr={self.stderr[-1500:]!r})"
-
-
-class HubDoc:
-    """Runs hub-doc as an agent would: by its name's launcher, with the session's outputs folder in its env."""
-
-    def __init__(self, exe: str, outputs: Path | None) -> None:
-        self.exe = exe
-        self.outputs = outputs
-
-    def run(self, *args: object, env: dict[str, str] | None = None) -> Reply:
-        environment = {k: v for k, v in os.environ.items() if not k.startswith("HUB_DOC_")}
-        if self.outputs is not None:
-            environment["HUB_DOC_OUTPUTS"] = str(self.outputs)
-        environment.update(env or {})
-        done = subprocess.run([self.exe, *map(str, args)], capture_output=True, env=environment, timeout=TIMEOUT,
-                              stdin=subprocess.DEVNULL)
-        stdout = done.stdout.decode("utf-8", "replace")
-        stderr = done.stderr.decode("utf-8", "replace")
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError:
-            pytest.fail(f"hub-doc {' '.join(map(str, args))} didn't reply with one JSON object (exit {done.returncode})"
-                        f"\nstdout: {stdout[-2000:]!r}\nstderr: {stderr[-2000:]!r}")
-        assert isinstance(data, dict) and isinstance(data.get("ok"), bool), stdout[-2000:]
-        # Exit code and reply agree.
-        assert (done.returncode == 0) == data["ok"], f"exit {done.returncode} with ok={data['ok']}: {stdout[-1000:]}"
-        if not data["ok"]:
-            assert isinstance(data.get("error"), str) and data["error"].strip(), stdout[-1000:]
-            assert "Traceback (most recent call last)" not in data["error"]
-        return Reply(done.returncode, data, stdout, stderr)
-
-    # Excel
-    def xlsx_check(self, file: Path, **env: str) -> Reply:
-        return self.run("xlsx", "check", file, env=env)
-
-    def xlsx_read(self, file: Path, sheet: str | None = None, cells: str | None = None) -> Reply:
-        return self.run("xlsx", "read", file, *(["--sheet", sheet] if sheet else []), *(["--range", cells] if cells else []))
-
-    def xlsx_edit(self, file: Path, out: object, cells: dict[str, str]) -> Reply:
-        sets = [arg for address, value in cells.items() for arg in ("--set", f"{address}={value}")]
-        return self.run("xlsx", "edit", file, "--out", out, *sets)
-
-    def xlsx_render(self, file: Path, out: object, sheet: str, cells: str | None = None) -> Reply:
-        return self.run("xlsx", "render", file, "--sheet", sheet, *(["--range", cells] if cells else []), "--out", out)
-
-    def xlsx_csv(self, file: Path, out: object, sheet: str) -> Reply:
-        return self.run("xlsx", "csv", file, "--sheet", sheet, "--out", out)
-
-    # Word
-    def docx_report(self, file: Path) -> Reply:
-        return self.run("docx", "report", file)
-
-    def docx_read(self, file: Path) -> Reply:
-        return self.run("docx", "read", file, "--view", "markup")
-
-    def docx_replace(self, file: Path, out: object, old: str, new: str) -> Reply:
-        return self.run("docx", "edit", file, "--out", out, "--replace", old, new)
-
-    def docx_diff(self, original: Path, edited: Path) -> Reply:
-        return self.run("docx", "diff", original, edited)
 
 
 # --- A session's folder, as PR 1 stores it -------------------------------------------------------------------------
-
-
-@dataclass
-class SessionFiles:
-    root: Path  # <attachments>/<session id>
-    outputs: Path  # <attachments>/<session id>/outputs
-
-    def original(self, name: str, data: bytes) -> Path:
-        """An attachment as PR 1 leaves it: in its own folder, read-only, with the Mark of the Web."""
-        path = self.root / uuid.uuid4().hex[:12] / name
-        path.parent.mkdir(parents=True)
-        path.write_bytes(data)
-        mark_from_elsewhere(path)
-        make_read_only(path)
-        return path
-
-
-def make_session(attachments: Path) -> SessionFiles:
-    root = attachments / str(uuid.uuid4())
-    outputs = root / "outputs"
-    outputs.mkdir(parents=True)
-    return SessionFiles(root, outputs)
 
 
 @pytest.fixture
@@ -165,28 +49,6 @@ def session(tmp_path: Path) -> SessionFiles:
 @pytest.fixture
 def hub_doc(hub_doc_exe: str, session: SessionFiles) -> HubDoc:
     return HubDoc(hub_doc_exe, session.outputs)
-
-
-def fingerprint(path: Path) -> dict:
-    """Everything about an original that must never change."""
-    info = path.stat()
-    zone = None
-    if os.name == "nt":
-        try:
-            zone = Path(f"{path}:Zone.Identifier").read_text(encoding="ascii")
-        except OSError:
-            zone = None
-    return {"sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "size": info.st_size,
-            "mtime": info.st_mtime_ns, "read_only": not (info.st_mode & stat.S_IWRITE), "zone": zone}
-
-
-def png_size(data: bytes) -> tuple[int, int]:
-    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
-    return struct.unpack(">II", data[16:24])
-
-
-def same_file(a: object, b: object) -> bool:
-    return os.path.normcase(os.path.realpath(str(a))) == os.path.normcase(os.path.realpath(str(b)))
 
 
 def error_cells(reply: Reply) -> set[tuple[str, str, str]]:

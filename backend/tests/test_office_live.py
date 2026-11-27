@@ -22,11 +22,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy.engine import Engine
 
-import document_samples as samples
 from app.main import create_app
-from conftest import TEST_TOKEN, fake_adapter_factory, make_client, opened_files
-from test_documents_acceptance import (HubDoc, fingerprint, hub_doc_exe, make_session, png_size,  # noqa: F401
-                                       same_file)
+
+from support import document_samples as samples
+from support.documents import HubDoc, fingerprint, make_session, png_size, same_file
+from support.hub import TEST_TOKEN, fake_adapter_factory, make_client, opened_files
 
 pytestmark = pytest.mark.skipif(os.environ.get("HUB_LIVE_OFFICE") != "1", reason="set HUB_LIVE_OFFICE=1 to use real Office")
 

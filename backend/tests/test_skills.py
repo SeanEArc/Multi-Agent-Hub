@@ -14,9 +14,8 @@ from app.models import AgentKind
 from app.commands import menu
 from app.skills import SkillError, SkillLibrary, expand_command, read_skill
 
-from conftest import FAKE_CLAUDE, FAKE_CODEX
-from test_handoff import events_of, prompts_sent
-from test_orchestrator import create, wait_until_idle
+from support.paths import FAKE_CLAUDE, FAKE_CODEX
+from support.sessions import create, events_of, prompts_sent, wait_until_idle
 
 ALL_ON = {"claude": True, "codex": True, "ollama": True}
 

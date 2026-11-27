@@ -20,7 +20,8 @@ from app.doctool import office, winproc
 from app.documents import CLAUDE_RULES, DocumentAccess, DocumentToolkit, prepare_bin
 from app.office import OfficeDetector
 from app.outputs import OutputsStore
-from conftest import FAKE_CODEX
+
+from support.paths import FAKE_CODEX
 
 
 def access(tmp_path: Path, office_found: bool = False, toolkit: bool = True) -> DocumentAccess:

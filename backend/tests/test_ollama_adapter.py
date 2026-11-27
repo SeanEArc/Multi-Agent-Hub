@@ -9,7 +9,6 @@ from sqlalchemy.engine import Engine
 
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.ollama import (
-    OllamaAdapter,
     OllamaUnavailable,
     history_path,
     list_models_sync,
@@ -18,9 +17,10 @@ from app.adapters.ollama import (
 )
 from app.main import create_app
 
-from conftest import TEST_TOKEN, fake_adapter_factory, make_client
-from fake_ollama import MODEL, TAGS, FakeOllama
-from test_orchestrator import create, event_types, wait_until_idle
+from support.fake_ollama import FakeOllama, MODEL, TAGS
+from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
+from support.ollama import adapter, saved_messages
+from support.sessions import create, event_types, wait_until_idle
 
 
 def collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
@@ -28,15 +28,6 @@ def collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
         return [event async for event in events]
 
     return asyncio.run(run())
-
-
-def adapter(tmp_path: Path, fake: FakeOllama, native_session_id: str | None = None, **kwargs) -> OllamaAdapter:
-    return OllamaAdapter(tmp_path, MODEL, native_session_id, history_dir=tmp_path / "history",
-                         transport=fake.transport, **kwargs)
-
-
-def saved_messages(tmp_path: Path, conversation_id: str) -> list[dict]:
-    return json.loads(history_path(tmp_path / "history", conversation_id).read_text(encoding="utf-8"))["messages"]
 
 
 # --- Models ---------------------------------------------------------------------------------------

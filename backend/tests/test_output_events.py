@@ -10,7 +10,8 @@ from sqlalchemy.engine import Engine
 from app.adapters.base import AgentAdapter, AgentEvent, EventType
 from app.main import create_app
 from app.models import AgentKind, AgentSession, Stint
-from conftest import TEST_TOKEN, make_client, pr2_seams
+
+from support.hub import TEST_TOKEN, make_client, pr2_seams
 
 
 class Writer(AgentAdapter):

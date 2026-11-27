@@ -1,5 +1,4 @@
 import asyncio
-import json
 import subprocess
 from pathlib import Path
 
@@ -11,24 +10,9 @@ from app.adapters.base import EventType
 from app.handoff import MAX_BRIEF, GitState, build_brief, git_state, next_in_chain
 from app.models import AgentKind, ChainEntry, SessionEvent, StintReason
 
-from test_orchestrator import create, event_types, wait_until_idle
+from support.sessions import create, event_types, events_of, prompts_sent, wait_until_idle
 
 CODEX_THEN_CLAUDE = [{"agent": "codex"}, {"agent": "claude"}]
-
-
-def events_of(client: TestClient, session_id: str) -> list[dict]:
-    return client.get(f"/api/sessions/{session_id}/events").json()
-
-
-def prompts_sent(client: TestClient, session_id: str, agent: str) -> list[str]:
-    """What the fake CLIs received over stdin, from the text they echo back."""
-    prompts = []
-    for e in events_of(client, session_id):
-        if e["type"] != "message" or e["agent"] != agent:
-            continue
-        text = e["payload"]["text"]
-        prompts.append(text.removeprefix("echo: ") if agent == "claude" else json.loads(text)["prompt"])
-    return prompts
 
 
 # --- Automatic handoff --------------------------------------------------------

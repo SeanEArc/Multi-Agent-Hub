@@ -12,8 +12,9 @@ from app.model_list import CLAUDE_VERSIONS, is_unavailable_model_error, read_cod
 from app.models import AgentKind, AgentSession, Stint
 from app.orchestrator import AgentUnavailable
 
-from conftest import FAKE_CLAUDE, TEST_TOKEN, make_client
-from test_orchestrator import create, wait_until_idle
+from support.hub import TEST_TOKEN, make_client
+from support.paths import FAKE_CLAUDE
+from support.sessions import create, wait_until_idle
 
 # Fake Claude modes for the check, by model: refused by the plan, out of usage, or fine.
 CHECK_MODES = {"claude-opus-4-6": "badmodel", "claude-haiku-4-5": "limit"}

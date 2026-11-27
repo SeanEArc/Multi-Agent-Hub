@@ -10,7 +10,7 @@ from app.auth import is_loopback, load_or_create_token
 from app.config import Settings
 from app.main import create_app
 
-from conftest import TEST_TOKEN, fake_adapter_factory, make_client
+from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
 
 
 @pytest.fixture

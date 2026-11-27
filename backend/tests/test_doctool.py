@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-import document_samples as samples
 from app.attachments import make_read_only
 from app.doctool import cli, contract
 from app.doctool.contract import Failed, Refused
@@ -19,7 +18,9 @@ from app.doctool.docx_edit import diff, replace
 from app.doctool.docx_report import report
 from app.doctool.outputs import OutputsFolder, Staging
 from app.doctool.xlsx import parse_range
-from test_documents_acceptance import HubDoc, hub_doc_exe, make_session, png_size  # noqa: F401
+
+from support import document_samples as samples
+from support.documents import HubDoc, make_session, png_size
 
 
 @pytest.fixture

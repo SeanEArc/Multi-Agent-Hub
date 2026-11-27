@@ -25,7 +25,7 @@ cd frontend; npm run tauri dev              # the desktop app from source
   Passing commits on `staging` reach `main` automatically. See `RELEASING.md`.
 - Add a line under **Unreleased** in `CHANGELOG.md` for anything a user would notice.
 - Schema changes need an Alembic migration (`uv run alembic revision --autogenerate -m "..."`) that only
-  adds; `tests/test_release_upgrades.py` checks that released databases still upgrade without losing rows.
+  adds; `tests/core/test_release_upgrades.py` checks that released databases still upgrade without losing rows.
 - Never add code that reads, stores or sends the Claude or Codex login tokens. The app drives the official
   CLIs under the user's own sign-in and must stay that way.
 - Live tests (`HUB_LIVE_CLAUDE=1`, `HUB_LIVE_CODEX=1`, `HUB_LIVE_OLLAMA=1`) use your own accounts and run

@@ -1,56 +1,24 @@
 """Attachments reaching each agent its own way, and the API around them (upload, show, open, send, handoff)."""
 
-import asyncio
 import base64
 import json
 import sys
 import uuid
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.adapters.base import AgentEvent, EventType
+from app.adapters.base import EventType
 from app.adapters.claude import ClaudeAdapter
 from app.adapters.codex import CodexAdapter
-from app.attachments import Attachment, classify
 
-import attachment_samples as samples
-from conftest import FAKE_CLAUDE, FAKE_CODEX, opened_files
-from fake_ollama import FakeOllama
-from test_ollama_adapter import adapter as ollama_adapter, saved_messages
-from test_orchestrator import create, wait_until_idle
-
-
-def collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
-    async def run() -> list[AgentEvent]:
-        return [event async for event in events]
-
-    return asyncio.run(run())
-
-
-def stored(folder: Path, name: str, data: bytes, **extra) -> Attachment:
-    kind, mime = classify(name)
-    attachment_id = uuid.uuid4().hex[:12]
-    path = folder / attachment_id / name
-    path.parent.mkdir(parents=True)
-    path.write_bytes(data)
-    return Attachment(id=attachment_id, name=name, mime=mime, size=len(data), path=str(path),
-                      text_path=extra.pop("text_path", None), kind=kind, **extra)
-
-
-def codex_echo(events: list[AgentEvent]) -> dict:
-    return json.loads([e for e in events if e.type is EventType.MESSAGE][-1].data["text"])
-
-
-def last_echo(client: TestClient, session_id: str) -> dict:
-    events = client.get(f"/api/sessions/{session_id}/events").json()
-    return json.loads([e for e in events if e["type"] == "message"][-1]["payload"]["text"])
-
-
-def echoed(events: list[AgentEvent]) -> dict:
-    assert events[-1].type is EventType.COMPLETED, events[-1].data
-    return json.loads(events[-1].data["text"])
+from support import attachment_samples as samples
+from support.attachments import codex_echo, collect, echoed, last_echo, stored, upload
+from support.fake_ollama import FakeOllama
+from support.hub import opened_files
+from support.ollama import adapter as ollama_adapter, saved_messages
+from support.paths import FAKE_CLAUDE, FAKE_CODEX
+from support.sessions import create, wait_until_idle
 
 
 # --- Claude: content blocks over stream-json, --add-dir ------------------------------------------------
@@ -165,12 +133,6 @@ def test_local_model_without_vision_gets_a_notice_and_text_inline(tmp_path: Path
 # --- API ---------------------------------------------------------------------------------------------
 
 
-def upload(client: TestClient, session_id: str, name: str, data: bytes) -> dict:
-    response = client.post(f"/api/sessions/{session_id}/attachments", params={"name": name}, content=data)
-    assert response.status_code == 201, response.text
-    return response.json()
-
-
 def test_upload_send_show_and_open(client: TestClient, tmp_path: Path) -> None:
     session_id = create(client, tmp_path, "ok")
     image = upload(client, session_id, "shot.png", samples.png())
@@ -278,7 +240,7 @@ def test_old_unsent_uploads_are_swept_at_startup(engine, tmp_path: Path) -> None
 
     from app.attachments import META_FILE, AttachmentStore
     from app.main import create_app
-    from conftest import TEST_TOKEN, fake_adapter_factory, make_client
+    from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
 
     store = AttachmentStore(tmp_path / "attachments")
     folder = store.session_dir(str(uuid.uuid4())) / "0123456789ab"
@@ -296,7 +258,7 @@ def test_old_unsent_uploads_are_swept_at_startup(engine, tmp_path: Path) -> None
 def test_a_failing_cleanup_never_stops_startup(engine, tmp_path: Path, monkeypatch) -> None:
     from app.attachments import AttachmentStore
     from app.main import create_app
-    from conftest import TEST_TOKEN, fake_adapter_factory, make_client
+    from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
 
     def broken(self, *args, **kwargs):
         raise PermissionError(13, "Access is denied")

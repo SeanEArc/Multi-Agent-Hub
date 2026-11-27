@@ -8,9 +8,10 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-import document_samples as samples
 from app.doctool import xlsx
-from test_documents_acceptance import HubDoc, hub_doc_exe, make_session  # noqa: F401  (hub_doc_exe: fixture)
+
+from support import document_samples as samples
+from support.documents import HubDoc, make_session
 
 
 @pytest.fixture

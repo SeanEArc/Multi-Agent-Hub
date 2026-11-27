@@ -6,7 +6,7 @@ from sqlmodel import Session
 
 from app.models import AgentKind, SessionEvent
 
-from test_orchestrator import create
+from support.sessions import create
 
 
 def add_event(engine: Engine, session_id: str, agent: AgentKind, type: str, payload: dict) -> None:

@@ -5,7 +5,7 @@ opened read-only, stuck processes killed; Settings shows "Microsoft Office: foun
 2026-11-23 ("Office: through PowerShell COM scripts (no pywin32) ... Cleanup kills only Office processes started by
 automation (-Embedding//Automation in the command line)").
 
-Never real Office here: the check's script is replaced by `tests/fake_office.py` (the same one JSON line the real
+Never real Office here: the check's script is replaced by `tests/support/fake_office.py` (the same one JSON line the real
 script prints; see its docstring). Real Office is tested only in `test_office_live.py` (HUB_LIVE_OFFICE=1).
 
 Seams assumed (one place each, see the report):
@@ -16,36 +16,21 @@ Seams assumed (one place each, see the report):
   `POST /api/office/check` runs the check now and answers with the same shape once it has finished.
 """
 
-import ctypes
-import inspect
 import json
-import os
-import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from app.main import create_app
-from conftest import TEST_TOKEN, fake_adapter_factory, make_client, opened_files
+from support.hub import make_client
+from support.office import alive, office_app
+from support.paths import FAKE_OFFICE
 
-FAKE_OFFICE = Path(__file__).parent / "fake_office.py"
 OFFICE = "/api/office"
-
-
-def office_app(engine: Engine, tmp: Path, command: list[str], timeout: float = 60):
-    accepted = inspect.signature(create_app).parameters
-    if "office_command" not in accepted or "office_timeout" not in accepted:
-        pytest.fail("create_app has no office_command / office_timeout yet (revision 4 PR 2 Office detection)")
-    return create_app(engine, fake_adapter_factory, token=TEST_TOKEN, worktrees_dir=tmp / "worktrees",
-                      chats_dir=tmp / "chats", codex_home=tmp / "codex-home", skills_dir=tmp / "skills",
-                      claude_home=tmp / "claude-home", discover_native=False, attachments_dir=tmp / "attachments",
-                      open_file=opened_files.append_call, office_command=command, office_timeout=timeout)
 
 
 def fake(mode: str, *args: object) -> list[str]:
@@ -125,52 +110,6 @@ def test_startup_check_runs_in_the_background(engine: Engine, tmp: Path) -> None
 
 
 # --- Only automation-started Office processes are killed ----------------------------------------------------------
-
-
-SYNCHRONIZE = 0x00100000
-PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-WAIT_TIMEOUT = 0x102
-
-
-def alive(pid: int) -> bool:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = kernel32.OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return False
-    try:
-        return kernel32.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
-    finally:
-        kernel32.CloseHandle(handle)
-
-
-def running_office(exclude: Path) -> list[str]:
-    """Real WINWORD.EXE/EXCEL.EXE processes (not this test's fakes), so the test never risks the user's documents."""
-    script = ("Get-CimInstance Win32_Process -Filter \"Name='WINWORD.EXE' or Name='EXCEL.EXE'\" | "
-              "ForEach-Object { $_.ExecutablePath }")
-    out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", script], capture_output=True, text=True,
-                         timeout=60).stdout
-    return [line for line in out.splitlines() if line.strip() and not line.lower().startswith(str(exclude).lower())]
-
-
-@pytest.fixture
-def office_fakes(tmp_path: Path) -> Iterator[Path]:
-    """A folder with `WINWORD.EXE` and `EXCEL.EXE`: copies of Python's interpreter (with a `._pth` naming its
-    standard library), so they are real processes with those image names that the hub's cleanup can find and kill."""
-    if os.name != "nt":
-        pytest.skip("Office automation is Windows-only")
-    folder = tmp_path / "office"
-    folder.mkdir()
-    base = Path(getattr(sys, "_base_executable", sys.executable))
-    prefix = Path(sys.base_prefix)
-    for exe in ("WINWORD", "EXCEL"):
-        shutil.copy2(base, folder / f"{exe}.EXE")
-        (folder / f"{exe}._pth").write_text(f"{prefix / 'Lib'}\n{prefix / 'DLLs'}\n", encoding="utf-8")
-    for dll in base.parent.glob("*.dll"):
-        shutil.copy2(dll, folder / dll.name)
-    real = running_office(folder)
-    if real:
-        pytest.skip(f"Microsoft Office is running on this PC ({real[0]}); not risking the user's documents")
-    yield folder
 
 
 def start(exe: Path, *args: str) -> subprocess.Popen:

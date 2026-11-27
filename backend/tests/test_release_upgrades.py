@@ -17,7 +17,9 @@ from sqlmodel import Session, select
 from app.db import MIGRATIONS_DIR, alembic_config, init_db, make_engine
 from app.models import AgentSession, load_hub_settings, session_read
 
-RELEASE_DBS = sorted((Path(__file__).parent / "release_dbs").glob("v*.sql"))
+from support.paths import RELEASE_DB_DIR
+
+RELEASE_DBS = sorted(RELEASE_DB_DIR.glob("v*.sql"))
 # Tables whose rows are the user's history; none may lose a row in an upgrade.
 HISTORY_TABLES = ("sessions", "stints", "events", "worktrees", "summaries", "settings")
 

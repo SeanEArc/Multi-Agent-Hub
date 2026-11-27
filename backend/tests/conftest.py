@@ -22,93 +22,26 @@ if os.environ.get("HUB_LIVE_OFFICE") != "1":
 # imported: `app.main` builds a module-level app on import, which caches the settings (`get_settings`).
 os.environ["HUB_SKILLS_DIR"] = tempfile.mkdtemp(prefix="hub-test-skills-")
 
-from fastapi import FastAPI
+# Shared helpers live in tests/support (on the path through `pythonpath` in pyproject.toml), so no test file imports
+# another. Their asserts get pytest's detailed messages too; registered before the first import of them.
+pytest.register_assert_rewrite("support")
+
+import shutil
+from typing import Any
+
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from app.adapters.base import AgentAdapter
-from app.adapters.claude import ClaudeAdapter
-from app.adapters.codex import CodexAdapter
-from app.adapters.ollama import OllamaAdapter
+from app.config import get_settings
 from app.db import make_engine
 from app.main import create_app
-from app.models import AgentKind, AgentSession, Stint
-from app.orchestrator import AgentUnavailable
+from app.orchestrator import default_adapter_factory
 
-import fake_ollama
-
-
-FAKE_CLAUDE = Path(__file__).parent / "fake_claude.py"
-FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
-TEST_TOKEN = "test-token"
-# The Host check only accepts loopback names, so tests can't use TestClient's "testserver".
-BASE_URL = "http://127.0.0.1:8765"
-
-
-def make_client(app: FastAPI, token: str | None = TEST_TOKEN) -> TestClient:
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return TestClient(app, base_url=BASE_URL, headers=headers)
-
-
-def fake_mode(title: str, agent: AgentKind) -> str:
-    """The fake CLI mode from a session title: "ok", or per agent as in "claude:limit codex:question"."""
-    modes = dict(part.split(":", 1) for part in title.split() if ":" in part)
-    return modes.get(agent.value, "ok") if modes else title
-
-
-def fake_adapter_factory(session: AgentSession, stint: Stint, cwd: Path) -> AgentAdapter:
-    """Adapter driving tests/fake_claude.py or fake_codex.py; the session title picks its mode (ok, question, hang...)."""
-    mode = fake_mode(session.title, stint.agent)
-    if stint.agent is AgentKind.CODEX:
-        return CodexAdapter(
-            cwd,
-            native_session_id=stint.native_session_id,
-            command=[sys.executable, str(FAKE_CODEX), mode],
-            codex_home=Path(session.project_path) / "codex-home",  # never the real ~/.codex
-            effort=stint.effort,
-        )
-    if stint.agent is AgentKind.CLAUDE:
-        return ClaudeAdapter(
-            cwd,
-            native_session_id=stint.native_session_id,
-            command=[sys.executable, str(FAKE_CLAUDE), mode],
-            effort=stint.effort,
-        )
-    # The local model is off unless the title gives it a mode ("ollama:ok"), so chains that end in it
-    # behave as when Ollama isn't running.
-    if stint.agent is AgentKind.OLLAMA and f"ollama:{mode}" in session.title and mode != "down":
-        return OllamaAdapter(
-            cwd,
-            model=stint.model or fake_ollama.MODEL,
-            native_session_id=stint.native_session_id,
-            history_dir=Path(session.project_path) / "local-history",
-            transport=fake_ollama.FakeOllama(mode).transport,
-        )
-    raise AgentUnavailable(f"The {stint.agent} agent is not available")
-
-
-class OpenedFiles(list):
-    """Files the open route would have opened, as (path, reveal); nothing is really opened in tests."""
-
-    def append_call(self, path: Path, reveal: bool) -> None:
-        self.append((path, reveal))
-
-
-opened_files = OpenedFiles()
-
-
-FAKE_OFFICE = Path(__file__).parent / "fake_office.py"
-
-
-def pr2_seams(tmp_path_factory: pytest.TempPathFactory) -> dict:
-    """Revision 4 PR 2 seams, passed only once `create_app` has them: the test suite must never start the real
-    Office check (Word and Excel on the user's PC) or copy hub-doc into the real app-data folder."""
-    import inspect
-
-    accepted = inspect.signature(create_app).parameters
-    seams = {"office_command": [sys.executable, str(FAKE_OFFICE), "missing"],
-             "tools_bin": tmp_path_factory.mktemp("bin")}
-    return {name: value for name, value in seams.items() if name in accepted}
+from support.hub import TEST_TOKEN, fake_adapter_factory, make_client, opened_files, pr2_seams
+from support.office import running_office
+from support.paths import FAKE_CLAUDE, FAKE_CODEX, FAKE_OFFICE
+from support.sessions import git
+from support.wired import Launch, OllamaServer, SwapProgramRunner, WiredHub, optional_seams
 
 
 def _bin_state(folder: Path) -> dict[str, int] | None:
@@ -176,3 +109,101 @@ def client(engine: Engine, tmp_path_factory: pytest.TempPathFactory) -> Iterator
                      **pr2_seams(tmp_path_factory))
     with make_client(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """A repository with one commit and a subfolder."""
+    path = tmp_path / "project"
+    (path / "src").mkdir(parents=True)
+    git(path, "init", "--quiet", "--initial-branch=main")
+    git(path, "config", "user.name", "Test")
+    git(path, "config", "user.email", "test@example.com")
+    (path / "README.md").write_text("hello\n")
+    (path / "src" / "app.py").write_text("print('hi')\n")
+    git(path, "add", "--all")
+    git(path, "commit", "--quiet", "--message", "first")
+    return path
+
+
+@pytest.fixture(scope="session")
+def hub_doc_exe() -> str:
+    """`hub-doc` as the agents get it: `HUB_DOC_EXE` (e.g. the bundled `hub-doc.exe` from PyInstaller), else the
+    launcher `uv sync` makes from `[project.scripts] hub-doc = ...` in this venv's Scripts folder."""
+    override = os.environ.get("HUB_DOC_EXE")
+    if override:
+        return override
+    found = shutil.which("hub-doc", path=str(Path(sys.executable).parent))
+    if not found:
+        pytest.fail("hub-doc isn't installed: add `[project.scripts] hub-doc = \"...\"` to backend/pyproject.toml "
+                    "and run `uv sync` (or set HUB_DOC_EXE to a built hub-doc.exe).")
+    return found
+
+
+@pytest.fixture
+def office_fakes(tmp_path: Path) -> Iterator[Path]:
+    """A folder with `WINWORD.EXE` and `EXCEL.EXE`: copies of Python's interpreter (with a `._pth` naming its
+    standard library), so they are real processes with those image names that the hub's cleanup can find and kill."""
+    if os.name != "nt":
+        pytest.skip("Office automation is Windows-only")
+    folder = tmp_path / "office"
+    folder.mkdir()
+    base = Path(getattr(sys, "_base_executable", sys.executable))
+    prefix = Path(sys.base_prefix)
+    for exe in ("WINWORD", "EXCEL"):
+        shutil.copy2(base, folder / f"{exe}.EXE")
+        (folder / f"{exe}._pth").write_text(f"{prefix / 'Lib'}\n{prefix / 'DLLs'}\n", encoding="utf-8")
+    for dll in base.parent.glob("*.dll"):
+        shutil.copy2(dll, folder / dll.name)
+    real = running_office(folder)
+    if real:
+        pytest.skip(f"Microsoft Office is running on this PC ({real[0]}); not risking the user's documents")
+    yield folder
+
+
+@pytest.fixture
+def wired(engine: Engine, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Iterator[WiredHub]:
+    base = tmp_path_factory.mktemp("wired")
+    attachments = base / "attachments"
+    attachments.mkdir()
+    # The production factory reads the settings: point every folder it uses at temp folders.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "attachments_dir", attachments)
+    monkeypatch.setattr(settings, "skills_dir", base / "skills")
+    monkeypatch.setattr(settings, "local_dir", base / "local")
+    monkeypatch.setattr(settings, "ollama_model", None)
+    monkeypatch.setenv("CODEX_HOME", str(base / "codex-home"))  # never the real ~/.codex
+    # find_claude/find_codex only need a native-looking program to exist; the runner swaps it for the fake.
+    programs = base / "programs"
+    programs.mkdir()
+    (programs / "claude.exe").write_bytes(b"")
+    (programs / "codex.exe").write_bytes(b"")
+    monkeypatch.setenv("PATH", f"{programs}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setattr(settings, "codex_path", str(programs / "codex.exe"))
+    ollama = OllamaServer()
+    monkeypatch.setattr(settings, "ollama_url", ollama.url)
+
+    launches: list[Launch] = []
+    hub: WiredHub
+
+    def factory(*args: Any, **kwargs: Any):
+        adapter = default_adapter_factory(*args, **kwargs)
+        kind = getattr(adapter, "kind", None)
+        name = getattr(kind, "value", "")
+        if name in ("claude", "codex"):
+            adapter.runner = SwapProgramRunner(FAKE_CLAUDE if name == "claude" else FAKE_CODEX, hub.modes[name],
+                                               attachments, launches)
+        return adapter
+
+    app = create_app(engine, factory, token=TEST_TOKEN, worktrees_dir=base / "worktrees", chats_dir=base / "chats",
+                     codex_home=base / "codex-home", skills_dir=base / "skills", claude_home=base / "claude-home",
+                     discover_native=False, attachments_dir=attachments, open_file=opened_files.append_call,
+                     ollama_url=ollama.url,
+                     **optional_seams(tools_bin=base / "bin",
+                                      office_command=[sys.executable, str(FAKE_OFFICE), "missing"]))
+    try:
+        with make_client(app) as client:
+            hub = WiredHub(client, attachments, launches, ollama)
+            yield hub
+    finally:
+        ollama.close()

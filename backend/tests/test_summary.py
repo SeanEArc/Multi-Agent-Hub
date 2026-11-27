@@ -8,7 +8,7 @@ from app.handoff import GitState
 from app.models import AgentKind, PlanItemRead, SessionEvent, Stint, StintReason, summary_headline
 from app.summary import build_summary_prompt, total_tokens
 
-from test_orchestrator import create, wait_until_idle
+from support.sessions import create, wait_until_idle
 
 
 def test_current_agent_writes_summary_outside_the_session(client: TestClient, tmp_path: Path) -> None:

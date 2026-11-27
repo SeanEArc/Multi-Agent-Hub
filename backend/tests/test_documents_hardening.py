@@ -9,7 +9,6 @@ Everything runs against fakes and temp folders: never real Claude, Codex, Ollama
 """
 
 import asyncio
-import ctypes
 import json
 import os
 import shutil
@@ -26,7 +25,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-import document_samples as samples
 from app.adapters.claude import ClaudeAdapter
 from app.adapters.codex import CodexAdapter, toml_value
 from app.adapters.base import EventType
@@ -35,21 +33,23 @@ from app.doctool import cli, winproc
 from app.doctool.contract import STAGING_PREFIX, Failed, Refused
 from app.doctool.outputs import OutputsFolder, Staging
 from app.documents import CLAUDE_RULES, DocumentAccess
-from conftest import FAKE_CODEX, opened_files
-from test_attachments_delivery import upload
-from test_documents_acceptance import HubDoc, hub_doc_exe  # noqa: F401  (fixture)
-from test_documents_acceptance_agents import (  # noqa: F401  (wired is a fixture)
+
+from support import document_samples as samples
+from support.attachments import upload
+from support.documents import FILE_SHARE_READ, Held, HubDoc, junction
+from support.hub import opened_files
+from support.office import alive, office_app
+from support.paths import FAKE_CODEX
+from support.sessions import wait_until_idle
+from support.wired import (
     OutputsApi,
     WiredHub,
     allowed_tools,
     make_chat_with_original,
     outputs_existed,
     same_path,
-    wired,
     writable_roots,
 )
-from test_documents_acceptance_office import alive, office_app, office_fakes  # noqa: F401  (office_fakes: fixture)
-from test_orchestrator import wait_until_idle
 
 WINDOWS = os.name == "nt"
 windows_only = pytest.mark.skipif(not WINDOWS, reason="Windows file locks, junctions and processes")
@@ -61,10 +61,6 @@ def staging_dirs(folder: Path) -> list[Path]:
 
 def files_in(folder: Path) -> list[Path]:
     return sorted(p for p in folder.rglob("*") if p.is_file()) if folder.exists() else []
-
-
-def junction(link: Path, target: Path) -> None:
-    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, check=True)
 
 
 # --- hub-doc: the supervising parent and its child -----------------------------------------------------------------
@@ -282,33 +278,6 @@ def test_concurrent_runs_writing_one_name_leave_one_whole_file(hub_doc_exe: str,
     assert files_in(outputs) == [outputs / "same.xlsx"] and staging_dirs(outputs) == []
 
 
-# Windows CreateFileW, to hold a file open the way another program does.
-GENERIC_READ = 0x80000000
-FILE_SHARE_READ = 0x1
-OPEN_EXISTING = 3
-
-
-class Held:
-    """A file held open by "another program": share mode 0 (nobody else may open it) or FILE_SHARE_READ (Excel
-    holding a workbook: others may read, nobody may write, rename over or delete it)."""
-
-    def __init__(self, path: Path, share: int) -> None:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateFileW.restype = ctypes.c_void_p
-        kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
-                                         ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
-        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-        self._kernel32 = kernel32
-        self.handle = kernel32.CreateFileW(str(path), GENERIC_READ, share, None, OPEN_EXISTING, 0, None)
-        assert self.handle not in (None, ctypes.c_void_p(-1).value), ctypes.get_last_error()
-
-    def __enter__(self) -> "Held":
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self._kernel32.CloseHandle(self.handle)
-
-
 @windows_only
 def test_an_input_locked_by_another_program(hub_doc_exe: str, workbook: Path, outputs: Path) -> None:
     """Open in Excel (others may read) still works; held exclusively, hub-doc answers with a JSON failure (exit 2),
@@ -511,7 +480,7 @@ print(json.dumps({"ok": True, "word": True, "excel": False, "version": "16.0"}),
 
 
 def _client(app) -> TestClient:
-    from conftest import make_client
+    from support.hub import make_client
 
     return make_client(app)
 

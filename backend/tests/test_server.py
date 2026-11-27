@@ -6,6 +6,8 @@ import pytest
 
 from app.server import AlreadyRunning, acquire_lock
 
+from support.paths import BACKEND
+
 
 def test_lock_blocks_a_second_holder(tmp_path: Path) -> None:
     path = tmp_path / "data" / "server.lock"
@@ -17,7 +19,7 @@ def test_lock_blocks_a_second_holder(tmp_path: Path) -> None:
             "try: acquire_lock(Path(sys.argv[1]))\n"
             "except AlreadyRunning: sys.exit(3)\n"
         )
-        result = subprocess.run([sys.executable, "-c", code, str(path)], cwd=Path(__file__).parent.parent)
+        result = subprocess.run([sys.executable, "-c", code, str(path)], cwd=BACKEND)
         assert result.returncode == 3
     finally:
         held.close()

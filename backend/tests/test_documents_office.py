@@ -1,7 +1,7 @@
 """hub-doc's Office runs: one at a time on the PC (`app.doctool.office_registry` lock), the registry that reaps
 Office left by a killed run, and the lock folder (passed to every agent; unusable means fail closed).
 
-Never real Office: the "Office" here is `tests/fake_office.py` or a recording stand-in script, and every test
+Never real Office: the "Office" here is `tests/support/fake_office.py` or a recording stand-in script, and every test
 uses its own registry folder (`HUB_OFFICE_REGISTRY`), so the lock is never shared with the user's real runs.
 """
 
@@ -19,18 +19,18 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import document_samples as samples
 from app.doctool import office, office_registry, winproc
 from app.doctool.contract import Failed
 from app.doctool.office import OfficeRun, is_automation
 from app.documents import DocumentAccess
-from test_documents_acceptance import HubDoc, hub_doc_exe, make_session  # noqa: F401  (hub_doc_exe: fixture)
-from test_documents_acceptance_office import alive, office_app, office_fakes  # noqa: F401  (office_fakes: fixture)
-from test_documents_hardening import Held
+
+from support import document_samples as samples
+from support.documents import Held, HubDoc, make_session
+from support.office import alive, office_app
+from support.paths import BACKEND, FAKE_OFFICE
 
 WINDOWS = os.name == "nt"
 windows_only = pytest.mark.skipif(not WINDOWS, reason="Windows file locks, junctions and processes")
-FAKE_OFFICE = Path(__file__).parent / "fake_office.py"
 
 
 def fake(mode: str, *args: object) -> list[str]:
@@ -102,7 +102,7 @@ def test_waiting_for_the_lock_counts_against_the_time_limit(registry: Path) -> N
 def test_a_killed_process_never_keeps_the_lock(registry: Path) -> None:
     script = textwrap.dedent(f"""
         import os, sys, threading, time
-        sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
+        sys.path.insert(0, {str(BACKEND)!r})
         os.environ[{office_registry.REGISTRY_ENV!r}] = {str(registry)!r}
         from app.doctool.office_registry import OfficeLock
         lock = OfficeLock()  # kept: closing the file (garbage collection) releases the lock
@@ -275,7 +275,7 @@ def test_the_hubs_check_and_a_word_job_contend_without_losing_found(engine, tmp_
 
 
 def _client(app) -> TestClient:
-    from conftest import make_client
+    from support.hub import make_client
 
     return make_client(app)
 
@@ -368,7 +368,7 @@ def test_office_of_a_run_killed_midway_is_reaped_by_the_next_run(office_fakes: P
     pid_file = tmp_path / "pids.txt"
     script = textwrap.dedent(f"""
         import os, sys
-        sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
+        sys.path.insert(0, {str(BACKEND)!r})
         os.environ[{office_registry.REGISTRY_ENV!r}] = {str(registry)!r}
         from app.doctool.office import OfficeRun
         OfficeRun({fake("leftover", office_fakes, pid_file)!r}, timeout=120).run()
@@ -480,7 +480,7 @@ def test_a_cleanup_racing_a_live_run_spares_it(office_fakes: Path, registry: Pat
     pid_file = tmp_path / "leftover-pids.txt"
     script = textwrap.dedent(f"""
         import os, sys
-        sys.path.insert(0, {str(Path(__file__).parent.parent)!r})
+        sys.path.insert(0, {str(BACKEND)!r})
         os.environ[{office_registry.REGISTRY_ENV!r}] = {str(registry)!r}
         from app.doctool.office import OfficeRun
         OfficeRun({fake("leftover", office_fakes, pid_file)!r}, 60).run()

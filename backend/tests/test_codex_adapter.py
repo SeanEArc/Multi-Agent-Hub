@@ -9,7 +9,8 @@ import pytest
 from app.adapters.base import AgentEvent, EventType
 from app.adapters.codex import ROLLOUT_TAIL, CodexAdapter, CodexCliNotFound, TurnParser, find_codex, read_model, read_rate_limits
 
-FAKE_CODEX = Path(__file__).parent / "fake_codex.py"
+from support.paths import FAKE_CODEX
+
 THREAD = "01a17487-9cbe-79c3-97d4-1c2c350d55a1"
 FAKE_THREAD = "01a17487-0000-7000-8000-000000000001"  # the id fake_codex.py reports
 # Recorded from a codex-cli 0.164.0 session file (Plus plan).

@@ -22,7 +22,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import attachment_samples as samples
 from app import attachments as attachments_module
 from app import extract, extract_worker
 from app.adapters.base import EventType
@@ -41,11 +40,14 @@ from app.attachments import (
     with_files,
 )
 from app.extract import make_text_copy
-from conftest import BASE_URL, FAKE_CODEX, opened_files
-from fake_ollama import FakeOllama
-from test_attachments_delivery import codex_echo, collect, last_echo, stored, upload
-from test_ollama_adapter import adapter as ollama_adapter, saved_messages
-from test_orchestrator import create, wait_until_idle
+
+from support import attachment_samples as samples
+from support.attachments import codex_echo, collect, last_echo, stored, upload
+from support.fake_ollama import FakeOllama
+from support.hub import BASE_URL, opened_files
+from support.ollama import adapter as ollama_adapter, saved_messages
+from support.paths import BACKEND, FAKE_CODEX, ROOT
+from support.sessions import create, wait_until_idle
 
 
 def delete_stored(path: Path) -> None:
@@ -495,8 +497,8 @@ def test_claude_line_keeps_a_command_first_and_is_one_line(tmp_path: Path) -> No
 
 def test_claude_add_dir_once_the_session_has_files(client: TestClient, tmp_path: Path) -> None:
     from app.adapters.claude import ClaudeAdapter
-    from conftest import FAKE_CLAUDE
-    from test_attachments_delivery import echoed
+    from support.paths import FAKE_CLAUDE
+    from support.attachments import echoed
 
     files = tmp_path / "attachments" / SESSION
     claude = ClaudeAdapter(tmp_path, command=[sys.executable, str(FAKE_CLAUDE), "ok"], add_dirs=[files])
@@ -702,7 +704,7 @@ def test_the_composer_allows_exactly_what_the_backend_allows() -> None:
     has no frontend test runner, so the two lists are compared here."""
     import re
 
-    source = (Path(__file__).parents[2] / "frontend" / "src" / "attachments.ts").read_text(encoding="utf-8")
+    source = (ROOT / "frontend" / "src" / "attachments.ts").read_text(encoding="utf-8")
     caps_block = re.search(r"SIZE_CAPS[^{]*\{(.*?)\}", source, re.S).group(1)
     caps = {kind: int(mb) * attachments_module.MB for kind, mb in re.findall(r"(\w+): (\d+) \* MB", caps_block)}
     assert caps == attachments_module.SIZE_CAPS
@@ -714,9 +716,6 @@ def test_the_composer_allows_exactly_what_the_backend_allows() -> None:
     assert text == {suffix[1:] for suffix in attachments_module.TEXT_EXTENSIONS}
     names = set(re.findall(r'"([^"]+)"', re.search(r"const TEXT_NAMES = new Set\(\[(.*?)\]", source).group(1)))
     assert names == attachments_module.TEXT_NAMES
-
-
-BACKEND = Path(__file__).resolve().parent.parent
 
 
 windows_only = pytest.mark.skipif(os.name != "nt", reason="job objects and NTFS streams are Windows-only")
@@ -1186,7 +1185,7 @@ def test_sweep_leaves_an_upload_in_progress_alone(tmp_path: Path) -> None:
 
 def test_sweep_at_startup_never_stops_the_app(engine, tmp_path: Path) -> None:
     from app.main import create_app
-    from conftest import TEST_TOKEN, fake_adapter_factory, make_client
+    from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
 
     store = AttachmentStore(tmp_path / "attachments")
     attachment = save(store, "odd.txt", b"x")

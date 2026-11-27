@@ -2,11 +2,11 @@
 
 import importlib.util
 import json
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+from support.paths import ROOT
+
 spec = importlib.util.spec_from_file_location("notices", ROOT / "scripts" / "notices.py")
 notices = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(notices)
