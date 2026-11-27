@@ -12,14 +12,14 @@ from sqlmodel import Session, select
 
 from app.api import attachments as attachment_routes, folders, health, links, local, models, office as office_routes, outputs as output_routes, sessions, settings as hub_settings, skills as skill_routes, usage
 from app.model_list import default_codex_home
-from app.attachments import AttachmentStore
+from app.files.attachments import AttachmentStore
 from app.auth import HostOriginMiddleware, load_or_create_token, require_caller
 from app.config import get_settings
 from app.api.attachments import FileOpener, default_open_file
 from app.db import init_db, make_engine
-from app.documents import DocumentToolkit
+from app.files.documents import DocumentToolkit
 from app.models import AgentSession
-from app.office import CHECK_TIMEOUT, OfficeDetector
+from app.files.office import CHECK_TIMEOUT, OfficeDetector
 from app.orchestrator import AdapterFactory, Orchestrator, default_adapter_factory
 from app.skills import SkillLibrary
 

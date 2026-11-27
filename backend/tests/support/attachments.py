@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.adapters.base import AgentEvent, EventType
-from app.attachments import Attachment, classify
+from app.files.attachments import Attachment, classify
 
 
 def collect(events: AsyncIterator[AgentEvent]) -> list[AgentEvent]:

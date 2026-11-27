@@ -73,7 +73,7 @@ def test_attachments_as_content_blocks_on_new_and_resumed_turns(tmp_path: Path) 
     """Revision 4 attachments: images and PDFs go as stream-json content blocks, also on a resumed turn, and
     --add-dir gives Claude the attachments folder without moving its working folder."""
     from support import attachment_samples as samples
-    from app.attachments import AttachmentStore
+    from app.files.attachments import AttachmentStore
 
     store = AttachmentStore(tmp_path / "attachments")
     session = "00000000-0000-4000-8000-00000000a77a"

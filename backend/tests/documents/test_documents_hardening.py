@@ -28,11 +28,11 @@ from sqlalchemy.engine import Engine
 from app.adapters.claude import ClaudeAdapter
 from app.adapters.codex import CodexAdapter, toml_value
 from app.adapters.base import EventType
-from app.attachments import AttachmentStore, make_read_only
+from app.files.attachments import AttachmentStore, make_read_only
 from app.doctool import cli, winproc
 from app.doctool.contract import STAGING_PREFIX, Failed, Refused
 from app.doctool.outputs import OutputsFolder, Staging
-from app.documents import CLAUDE_RULES, DocumentAccess
+from app.files.documents import CLAUDE_RULES, DocumentAccess
 
 from support import document_samples as samples
 from support.attachments import upload

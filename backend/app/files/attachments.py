@@ -2,7 +2,7 @@
 
 Each attachment lives in its own folder, `<attachments dir>/<session id>/<attachment id>/`, holding the original
 (never changed), a text copy `<name>.txt` for PDF, Word, Excel and CSV files when one could be made
-(`app.extract`), and `.hub-attachment.json` with what the hub knows about it. The session's folder is outside
+(`app.files.extract`), and `.hub-attachment.json` with what the hub knows about it. The session's folder is outside
 any repository and is deleted with the session. The `user_message` event keeps the attachments' metadata, so
 the transcript, handoff briefs and summaries need nothing else.
 
@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from app.extract import TEXT_COPY_KINDS, make_text_copy
+from app.files.extract import TEXT_COPY_KINDS, make_text_copy
 
 log = logging.getLogger(__name__)
 

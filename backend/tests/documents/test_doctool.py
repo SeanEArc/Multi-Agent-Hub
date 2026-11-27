@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from app.attachments import make_read_only
+from app.files.attachments import make_read_only
 from app.doctool import cli, contract
 from app.doctool.contract import Failed, Refused
 from app.doctool.docx_edit import diff, replace

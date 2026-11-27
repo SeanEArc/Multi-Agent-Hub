@@ -142,7 +142,7 @@ class LocalTools:
         self.read_roots = [Path(r).resolve() for r in read_roots]
         # Folders outside the working folder the file tools may also write: the session's outputs folder.
         self.write_roots = [Path(r).resolve() for r in write_roots]
-        # Added to run_command's environment: hub-doc on PATH and the outputs folder (app.documents).
+        # Added to run_command's environment: hub-doc on PATH and the outputs folder (app.files.documents).
         self.env: dict[str, str] = {}
         self.runner = runner or HostRunner()
         self.command_timeout = command_timeout

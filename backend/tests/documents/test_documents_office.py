@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from app.doctool import office, office_registry, winproc
 from app.doctool.contract import Failed
 from app.doctool.office import OfficeRun, is_automation
-from app.documents import DocumentAccess
+from app.files.documents import DocumentAccess
 
 from support import document_samples as samples
 from support.documents import Held, HubDoc, make_session

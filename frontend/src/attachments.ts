@@ -1,4 +1,4 @@
-// Files attached to messages (backend/app/attachments.py). The backend checks every upload again; these checks
+// Files attached to messages (backend/app/files/attachments.py). The backend checks every upload again; these checks
 // only give a quick answer in the composer before anything is sent.
 import { useEffect, useState } from "react";
 import { api } from "./api";
@@ -22,7 +22,7 @@ export interface Attachment {
 }
 
 const MB = 1024 * 1024;
-// Mirrors SIZE_CAPS in backend/app/attachments.py.
+// Mirrors SIZE_CAPS in backend/app/files/attachments.py.
 export const SIZE_CAPS: Record<AttachmentKind, number> = {
   image: 20 * MB,
   pdf: 32 * MB,

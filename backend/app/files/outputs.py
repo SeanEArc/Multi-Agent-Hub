@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.attachments import AttachmentError, AttachmentStore, mark_from_elsewhere, openable_name
+from app.files.attachments import AttachmentError, AttachmentStore, mark_from_elsewhere, openable_name
 from app.doctool.contract import STAGING_PREFIX
 from app.doctool.paths import real, within
 

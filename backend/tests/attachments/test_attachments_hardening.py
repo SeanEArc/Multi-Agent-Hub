@@ -22,12 +22,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import attachments as attachments_module
-from app import extract, extract_worker
+from app.files import attachments as attachments_module
+from app.files import extract, extract_worker
 from app.adapters.base import EventType
 from app.adapters.claude import user_line
 from app.adapters.codex import CodexAdapter
-from app.attachments import (
+from app.files.attachments import (
     IMAGE_SENT_BYTES,
     MB,
     META_FILE,
@@ -39,7 +39,7 @@ from app.attachments import (
     classify,
     with_files,
 )
-from app.extract import make_text_copy
+from app.files.extract import make_text_copy
 
 from support import attachment_samples as samples
 from support.attachments import codex_echo, collect, last_echo, stored, upload
@@ -922,7 +922,7 @@ def test_a_self_capped_worker_is_still_killed_at_the_timeout(tmp_path: Path, mon
     script.write_text(textwrap.dedent(f"""
         import json, os, sys, time
         sys.path.insert(0, {str(BACKEND)!r})
-        from app.extract_worker import cap_memory
+        from app.files.extract_worker import cap_memory
         request = json.loads(sys.stdin.buffer.read())
         cap_memory(int(request["memory_limit"]))
         open({str(pid_file)!r}, "w").write(str(os.getpid()))
@@ -965,6 +965,18 @@ def test_hub_backend_extract_worker_entry_point(tmp_path: Path) -> None:
     result = subprocess.run([sys.executable, "hub_backend.py", "--extract-worker"], cwd=BACKEND,
                             input=json.dumps(request).encode(), capture_output=True, timeout=60)
     assert json.loads(result.stdout.decode().strip().splitlines()[-1])["ok"] is False
+
+
+def test_importing_the_extract_worker_loads_no_other_hub_or_server_modules() -> None:
+    """hub-doc and hub_backend.py import `app.files.extract_worker` inside the capped process, so neither
+    `app/files/__init__.py` nor the worker may pull in the rest of the hub, the server or the database."""
+    probe = subprocess.run([sys.executable, "-I", "-c", "import sys, app.files.extract_worker; print(*sorted(sys.modules))"],
+                           cwd=BACKEND, capture_output=True, text=True, timeout=60)
+    assert probe.returncode == 0, probe.stderr
+    loaded = probe.stdout.split()
+    hub = [m for m in loaded if m.split(".")[0] == "app" and m not in ("app", "app.files", "app.files.extract_worker")]
+    server = [m for m in loaded if m.split(".")[0] in ("fastapi", "starlette", "uvicorn", "sqlmodel", "sqlalchemy", "pydantic")]
+    assert hub == [] and server == [], (hub, server)
 
 
 def fake(name: str, size: int, pages: int | None = None, folder: Path | None = None, **extra) -> Attachment:

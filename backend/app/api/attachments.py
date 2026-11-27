@@ -1,4 +1,4 @@
-"""Uploading, showing and opening files attached to a session's messages (`app.attachments`).
+"""Uploading, showing and opening files attached to a session's messages (`app.files.attachments`).
 
 The upload is the raw file as the request body (the name in `?name=`), so it streams to disk within its type's
 cap with no multipart parser. Every route is behind the API token (main.py) and only reaches files inside the
@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from app.attachments import Attachment, AttachmentError, AttachmentStore, openable
+from app.files.attachments import Attachment, AttachmentError, AttachmentStore, openable
 from app.db import get_session
 from app.models import AgentSession
 

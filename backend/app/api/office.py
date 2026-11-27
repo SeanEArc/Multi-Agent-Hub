@@ -1,4 +1,4 @@
-"""Microsoft Office status for Settings (`app.office`): "found", "not found" or "checking"."""
+"""Microsoft Office status for Settings (`app.files.office`): "found", "not found" or "checking"."""
 
 from typing import Any
 

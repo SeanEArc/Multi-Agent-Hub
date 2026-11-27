@@ -433,7 +433,7 @@ export interface CommandMenu {
   native_known: boolean;
 }
 
-/** A file an agent wrote to the session's outputs folder (backend/app/outputs.py). */
+/** A file an agent wrote to the session's outputs folder (backend/app/files/outputs.py). */
 export interface OutputFile {
   // Relative to the outputs folder, with forward slashes.
   name: string;
@@ -442,7 +442,7 @@ export interface OutputFile {
   path: string;
 }
 
-/** Whether Microsoft Office passed the hub's test conversion (backend/app/office.py). */
+/** Whether Microsoft Office passed the hub's test conversion (backend/app/files/office.py). */
 export interface OfficeStatus {
   status: "found" | "not found" | "checking";
   version: string | null;

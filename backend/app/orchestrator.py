@@ -26,9 +26,9 @@ from app.adapters.base import AgentAdapter, AgentEvent, EventType
 from app.adapters.claude import ClaudeAdapter, ClaudeCliNotFound
 from app.adapters.codex import CodexAdapter, CodexCliNotFound, find_codex
 from app.adapters.ollama import OllamaAdapter, OllamaUnavailable, list_models_sync, pick_model
-from app.attachments import Attachment, AttachmentError, AttachmentStore
+from app.files.attachments import Attachment, AttachmentError, AttachmentStore
 from app.config import get_settings
-from app.documents import DocumentToolkit
+from app.files.documents import DocumentToolkit
 from app.handoff import build_brief, git_state, messages_brief, next_in_chain, recent_images, with_brief
 from app.model_list import is_unavailable_model_error, record_availability, record_check
 from app.models import (
@@ -53,7 +53,7 @@ from app.models import (
     utcnow,
 )
 from app.commands import Route, review_prompt, route
-from app.outputs import OutputFile, OutputsStore, changes
+from app.files.outputs import OutputFile, OutputsStore, changes
 from app.skills import SkillLibrary, cached_codex_names, expand_command, load_capabilities, record_capabilities
 from app.summary import SUMMARY_INSTRUCTIONS, build_summary_prompt, total_tokens
 
@@ -189,10 +189,10 @@ class Orchestrator:
     ) -> None:
         self._engine = engine
         self._adapter_factory = adapter_factory
-        # Files uploaded for a session's messages (app.attachments); a message names them by id.
+        # Files uploaded for a session's messages (app.files.attachments); a message names them by id.
         self.attachments = attachments or AttachmentStore(get_settings().attachments_dir)
-        # Files agents write for the user, beside the attachments (app.outputs), and the hub-doc toolkit agents get
-        # with it (app.documents).
+        # Files agents write for the user, beside the attachments (app.files.outputs), and the hub-doc toolkit agents get
+        # with it (app.files.documents).
         self.outputs = OutputsStore(self.attachments)
         self.documents = documents or DocumentToolkit(get_settings().tools_bin)
         # The skill library, for expanding a `/name` message into the prompt the agent gets.
@@ -236,7 +236,7 @@ class Orchestrator:
 
         A message starting with `/name` may be one of the agent's commands (`app.commands.route`; the hub's own for
         the local model) or a skill (`expand_command`); anything else is sent as typed. `attachment_ids` name files
-        uploaded for this message (`app.attachments`); AttachmentError if one is unknown or can't go with a command.
+        uploaded for this message (`app.files.attachments`); AttachmentError if one is unknown or can't go with a command.
         """
         if self.is_running(session_id):
             raise SessionBusy("A turn is already running for this session")

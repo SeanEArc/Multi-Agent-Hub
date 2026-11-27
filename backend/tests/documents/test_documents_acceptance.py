@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from app.attachments import make_read_only
+from app.files.attachments import make_read_only
 
 from support import document_samples as samples
 from support.documents import HubDoc, Reply, SessionFiles, fingerprint, make_session, png_size, same_file

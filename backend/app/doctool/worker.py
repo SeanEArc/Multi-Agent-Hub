@@ -52,7 +52,7 @@ def main() -> None:
     try:
         request = json.loads(sys.stdin.buffer.read())
         try:
-            from app.extract_worker import cap_memory
+            from app.files.extract_worker import cap_memory
 
             cap_memory(int(request["memory_limit"]))
         except (OSError, KeyError, ValueError) as exc:

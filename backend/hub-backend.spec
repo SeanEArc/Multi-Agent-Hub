@@ -2,7 +2,7 @@
 # than a one-file build, which unpacks itself on every launch).
 #   uv run pyinstaller hub-backend.spec --noconfirm   ->  dist/hub-backend/hub-backend.exe and hub-doc.exe
 # hub-doc.exe is the document toolkit agents run (app/doctool). It is a second exe in the same folder, sharing
-# `_internal`, so the libraries are shipped once; the hub puts that folder on agents' PATH (app/documents.py).
+# `_internal`, so the libraries are shipped once; the hub puts that folder on agents' PATH (app/files/documents.py).
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hiddenimports = (
@@ -11,7 +11,7 @@ hiddenimports = (
     + collect_submodules("app.migrations")
 )
 # Alembic loads env.py and the revision files from disk, so ship them as files. python-docx keeps its templates as
-# package data (used by the attachment text copies, app/extract_worker.py, and by hub-doc). The Office check and
+# package data (used by the attachment text copies, app/files/extract_worker.py, and by hub-doc). The Office check and
 # hub-doc's Word actions run PowerShell scripts shipped as files.
 datas = [("app/migrations", "app/migrations"), ("app/doctool/scripts", "app/doctool/scripts"),
          *collect_data_files("docx")]

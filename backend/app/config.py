@@ -64,14 +64,14 @@ class Settings(BaseSettings):
     local_dir: Path = APP_DATA_DIR / "local"
     # The skill library (app.skills): skills any agent can use, their per-agent switches and downloads.
     skills_dir: Path = APP_DATA_DIR / "skills"
-    # Files attached to messages (app.attachments), a folder per session, deleted with it. Outside any repository,
+    # Files attached to messages (app.files.attachments), a folder per session, deleted with it. Outside any repository,
     # like worktrees_dir.
     attachments_dir: Path = APP_DATA_DIR / "attachments"
-    # A folder holding only the hub-doc launcher (app.documents), put first on each agent's PATH. From source, the
+    # A folder holding only the hub-doc launcher (app.files.documents), put first on each agent's PATH. From source, the
     # hub copies the launcher here from the venv, whose Scripts folder also holds python.exe; the bundle uses its
     # own folder instead.
     tools_bin: Path = APP_DATA_DIR / "bin"
-    # The Microsoft Office check (app.office: hidden Word saves a test PDF) at startup and from Settings. Off: Office
+    # The Microsoft Office check (app.files.office: hidden Word saves a test PDF) at startup and from Settings. Off: Office
     # counts as not found, so agents get no Word page images or Compare.
     office_check: bool = True
     # Development only: agents (e.g. "claude" or "claude,codex") whose turns end as if the usage limit was

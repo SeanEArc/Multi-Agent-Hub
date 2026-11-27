@@ -23,7 +23,7 @@ dependencies = [
 
 [project.scripts]
 # The hub's document toolkit for agents (app/doctool). The hub copies this launcher into a bin folder of its own
-# and puts that on each agent's PATH (app/documents.py).
+# and puts that on each agent's PATH (app/files/documents.py).
 hub-doc = "app.doctool.cli:main"
 
 [dependency-groups]

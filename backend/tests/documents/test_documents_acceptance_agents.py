@@ -26,8 +26,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.attachments import make_read_only, mark_from_elsewhere
-from app.extract import make_text_copy
+from app.files.attachments import make_read_only, mark_from_elsewhere
+from app.files.extract import make_text_copy
 
 from support import attachment_samples
 from support import document_samples as samples
