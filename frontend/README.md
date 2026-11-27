@@ -40,4 +40,4 @@ npm run build      # output in dist/
 - `src/api.ts`: backend types and calls
 - `src/useSessionStream.ts`: live session updates (server-sent events, auto-reconnect)
 - `src/components/`: sidebar, session view, transcript, composer, new-session dialog
-- `src/styles.css`: theme tokens (dark default, light via system setting) and layout
+- `src/styles/`: the stylesheet in ordered slices imported by `index.css`; theme tokens (dark default, light via system setting) are in `01-theme.css`

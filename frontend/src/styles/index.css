@@ -1,0 +1,17 @@
+/* The app's styles, split from the old styles.css in its original order. Order matters: later rules
+   override earlier ones (narrow-window rules sit mid-file, in 08, 10 and 14), so add rules to the slice they belong to
+   and never reorder these imports. Theme tokens are in 01-theme.css. */
+@import "./01-theme.css";
+@import "./02-layout-controls.css";
+@import "./03-sidebar-status.css";
+@import "./04-session-view.css";
+@import "./05-transcript.css";
+@import "./06-composer.css";
+@import "./07-dialog-folder-picker.css";
+@import "./08-handoff-narrow-worktrees.css";
+@import "./09-dashboard.css";
+@import "./10-progress.css";
+@import "./11-history-summary.css";
+@import "./12-new-session-model-picker-menus.css";
+@import "./13-attachments-outputs.css";
+@import "./14-preview-pane.css";

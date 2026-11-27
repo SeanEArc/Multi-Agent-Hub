@@ -4,7 +4,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
 // GitHub-flavored markdown (tables, task lists, strikethrough) and highlight.js colors for
-// fenced code blocks that name their language. Colors are in styles.css (.hljs-*).
+// fenced code blocks that name their language. Colors are in styles/05-transcript.css (.hljs-*).
 const remarkPlugins = [remarkGfm];
 const rehypePlugins = [rehypeHighlight];
 // A link never replaces the hub's page: it asks for a new window, which the desktop shell hands to the default
