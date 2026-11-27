@@ -2,7 +2,7 @@
 
 PDF, Word, Excel and CSV parsers run on files from anywhere, and a broken or hostile file (a zip bomb inside a
 .docx, a PDF that sends the parser into a loop) must not take the backend down. So each text copy is made by
-`app.extract_worker` in its own process:
+`app.files.extract_worker` in its own process:
 
 - **Memory:** the worker caps itself (`extract_worker.cap_memory`): after reading its request from stdin and
   before parsing anything, it puts its own process in a new Windows job object limited to `MEMORY_LIMIT` of
@@ -30,7 +30,7 @@ import weakref
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.extract_worker import WindowsJob
+from app.files.extract_worker import WindowsJob
 
 log = logging.getLogger(__name__)
 

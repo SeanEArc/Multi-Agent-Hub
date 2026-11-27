@@ -1,4 +1,4 @@
-"""Writes the text copy of one document. Run by `app.extract` in its own capped process; imports nothing from the hub.
+"""Writes the text copy of one document. Run by `app.files.extract` in its own capped process; imports nothing from the hub.
 
 Reads one JSON request from stdin, `{kind, src, dst, max_chars, memory_limit}`, writes the text to `dst` and prints one JSON
 line: `{"ok": true, "pages": n|null, "chars": n, "truncated": bool}` or `{"ok": false, "error": "..."}`.

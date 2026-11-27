@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from app import attachments as attachments_module
+from app.files import attachments as attachments_module
 from app.adapters.base import EventType
-from app.attachments import (
+from app.files.attachments import (
     META_FILE,
     Attachment,
     AttachmentError,
@@ -26,7 +26,7 @@ from app.attachments import (
     safe_name,
     with_files,
 )
-from app.extract import make_text_copy, text_copy_path
+from app.files.extract import make_text_copy, text_copy_path
 from app.handoff import build_brief, messages_brief, recent_images, session_attachments
 from app.models import AgentKind, SessionEvent, StintReason
 
@@ -309,7 +309,7 @@ def test_brief_lists_attachments_and_recent_images_go_again(tmp_path: Path) -> N
 ALLOCATE = """
 import sys
 sys.path.insert(0, sys.argv[1])
-from app.extract_worker import cap_memory
+from app.files.extract_worker import cap_memory
 if sys.argv[2] == "cap":
     cap_memory(256 * 1024 * 1024)
 try:

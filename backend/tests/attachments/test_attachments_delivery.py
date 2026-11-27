@@ -238,7 +238,7 @@ def test_old_unsent_uploads_are_swept_at_startup(engine, tmp_path: Path) -> None
     import os
     import time
 
-    from app.attachments import META_FILE, AttachmentStore
+    from app.files.attachments import META_FILE, AttachmentStore
     from app.main import create_app
     from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
 
@@ -256,7 +256,7 @@ def test_old_unsent_uploads_are_swept_at_startup(engine, tmp_path: Path) -> None
 
 
 def test_a_failing_cleanup_never_stops_startup(engine, tmp_path: Path, monkeypatch) -> None:
-    from app.attachments import AttachmentStore
+    from app.files.attachments import AttachmentStore
     from app.main import create_app
     from support.hub import TEST_TOKEN, fake_adapter_factory, make_client
 

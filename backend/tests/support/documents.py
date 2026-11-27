@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from app.attachments import make_read_only, mark_from_elsewhere
+from app.files.attachments import make_read_only, mark_from_elsewhere
 
 
 TIMEOUT = 180

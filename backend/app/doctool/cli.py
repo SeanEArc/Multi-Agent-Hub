@@ -211,7 +211,7 @@ def run_child(request: dict[str, Any], limit: int, timeout: float = WORK_TIMEOUT
         if os.name == "nt":
             # Kills the child (and, in a venv, the interpreter its launcher started) if this parent ends or gives
             # up. The child caps itself from inside too (`worker.main`), which is the cap that holds.
-            from app.extract_worker import WindowsJob
+            from app.files.extract_worker import WindowsJob
 
             try:
                 job = WindowsJob(limit, active_processes=2)

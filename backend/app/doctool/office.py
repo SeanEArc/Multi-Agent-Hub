@@ -1,7 +1,7 @@
 """Microsoft Office through PowerShell COM scripts (decided 2026-11-23: no pywin32), with a time limit and a cleanup
 that kills only the Office processes automation started.
 
-Used by the hub's Office check (`app.office`) and by `hub-doc docx pages|compare`. COM starts Word and Excel from
+Used by the hub's Office check (`app.files.office`) and by `hub-doc docx pages|compare`. COM starts Word and Excel from
 DCOM's launcher, not as children of the script, so ending the script's process tree never reaches them, and Excel
 was seen still running 1.5 s after `Quit()` (probe 2026-11-21, section 4). So each run notes the automation
 processes (`-Embedding` or `/Automation` in the command line) running before it starts, and afterwards waits a

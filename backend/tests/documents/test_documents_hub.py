@@ -15,11 +15,11 @@ from fastapi.testclient import TestClient
 
 from app.adapters.codex import CodexAdapter
 from app.adapters.local_tools import LocalTools, ToolError
-from app.attachments import AttachmentError, AttachmentStore
+from app.files.attachments import AttachmentError, AttachmentStore
 from app.doctool import office, winproc
-from app.documents import CLAUDE_RULES, DocumentAccess, DocumentToolkit, prepare_bin
-from app.office import OfficeDetector
-from app.outputs import OutputsStore
+from app.files.documents import CLAUDE_RULES, DocumentAccess, DocumentToolkit, prepare_bin
+from app.files.office import OfficeDetector
+from app.files.outputs import OutputsStore
 
 from support.paths import FAKE_CODEX
 

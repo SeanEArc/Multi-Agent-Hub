@@ -1,4 +1,4 @@
-// Files agents wrote to the session's outputs folder (backend/app/outputs.py): a list in the side panel, and cards in
+// Files agents wrote to the session's outputs folder (backend/app/files/outputs.py): a list in the side panel, and cards in
 // the transcript where each file was created or edited. Both have Preview, Open and Save as….
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, type OutputFile } from "../api";

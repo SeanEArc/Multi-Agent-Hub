@@ -1,4 +1,4 @@
-"""The session's outputs folder in the UI: the files agents wrote, with Open and Save as… (`app.outputs`).
+"""The session's outputs folder in the UI: the files agents wrote, with Open and Save as… (`app.files.outputs`).
 
 Behind the API token like every route (main.py). Save as takes the destination path the user chose in the hub's
 own folder picker: the desktop shell has no native save dialog (no Tauri dialog plugin), and the backend already
@@ -15,10 +15,10 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.api.attachments import FileOpener, OpenResult, file_response
-from app.attachments import AttachmentError, classify
+from app.files.attachments import AttachmentError, classify
 from app.db import get_session
 from app.models import AgentSession
-from app.outputs import OutputFile, OutputsStore
+from app.files.outputs import OutputFile, OutputsStore
 
 router = APIRouter(prefix="/sessions/{session_id}/outputs", tags=["outputs"])
 

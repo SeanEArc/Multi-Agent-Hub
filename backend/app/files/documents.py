@@ -120,7 +120,7 @@ class DocumentToolkit:
 
     def __init__(self, tools_bin: Path, office=None) -> None:
         self.tools_bin = Path(tools_bin)
-        self.office = office  # app.office.OfficeDetector, or None
+        self.office = office  # app.files.office.OfficeDetector, or None
         self.bin_dir: Path | None = None
 
     def install(self) -> Path | None:

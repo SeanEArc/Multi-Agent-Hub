@@ -1,6 +1,6 @@
 """`hub-doc`: the hub's document toolkit, one command for every agent (revision 4, attachments PR 2).
 
-The hub puts `hub-doc` on each agent's PATH (`app.documents`) and tells the agent about it. It is the same
+The hub puts `hub-doc` on each agent's PATH (`app.files.documents`) and tells the agent about it. It is the same
 program from source (`[project.scripts] hub-doc = "app.doctool.cli:main"`, copied into a bin folder of its own)
 and in the bundle (a second exe beside `hub-backend.exe`, sharing `_internal`).
 

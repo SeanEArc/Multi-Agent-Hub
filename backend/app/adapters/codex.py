@@ -44,7 +44,7 @@ from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, plan_items, split_plan
 from app.adapters.diffs import FileSnapshots
 from app.adapters.runner import Runner
-from app.attachments import Attachment, with_files
+from app.files.attachments import Attachment, with_files
 from app.models import AgentKind
 
 LIMIT_TEXT = re.compile(

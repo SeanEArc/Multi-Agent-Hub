@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, col, select
 
 from app.adapters.ollama import delete_history
-from app.attachments import AttachmentError
+from app.files.attachments import AttachmentError
 from app.db import get_session
 from app.handoff import git_state
 from app.models import (

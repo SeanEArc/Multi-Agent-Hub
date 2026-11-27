@@ -54,8 +54,8 @@ from app.adapters.local_tools import (
     plan_from_args,
 )
 from app.adapters.runner import Runner
-from app.attachments import Attachment, with_files
-from app.documents import DocumentAccess
+from app.files.attachments import Attachment, with_files
+from app.files.documents import DocumentAccess
 from app.models import AgentKind
 
 DEFAULT_URL = "http://127.0.0.1:11434"

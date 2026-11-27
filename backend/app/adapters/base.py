@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from app.attachments import Attachment
-from app.documents import DocumentAccess
+from app.files.attachments import Attachment
+from app.files.documents import DocumentAccess
 from app.models import AgentKind
 
 
@@ -50,14 +50,14 @@ class AgentEvent:
 class AgentAdapter(ABC):
     kind: AgentKind
     # Set by the orchestrator before each turn: the session's outputs folder and the hub-doc toolkit
-    # (`app.documents`). Each adapter hands them over its agent's way: environment, instructions, write access.
+    # (`app.files.documents`). Each adapter hands them over its agent's way: environment, instructions, write access.
     documents: DocumentAccess | None = None
 
     @abstractmethod
     def start_task(self, prompt: str, attachments: Sequence[Attachment] = ()) -> AsyncGenerator[AgentEvent]:
         """Start a new task and stream its events until the turn ends.
 
-        `attachments` are files the user attached to this message (`app.attachments`); each adapter hands them
+        `attachments` are files the user attached to this message (`app.files.attachments`); each adapter hands them
         over its agent's own way (content blocks, `-i`, Ollama's `images`) and lists the rest by path.
         """
 

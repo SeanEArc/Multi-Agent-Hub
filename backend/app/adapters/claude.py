@@ -35,8 +35,8 @@ from app.adapters.base import AgentEvent, EventType
 from app.adapters.cli import HEADLESS_PROMPT, NEEDS_INPUT_MARKER, CliAdapter, split_plan
 from app.adapters.diffs import claude_diffs
 from app.adapters.runner import Runner
-from app.attachments import Attachment, claude_blocks, with_files
-from app.documents import CLAUDE_RULES
+from app.files.attachments import Attachment, claude_blocks, with_files
+from app.files.documents import CLAUDE_RULES
 from app.models import AgentKind
 from app.skills import claude_capabilities
 

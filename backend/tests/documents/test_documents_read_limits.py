@@ -13,12 +13,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.attachments import AttachmentStore
+from app.files.attachments import AttachmentStore
 from app.doctool import cli
 from app.doctool.contract import READ_ROOTS_ENV, Refused, read_roots
 from app.doctool.paths import within
-from app.documents import DocumentAccess
-from app.outputs import OutputsStore
+from app.files.documents import DocumentAccess
+from app.files.outputs import OutputsStore
 
 from support import document_samples as samples
 from support.documents import HubDoc, junction, make_session
@@ -276,7 +276,7 @@ def test_save_as_through_a_junction_into_attachments_is_refused(tmp_path: Path) 
     subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(tmp_path / "attachments")], capture_output=True,
                    check=True)
     try:
-        from app.attachments import AttachmentError
+        from app.files.attachments import AttachmentError
 
         with pytest.raises(AttachmentError) as refused:
             store.save_copy(session, "r.txt", str(link / "copy.txt"))

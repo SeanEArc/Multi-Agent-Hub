@@ -12,7 +12,7 @@ from pathlib import Path
 
 from app.adapters.base import EventType
 from app.adapters.cli import HEADLESS_GIT_ENV
-from app.attachments import KIND_NAMES, Attachment
+from app.files.attachments import KIND_NAMES, Attachment
 from app.models import AgentKind, ChainEntry, SessionEvent, StintReason
 
 MAX_BRIEF = 40_000
