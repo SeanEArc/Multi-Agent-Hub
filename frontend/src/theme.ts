@@ -15,7 +15,7 @@ export function readTheme(): ThemeChoice {
   return "system";
 }
 
-/** Sets `data-theme` on <html>, which picks the light or dark tokens in styles.css. */
+/** Sets `data-theme` on <html>, which picks the light or dark tokens in styles/01-theme.css. */
 export function applyTheme(choice: ThemeChoice) {
   const resolved = choice === "system" ? (systemLight.matches ? "light" : "dark") : choice;
   document.documentElement.dataset.theme = resolved;

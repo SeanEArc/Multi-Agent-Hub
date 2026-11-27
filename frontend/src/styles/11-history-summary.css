@@ -1,0 +1,304 @@
+/* --- History: each agent's stint and its turns ------------------------------------------- */
+
+.history {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.history-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.history-stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.history-stint {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.history-stint-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-stint-header h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.history-stint-number {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.history-turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-turn {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.history-turn-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.history-outcome {
+  flex: none;
+  min-width: 78px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.outcome-done {
+  color: var(--ok);
+}
+
+.outcome-question,
+.outcome-limit,
+.outcome-cut_off {
+  color: var(--warn);
+}
+
+.outcome-error {
+  color: var(--danger);
+}
+
+.outcome-running {
+  color: var(--info);
+}
+
+.history-time {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-prompt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-prompt:hover {
+  text-decoration: underline;
+}
+
+.history-turn-stats,
+.history-turn-error,
+.history-turn-detail {
+  margin: 4px 0 0 88px;
+}
+
+.history-turn-error {
+  color: var(--danger);
+}
+
+.history-turn-detail p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.history-files {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+/* --- Summary: the hub's live facts and the latest written summary ------------------------- */
+
+.summary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.summary-facts {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.summary-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 1px;
+}
+
+.summary-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-quote {
+  display: block;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.summary-written {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.summary-text {
+  font-size: 13.5px;
+}
+
+.summary-outdated {
+  color: var(--warn);
+}
+
+.summary-error {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .summary-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .summary-facts dd {
+    margin-bottom: 6px;
+  }
+}
+
+.jump-highlight {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+  transition: outline-color 0.3s;
+}
+
+@media (max-width: 720px) {
+  .history-turn-line {
+    flex-wrap: wrap;
+  }
+
+  .history-prompt {
+    flex-basis: 100%;
+    order: 3;
+    white-space: normal;
+  }
+
+  .history-turn-stats,
+  .history-turn-error,
+  .history-turn-detail {
+    margin-left: 0;
+  }
+}
+
+/* Settings: "Check which models my plan can use". */
+.model-check {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-check-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.model-check-row .button {
+  min-width: 110px;
+}
+
+.model-check-row .hint {
+  flex: 1;
+  min-width: 180px;
+}
+

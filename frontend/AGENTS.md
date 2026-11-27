@@ -20,7 +20,7 @@ There are no UI unit tests: check UI changes with `npm run typecheck` and `npm r
 ## Rules for UI changes
 
 - **API access:** call the backend through `apiFetch` / `openEventStream` (`src/connection.ts`); in the desktop app they add the token. Load files as Blobs through `apiFetch` (`useApiBlob`, `useAttachmentUrl`), never with `src=` pointing at the API.
-- **Styling:** use the theme tokens in `src/styles.css`; style agent-tinted parts with `var(--agent)` (set by `agentClass`), not `--accent`. Check light and dark themes and a narrow window.
+- **Styling:** use the theme tokens in `src/styles/01-theme.css`, and put new rules in the slice for that part of the UI (`src/styles/index.css` imports them in order; never reorder them); style agent-tinted parts with `var(--agent)` (set by `agentClass`), not `--accent`. Check light and dark themes and a narrow window.
 - **Links and security:** the shell allows navigation only inside the app; outside links go through `POST /api/links/open`. Don't loosen the Tauri CSP or navigation rules without a reason recorded in `docs/architecture/desktop.md` or `frontend.md`.
 - **Preview engines** (pdf.js, DOCX, XLSX) stay lazy-loaded chunks and are unmounted on close.
 - **Style:** two-space indentation, double-quoted strings, semicolons, strict TypeScript; `PascalCase` component files, `camelCase` helpers and hooks. Follow the surrounding code.

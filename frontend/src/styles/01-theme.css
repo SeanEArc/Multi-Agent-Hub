@@ -1,0 +1,132 @@
+/* Dark by default (Claude Code's terminal feel); light when <html data-theme="light"> (theme.ts sets it
+   from the sidebar's switch, following the system unless the user picks one). */
+:root {
+  color-scheme: dark;
+  --bg: #1a1918;
+  --panel: #211f1e;
+  --panel-raised: #2a2827;
+  --border: #3a3735;
+  --text: #ece9e4;
+  --muted: #a19d97;
+  --accent: #d97757; /* Claude orange */
+  --accent-text: #1a1918;
+  --ok: #6fbf73;
+  --warn: #e0a84f;
+  --danger: #e06c64;
+  --info: #7aa7e0;
+  --code-bg: #141312;
+  /* Syntax highlighting (highlight.js tokens). */
+  --hl-comment: #8a857e;
+  --hl-keyword: #e5937a;
+  --hl-string: #a5c97f;
+  --hl-number: #d7b26a;
+  --hl-title: #8fb8e8;
+  --hl-type: #c9a2e0;
+  --hl-attr: #7cc4c0;
+  /* One color per agent (see .agent-*), so it's clear at a glance who is working. */
+  --agent-claude: #d97757;
+  --agent-codex: #9b8cf2;
+  --agent-ollama: #b7b0a6;
+  --agent: var(--accent);
+  --radius: 10px;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  --sans: system-ui, "Segoe UI", -apple-system, sans-serif;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #faf9f7;
+  --panel: #f2f0ec;
+  --panel-raised: #ffffff;
+  --border: #dedad4;
+  --text: #1f1e1c;
+  --muted: #6d6964;
+  --accent: #c2603f;
+  --accent-text: #ffffff;
+  --ok: #3d8b41;
+  --warn: #a86f12;
+  --danger: #c0423a;
+  --info: #3a6db0;
+  --code-bg: #f2f0ec;
+  --hl-comment: #7a756e;
+  --hl-keyword: #b04a2b;
+  --hl-string: #3f7a1f;
+  --hl-number: #94620c;
+  --hl-title: #2b5f9e;
+  --hl-type: #7d3fa3;
+  --hl-attr: #1f7a74;
+  --agent-claude: #c2603f;
+  --agent-codex: #5b4cc4;
+  --agent-ollama: #66615b;
+}
+
+/* Sets --agent for an element and everything inside it. */
+.agent-claude {
+  --agent: var(--agent-claude);
+}
+
+.agent-codex {
+  --agent: var(--agent-codex);
+}
+
+.agent-ollama {
+  --agent: var(--agent-ollama);
+}
+
+.agent-dot {
+  flex: none;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--agent);
+}
+
+.agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: color-mix(in srgb, var(--agent) 45%, var(--border));
+}
+
+.agent-name {
+  color: var(--agent);
+  font-weight: 600;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 var(--sans);
+}
+
+code,
+pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.pre-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+

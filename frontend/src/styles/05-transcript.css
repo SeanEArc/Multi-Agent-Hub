@@ -1,0 +1,607 @@
+/* --- Transcript ---------------------------------------------------------------------- */
+
+.transcript-scroller {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.transcript {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.user-message {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+}
+
+.prompt-mark {
+  color: var(--agent);
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.assistant-message {
+  padding: 0 4px;
+  line-height: 1.6;
+}
+
+/* Markdown in agent messages, briefs and summaries: headings sized for a conversation, not a page. */
+:is(.assistant-message, .handoff-brief) :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.1em 0 0.4em;
+  line-height: 1.3;
+  font-weight: 650;
+}
+
+:is(.assistant-message, .handoff-brief) h1 {
+  font-size: 18px;
+}
+
+:is(.assistant-message, .handoff-brief) h2 {
+  font-size: 16px;
+}
+
+:is(.assistant-message, .handoff-brief) :is(h3, h4, h5, h6) {
+  font-size: 14px;
+}
+
+:is(.assistant-message, .handoff-brief) p {
+  margin: 0.55em 0;
+}
+
+:is(.assistant-message, .handoff-brief) :is(ul, ol) {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+:is(.assistant-message, .handoff-brief) li + li {
+  margin-top: 0.2em;
+}
+
+:is(.assistant-message, .handoff-brief) li::marker {
+  color: var(--muted);
+}
+
+:is(.assistant-message, .handoff-brief) blockquote {
+  margin: 0.6em 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+:is(.assistant-message, .handoff-brief) hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+:is(.assistant-message, .handoff-brief) a {
+  color: var(--info);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--info) 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+:is(.assistant-message, .handoff-brief) a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Inline code reads at the size of the text around it. */
+:is(.assistant-message, .handoff-brief) :not(pre) > code {
+  font-size: 0.88em;
+}
+
+.assistant-message > :first-child {
+  margin-top: 0;
+}
+
+.assistant-message > :last-child {
+  margin-bottom: 0;
+}
+
+.assistant-message code {
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.assistant-message pre {
+  background: var(--code-bg);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.assistant-message pre code {
+  padding: 0;
+}
+
+/* GitHub-flavored markdown in agent messages, briefs and summaries (remark-gfm). */
+:is(.assistant-message, .handoff-brief) table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+:is(.assistant-message, .handoff-brief) :is(th, td) {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+:is(.assistant-message, .handoff-brief) th {
+  background: var(--panel-raised);
+  font-weight: 600;
+}
+
+:is(.assistant-message, .handoff-brief) tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+}
+
+:is(.assistant-message, .handoff-brief) li.task-list-item {
+  list-style: none;
+}
+
+:is(.assistant-message, .handoff-brief) .contains-task-list {
+  padding-left: 18px;
+}
+
+/* Undo the form-field defaults that the global `input` rule gives these checkboxes. */
+:is(.assistant-message, .handoff-brief) .task-list-item input {
+  width: auto;
+  padding: 0;
+  margin: 0 6px 0 -18px;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+
+:is(.assistant-message, .handoff-brief) del {
+  color: var(--muted);
+}
+
+/* highlight.js token colors (rehype-highlight), from the theme so they follow light and dark. */
+.hljs-comment,
+.hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--hl-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-template-string,
+.hljs-meta .hljs-string {
+  color: var(--hl-string);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable.constant_ {
+  color: var(--hl-number);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--hl-title);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--hl-type);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: var(--hl-attr);
+}
+
+.hljs-meta,
+.hljs-tag,
+.hljs-name {
+  color: var(--muted);
+}
+
+.hljs-addition {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.hljs-deletion {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
+
+.tool {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-summary:hover {
+  background: var(--panel);
+}
+
+.tool-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.tool-done {
+  background: var(--ok);
+}
+
+.tool-running {
+  background: var(--info);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.tool-failed {
+  background: var(--danger);
+}
+
+.tool-denied {
+  background: var(--warn);
+}
+
+.tool-name {
+  font-weight: 700;
+}
+
+.tool-arg {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.tool-flag {
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+.tool-toggle {
+  color: var(--muted);
+}
+
+.tool-body {
+  margin: 4px 0 4px 22px;
+}
+
+.tool-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+}
+
+.tool-detail {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-exit {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* Under a tool row, lined up with its name. */
+.tool-preview,
+.tool-output-preview {
+  margin: 2px 0 4px 22px;
+}
+
+.tool-output-preview {
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+
+.tool-output-preview.failed {
+  border-left-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+
+.tool-output-preview pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-output-more {
+  font-size: 11.5px;
+  font-style: italic;
+}
+
+.diff-stat {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.diff-stat-add {
+  color: var(--ok);
+}
+
+.diff-stat-del {
+  color: var(--danger);
+}
+
+.diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+  /* Code fonts draw -> and != as single symbols, which a diff should show as typed. */
+  font-variant-ligatures: none;
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 11.5px;
+}
+
+.diff-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-kind {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.diff-kind.add {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+
+.diff-kind.delete {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.diff-body {
+  max-height: 480px;
+  overflow: auto;
+}
+
+.diff-line {
+  display: grid;
+  /* Old and new line numbers, the +/− mark, then the text. Wide lines wrap rather than scroll. */
+  grid-template-columns: minmax(3ch, max-content) minmax(3ch, max-content) 2ch 1fr;
+  line-height: 1.5;
+}
+
+.diff-no {
+  padding: 0 6px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  opacity: 0.7;
+}
+
+.diff-mark {
+  text-align: center;
+  user-select: none;
+}
+
+.diff-text {
+  padding-right: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line.add {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+
+.diff-line.add .diff-mark {
+  color: var(--ok);
+}
+
+.diff-line.del {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+
+.diff-line.del .diff-mark {
+  color: var(--danger);
+}
+
+.diff-gap {
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--panel);
+  line-height: 1.4;
+  user-select: none;
+}
+
+.diff-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* A file's header that opens and closes its diff. */
+.diff-toggle {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diff-toggle:hover {
+  background: var(--panel-raised);
+}
+
+.diff-toggle .diff-stat {
+  margin-left: auto;
+}
+
+.diff.closed .diff-header {
+  border-bottom: 0;
+}
+
+.turn-end {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 2px;
+  padding: 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.turn-end-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.turn-end-mark {
+  font-weight: 700;
+}
+
+.turn-end.done .turn-end-mark {
+  color: var(--ok);
+}
+
+.turn-end.question .turn-end-label {
+  color: var(--warn);
+}
+
+.turn-end.stopped .turn-end-mark {
+  color: var(--muted);
+}
+
+.notice {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.notice.error {
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.notice.warning {
+  border: 1px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 4px;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--agent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
