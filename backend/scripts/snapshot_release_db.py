@@ -5,7 +5,7 @@ Run this once per release, before tagging (see RELEASING.md):
     uv run python scripts/snapshot_release_db.py 0.2.0
 
 The file is a plain SQL dump of a small but complete history (a project session with a worktree and a
-handoff, a chat, events, a summary and settings). `tests/test_release_upgrades.py` loads every dump,
+handoff, a chat, events, a summary and settings). `tests/core/test_release_upgrades.py` loads every dump,
 runs the migrations to head and checks that nothing was lost, so a migration that would damage an
 existing user's database fails CI instead of reaching their PC.
 """

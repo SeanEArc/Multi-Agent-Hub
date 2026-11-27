@@ -12,7 +12,7 @@ uv run python -m app.main                        # run API on http://127.0.0.1:8
 $env:HUB_RELOAD="true"; uv run python -m app.main   # dev auto-reload
 $env:HUB_SIMULATE_LIMIT="claude"; uv run python -m app.main   # dev: Claude's turns end in a fake usage limit (try handoff)
 uv run pytest                                    # all tests
-uv run pytest tests/test_claude_adapter.py::test_name   # single test
+uv run pytest tests/adapters/test_claude_adapter.py::test_name   # single test
 uv run alembic revision --autogenerate -m "describe change"  # after editing app/models.py; review the file
 uv add <pkg> / uv add --dev <pkg>
 uv run pyinstaller hub-backend.spec --noconfirm  # bundle for the desktop app -> dist/hub-backend/ (hub-backend.exe, hub-doc.exe)
@@ -27,8 +27,8 @@ Live tests (real CLIs, your own accounts) are opt-in; their commands are in `doc
 
 - **Migrations:** `init_db` applies them to `head` on every start. After autogenerate, review the file: drop the false `events.stint_id` FK change, and never batch-rebuild `sessions` or `stints` (`test_release_upgrades.py` fails on it). Enums are stored by value, so a new member needs no migration.
 - **Adapters:** the orchestrator, UI and history depend only on the `AgentAdapter` interface (`app/adapters/base.py`). A usage limit is a `LIMIT_REACHED` event, never an exception. Every CLI launch goes through a `Runner`. Prompts go over stdin, and the native `claude.exe`/`codex.exe` are used, never `.cmd`/`.ps1` shims.
-- **Tests:** `create_app(...)` takes injectable folders, engines and fakes; use them so tests never touch the user's real data, `~/.codex`, skills or Ollama (point `ollama_url` at a closed port when using the real factory). The `engine` fixture is a temp database file per test, never a shared in-memory connection.
-- **Dependencies:** no pandas or numpy (they break the 512 MB extract worker; `test_pandas_isnt_shipped`). A new runtime package must be in the third-party notices (`tests/test_notices.py`).
+- **Tests:** `create_app(...)` takes injectable folders, engines and fakes; use them so tests never touch the user's real data, `~/.codex`, skills or Ollama (point `ollama_url` at a closed port when using the real factory). The `engine` fixture is a temp database file per test, never a shared in-memory connection. Test files never import each other: shared helpers go in `tests/support/`, shared fixtures in `tests/conftest.py`.
+- **Dependencies:** no pandas or numpy (they break the 512 MB extract worker; `test_pandas_isnt_shipped`). A new runtime package must be in the third-party notices (`tests/core/test_notices.py`).
 - **Style:** four-space indentation, double-quoted strings, `snake_case`; follow the surrounding code. No formatter or linter is configured. Name tests `test_*.py` / `test_*`.
 
 ## Where to read before changing something
